@@ -4177,9 +4177,19 @@ writes a FRESH row (`@@unique([channelId, userId])`) — so a misclicked Leave
 loses the read cursor and any mute. The exemption nearly written here —
 "reversible from the same button, so ceremony around it is ceremony around an
 undoable action", which is `BlockPersonButton`'s almost verbatim — was false
-for exactly that reason. `joinedAt` is the one field nothing reads, which is
-what made "lossless" sound plausible. **Join stays immediate**: additive, and
-an undo window would delay what was asked for.
+for exactly that reason. **Join stays immediate**: additive, and an undo window
+would delay what was asked for.
+
+This paragraph said `joinedAt` was "the one field nothing reads, which is what
+made 'lossless' sound plausible". It has a reader since #2990: a channel the
+caller has never read counts unread posts from `joinedAt` rather than from the
+beginning of time, because reading NULL as "-infinity" hands a brand-new member
+of a 2,000-post channel a badge of 2,000. So all three of the row's columns are
+now load-bearing, and leaving costs the read cursor, any mute, AND the boundary
+the first unread count is measured from — which makes the undo toast MORE
+justified than when it was argued for, not less. The badge is also the first
+thing that makes the loss visible to a person, since a rejoined channel reads
+as entirely unread.
 
 ### The farm-claim review console, and a SECOND DOOR for a person
 

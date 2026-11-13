@@ -651,6 +651,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/channels/{channelId}/read",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/conversations",
       "status": "live",
       "documented": true
