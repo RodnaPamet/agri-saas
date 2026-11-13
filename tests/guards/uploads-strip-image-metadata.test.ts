@@ -94,6 +94,22 @@ const EXEMPT = new Map(DELIBERATELY_UNSTRIPPED);
  */
 const DELIBERATELY_UNSTRIPPED_PDF: ReadonlyArray<[file: string, why: string]> = [
     [
+        'src/app-layer/usecases/channel-media.ts',
+        'Accepts PHOTOGRAPHS and VOICE NOTES only, and the allowlist is checked '
+            + 'against a magic-number sniff rather than the declared content-type: '
+            + 'image/jpeg, image/png, image/webp, audio/mp4 and audio/ogg. A PDF is '
+            + 'refused with FILE_TYPE_NOT_ALLOWED before any byte is stripped, '
+            + 'scanned or stored, so `stripPdfMetadata` here would be dead code. '
+            + 'IMAGES ARE STRIPPED through the shared helper — a farm photograph '
+            + 'carries GPS. AUDIO IS NOT, and that is a real gap rather than an '
+            + 'argument: nothing in this repo strips an audio container, so a '
+            + 'recorder that writes a location atom would carry it. #3044 tracks '
+            + 'that, and `channel-media.ts`\'s header says so rather than letting '
+            + 'the image path imply coverage. A document attachment on a channel '
+            + 'post would be a new surface and would have to answer this question '
+            + 'again, which is what keeps the exemption honest.',
+    ],
+    [
         'src/app-layer/usecases/direct-message-photos.ts',
         'Accepts PHOTOGRAPHS only. The allowlist is checked against a magic-number '
             + 'sniff rather than the declared content-type, and it holds exactly '

@@ -126,6 +126,8 @@ const EXEMPT_BY_RULE: readonly { readonly test: RegExp; readonly why: string }[]
  * next (#1285).
  */
 const OMITTED_BY_DECISION: Record<string, string> = {
+    'ChannelPost.attachmentKey':
+        'A storage locator that authorises nothing, the same decision as its `DirectMessage` sibling below with ONE difference worth stating rather than inheriting: the egress route gates on channel MEMBERSHIP, not on conversation participation. A bare key in a downloadable file therefore resolves to nothing for the person holding it unless they are still a member — and if they are, the post is already readable to them through the feed. Exporting it would only widen where a locator travels. The attachment\'s type, size, digest AND declared duration are all exported, and `notIncluded` says the bytes are not in the file.',
     'DirectMessage.attachmentKey':
         'A storage locator that authorises nothing: the egress route gates on RLS participation, so a bare key in a downloadable file resolves to nothing for the person holding it. Exporting it would only widen where a locator travels. The photograph\'s type, size and digest ARE exported, and `notIncluded` says the bytes are not in the file.',
     'ExchangeInquiry.inquirerTenantId':
