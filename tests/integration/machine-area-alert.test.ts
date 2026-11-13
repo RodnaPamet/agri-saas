@@ -45,6 +45,9 @@ const TAG = randomUUID().slice(0, 8);
 const TENANT = `t-maa-${TAG}`;
 /** A farm with machines and NO parcels drawn. */
 const BARE_TENANT = `t-maa-bare-${TAG}`;
+/** A SECOND mapped farm, so one run can have departures in two of them. */
+const FARM2 = `t-maa-two-${TAG}`;
+const OWNER2 = `u-maa-owner2-${TAG}`;
 const OWNER = `u-maa-owner-${TAG}`;
 const ADMIN = `u-maa-admin-${TAG}`;
 const EDITOR = `u-maa-editor-${TAG}`;
@@ -57,9 +60,18 @@ const SPAN = 0.01;
 const INSIDE = { lat: LAT0 + SPAN / 2, lon: LON0 + SPAN / 2 };
 /** ~4 km east of the parcel's edge — past the 2 km buffer. */
 const FAR = { lat: LAT0 + SPAN / 2, lon: LON0 + 0.06 };
+/*
+ * FARM2's block sits 0.1° west — about 8 km at this latitude, where a degree
+ * of longitude is ~81 km and NOT the ~111 km a degree of latitude is. So the
+ * single `FAR` point above (≈4.9 km east of the first block) is ~13 km from
+ * this one, outside both 2 km buffers, and one position departs either farm.
+ */
+const LON2 = LON0 - 0.1;
 
 let assetId = '';
 let bareAssetId = '';
+let farm2AssetId = '';
+let keylessAssetId = '';
 const NOW = '2026-11-13T10:00:00.000Z';
 
 async function fix(asset: string, tenant: string, at: Date, p: { lat: number; lon: number }) {
@@ -74,7 +86,7 @@ async function fix(asset: string, tenant: string, at: Date, p: { lat: number; lo
 const minutesBefore = (m: number) => new Date(new Date(NOW).getTime() - m * 60_000);
 
 async function clearRuntime() {
-    for (const t of [TENANT, BARE_TENANT]) {
+    for (const t of [TENANT, BARE_TENANT, FARM2]) {
         await prisma.$executeRawUnsafe(`DELETE FROM "MachinePosition" WHERE "tenantId" = $1`, t);
         await prisma.machineAreaState.deleteMany({ where: { tenantId: t } });
     }
@@ -88,6 +100,7 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
             data: [
                 { id: TENANT, name: 'ЗК Хоризонт', slug: TENANT },
                 { id: BARE_TENANT, name: 'ЗК Без карта', slug: BARE_TENANT },
+                { id: FARM2, name: 'ЗК Съседна', slug: FARM2 },
             ],
         });
         for (const [id, role] of [
@@ -102,6 +115,36 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
                 data: { tenantId: TENANT, userId: id, role, status: 'ACTIVE' },
             });
         }
+        /*
+         * BARE_TENANT gets an OWNER of its own, and it is not decoration.
+         *
+         * Pass 2 batches every read, so the recipient list is resolved for
+         * ALL departing farms at once and then looked up per farm. With one
+         * farm holding every member, the per-farm lookup and the flattened
+         * union are the SAME SET — measured: replacing
+         * `recipientsByTenant.get(d.tenantId)` with the union left all eleven
+         * cases green. That mutation is a cross-tenant disclosure (farm A's
+         * departure pushed to farm B's owner, carrying a link into farm A),
+         * and nothing could see it until a second farm had somebody in it.
+         *
+         * `equal-once-is-not-always-equal`: one sample of two values agreeing
+         * does not make the comparison vacuous — but here the sample was the
+         * only one there was.
+         */
+        const BARE_OWNER = `u-bare-${TAG}`;
+        const bareEmail = `${BARE_OWNER}@example.test`;
+        await prisma.user.create({
+            data: {
+                id: BARE_OWNER,
+                email: bareEmail,
+                emailHash: hashForLookup(bareEmail),
+                uiLanguage: 'bg',
+            },
+        });
+        await prisma.tenantMembership.create({
+            data: { tenantId: BARE_TENANT, userId: BARE_OWNER, role: 'OWNER', status: 'ACTIVE' },
+        });
+
         const a = await prisma.asset.create({
             // `key` is set deliberately: the push body names the KEY and never
             // `name` (#1999), so an asset with no key cannot distinguish "the
@@ -111,11 +154,59 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
             select: { id: true },
         });
         assetId = a.id;
+        /*
+         * Its OWN asset rather than nulling `key` on the one above: a test
+         * that mutates a shared fixture makes every LATER test depend on
+         * its order, and this file found that out — the two-farm case below
+         * read an empty body for a machine whose key a previous test had
+         * cleared and not put back.
+         */
+        const k = await prisma.asset.create({
+            data: { tenantId: TENANT, name: 'Трактор без ключ', key: null, type: 'VEHICLE' },
+            select: { id: true },
+        });
+        keylessAssetId = k.id;
         const b = await prisma.asset.create({
             data: { tenantId: BARE_TENANT, name: 'Комбайн 1', type: 'VEHICLE' },
             select: { id: true },
         });
         bareAssetId = b.id;
+
+        /*
+         * The second MAPPED farm. Pass 2 resolves recipients for every
+         * departing farm in one query and then looks them up per farm, and
+         * that lookup is only falsifiable when a single run has departures in
+         * TWO farms with members: with one, the per-farm list and the
+         * flattened union are the same set, and replacing one with the other
+         * leaves every case green — measured twice while building this.
+         */
+        const owner2Email = `${OWNER2}@example.test`;
+        await prisma.user.create({
+            data: {
+                id: OWNER2,
+                email: owner2Email,
+                emailHash: hashForLookup(owner2Email),
+                uiLanguage: 'bg',
+            },
+        });
+        await prisma.tenantMembership.create({
+            data: { tenantId: FARM2, userId: OWNER2, role: 'OWNER', status: 'ACTIVE' },
+        });
+        const c = await prisma.asset.create({
+            data: { tenantId: FARM2, name: 'Трактор съседен', key: 'AST-77', type: 'VEHICLE' },
+            select: { id: true },
+        });
+        farm2AssetId = c.id;
+        const loc2 = await prisma.location.create({
+            data: { tenantId: FARM2, name: `Блок втори ${TAG}` },
+            select: { id: true },
+        });
+        await prisma.$executeRawUnsafe(
+            `INSERT INTO "Parcel" ("id","tenantId","locationId","name","areaHa","geometry","createdAt","updatedAt")
+             VALUES ($1,$2,$3,$4,$5, ST_Multi(ST_SetSRID(ST_GeomFromText($6), 4326)), NOW(), NOW())`,
+            randomUUID(), FARM2, loc2.id, `Парцел втори ${TAG}`, 40,
+            `POLYGON((${LON2} ${LAT0}, ${LON2 + SPAN} ${LAT0}, ${LON2 + SPAN} ${LAT0 + SPAN}, ${LON2} ${LAT0 + SPAN}, ${LON2} ${LAT0}))`,
+        );
 
         const loc = await prisma.location.create({
             data: { tenantId: TENANT, name: `Блок ${TAG}` },
@@ -131,9 +222,14 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
 
     afterAll(async () => {
         await clearRuntime();
-        await prisma.$executeRawUnsafe(`DELETE FROM "Parcel" WHERE "tenantId" = $1`, TENANT);
-        await prisma.asset.deleteMany({ where: { tenantId: { in: [TENANT, BARE_TENANT] } } });
-        await prisma.location.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.$executeRawUnsafe(
+            `DELETE FROM "Parcel" WHERE "tenantId" = ANY($1::text[])`,
+            [TENANT, FARM2],
+        );
+        await prisma.asset.deleteMany({
+            where: { tenantId: { in: [TENANT, BARE_TENANT, FARM2] } },
+        });
+        await prisma.location.deleteMany({ where: { tenantId: { in: [TENANT, FARM2] } } });
         /*
          * The MEMBERSHIPS, USERS and TENANTS all stay, and chasing them was a
          * real failure rather than laziness: deleting them raised
@@ -203,8 +299,7 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
     }, 60_000);
 
     it('a machine with NO key pushes its title and an EMPTY body — never the name', async () => {
-        await prisma.asset.update({ where: { id_tenantId: { id: assetId, tenantId: TENANT } }, data: { key: null } });
-        await fix(assetId, TENANT, minutesBefore(2), FAR);
+        await fix(keylessAssetId, TENANT, minutesBefore(2), FAR);
         const { result } = await runMachineAreaAlert({ tenantId: TENANT, now: NOW });
 
         expect(result.details).toMatchObject({ departures: 1 });
@@ -220,7 +315,44 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
          */
         expect(sent[0].body).toBe('');
         expect(String(sent[0].title)).toBe('Машина извън стопанството');
-        expect(String(sent[0].body)).not.toContain('Трактор 3');
+        expect(String(sent[0].body)).not.toContain('без ключ');
+    }, 60_000);
+
+    it('TWO farms departing in one run each get their OWN recipients and link', async () => {
+        /*
+         * Runs platform-wide (no `tenantId`), which is how the schedule runs
+         * it, and is the only shape in which the per-farm recipient lookup can
+         * be wrong: pass 2 resolves recipients for every departing farm in one
+         * query, so a lookup that reached for the flattened union instead
+         * would push farm A's departure to farm B's owner — carrying a link
+         * into farm A's tenant path. That mutation passes every other case in
+         * this file.
+         *
+         * Assertions are per RECIPIENT rather than on the global counters: the
+         * run covers every tenant, and another suite's leftover positions in
+         * the same worker database are legitimately targets too.
+         */
+        await fix(assetId, TENANT, minutesBefore(2), FAR);
+        await fix(farm2AssetId, FARM2, minutesBefore(2), FAR);
+        await runMachineAreaAlert({ now: NOW });
+
+        const mine = pushes().filter((p) =>
+            [OWNER, ADMIN, OWNER2].includes(String(p.recipientUserId)),
+        );
+        const to = (u: string) => mine.filter((p) => p.recipientUserId === u);
+
+        // Farm 1's two recipients hear about farm 1's machine, and only it.
+        for (const u of [OWNER, ADMIN]) {
+            expect(to(u)).toHaveLength(1);
+            expect(to(u)[0].link).toBe(`/t/${TENANT}/machines/${assetId}`);
+            expect(String(to(u)[0].body)).toContain('AST-31');
+            expect(String(to(u)[0].body)).not.toContain('AST-77');
+        }
+        // Farm 2's owner hears about farm 2's, and is NOT on farm 1's.
+        expect(to(OWNER2)).toHaveLength(1);
+        expect(to(OWNER2)[0].link).toBe(`/t/${FARM2}/machines/${farm2AssetId}`);
+        expect(String(to(OWNER2)[0].body)).toContain('AST-77');
+        expect(String(to(OWNER2)[0].body)).not.toContain('AST-31');
     }, 60_000);
 
     it('STAYING outside sends nothing on the next run — one push per EVENT', async () => {

@@ -282,8 +282,15 @@ export async function runMachineAreaAlert(
                 where: { id: { in: assetIds }, tenantId: { in: tenantIds } },
                 select: { id: true, tenantId: true, key: true },
             });
-            // Keyed on BOTH ids: `Asset` is identified by `@@id([id, tenantId])`,
-            // so an id alone is not a key here.
+            /*
+             * Keyed on BOTH ids: `Asset` is identified by `@@id([id, tenantId])`,
+             * so an id alone is not a key here.
+             *
+             * DEFENSIVE AND UNPROVEN, recorded rather than claimed: keying on
+             * `a.id` alone survives this suite, because ids are cuids and no
+             * test can realistically produce the same one in two tenants. It
+             * stays because the schema says the id is half a key, not because
+             * a test fails without it.
             const assets = new Map(assetRows.map((a) => [`${a.tenantId}:${a.id}`, a]));
 
             const tenantRows = await prisma.tenant.findMany({
