@@ -54,7 +54,7 @@
  * IMEI it presents, and the property worth asserting is that an IMEI resolves
  * to its OWN farm and writes nowhere else.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 
@@ -85,7 +85,15 @@ const IMEI_UNKNOWN = '860000000000009';
 
 /** The port the spawned listener binds. Read from its own startup log. */
 let port = 0;
-let child: ChildProcessWithoutNullStreams | null = null;
+/*
+ * `ChildProcess`, not `ChildProcessWithoutNullStreams`. The narrower type is
+ * what `spawn` returns for the DEFAULT stdio; with an explicit
+ * `['ignore', 'pipe', 'pipe']` it returns `ChildProcessByStdio<null, …>`,
+ * whose `stdin` is null — so the cast I first wrote was asserting past a real
+ * difference. `a-cast-erases-the-target`: the cast would have removed exactly
+ * the check that would catch a later stdio change.
+ */
+let child: ChildProcess | null = null;
 let assetA = '';
 let assetB = '';
 let trackerA = '';
@@ -138,12 +146,20 @@ function startListener(): Promise<number> {
                 },
                 stdio: ['ignore', 'pipe', 'pipe'],
             },
-        ) as ChildProcessWithoutNullStreams;
+        );
 
         const onText = (b: Buffer) => {
             log += b.toString();
             if (log.includes('accepting Codec 8 connections')) resolve(chosen);
         };
+        // Both are piped by the `stdio` above, so these are non-null in
+        // practice — asserted rather than asserted-past, so a future stdio
+        // change fails here instead of silently collecting no output and
+        // timing out on a startup line that was never captured.
+        if (!child.stdout || !child.stderr) {
+            reject(new Error('listener spawned without piped stdout/stderr'));
+            return;
+        }
         child.stdout.on('data', onText);
         child.stderr.on('data', onText);
         child.on('exit', (code) =>
@@ -186,8 +202,16 @@ function session(
         };
         const deadline = setTimeout(finish, deadlineMs);
 
-        socket.on('data', (d) => {
-            chunks.push(d);
+        socket.on('data', (d: Buffer | string) => {
+            /*
+             * `net` hands a Buffer unless `setEncoding` was called, which it
+             * is not — but the TYPE is the union, and asserting past it with
+             * `as` would erase the one place a future `setEncoding` would be
+             * caught. The production dispatcher narrows it exactly this way
+             * and says so; a test that cast instead would be the looser of
+             * the two readers of the same stream.
+             */
+            chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d, 'latin1'));
             if (total() >= expectBytes) finish();
         });
         socket.on('end', () => {
