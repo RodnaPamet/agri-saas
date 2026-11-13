@@ -643,7 +643,7 @@
     {
       "path": "/api/social/channels/{channelId}/read",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/social/conversations",

@@ -302,6 +302,44 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'post',
+        path: '/api/social/channels/{channelId}/read',
+        operationId: 'markChannelRead',
+        summary: 'Move the read cursor to now',
+        description:
+            'The caller\'s own act on their own membership row — and the write '
+            + '`channel_membership_update` was created for, which until #2990 was an RLS '
+            + 'policy whose only stated justification was a write nobody had built. '
+            + 'Takes NO body: a client-supplied timestamp would let a phone with a wrong '
+            + 'clock park the cursor in the future and silently suppress every later '
+            + 'post, which is a badge that never comes back rather than one that is '
+            + 'merely wrong. '
+            + 'The cursor moves FORWARD ONLY. Sending an older moment is not an error '
+            + 'and is not a no-op either: the response reports the STORED cursor rather '
+            + 'than echoing what was sent, which is how a stale client learns the real '
+            + 'value instead of being told its own number back. '
+            + 'POST rather than PUT because it is not idempotent in the sense PUT '
+            + 'promises — the value is "now", so calling twice leaves a later cursor '
+            + 'than calling once.',
+        tags: TAGS,
+        extraResponses: codedErrorResponses({
+            404: 'CHANNEL_NOT_JOINED — the caller is not a member, so there is nothing to '
+                + 'mark. Deliberately NOT `CHANNEL_NOT_A_MEMBER`, which is the POSTING '
+                + 'refusal and whose message says "join before posting in it" — the '
+                + 'wrong sentence on a read cursor. Also 404 when the '
+                + '`social.channels` flag is off for this caller, which is '
+                + 'indistinguishable by design.',
+        }),
+        success: {
+            status: 200,
+            description:
+                'The cursor as STORED, which equals the request moment unless an older '
+                + 'one was sent.',
+            schema: z.object({ lastReadAt: z.string() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
         path: '/api/social/channels/{channelId}/posts',
         operationId: 'postToChannel',
         summary: 'Post to a channel',
