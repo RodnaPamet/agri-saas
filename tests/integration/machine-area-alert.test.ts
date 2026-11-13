@@ -103,7 +103,11 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
             });
         }
         const a = await prisma.asset.create({
-            data: { tenantId: TENANT, name: 'Трактор 3', type: 'VEHICLE' },
+            // `key` is set deliberately: the push body names the KEY and never
+            // `name` (#1999), so an asset with no key cannot distinguish "the
+            // body is composed correctly" from "the body is empty". The
+            // key-less case is its own test below.
+            data: { tenantId: TENANT, name: 'Трактор 3', key: 'AST-31', type: 'VEHICLE' },
             select: { id: true },
         });
         assetId = a.id;
@@ -182,8 +186,41 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
         // bare path cost.
         expect(sent[0].link).toBe(`/t/${TENANT}/machines/${assetId}`);
         expect(sent[0].collapseKey).toBe(`machine-area-${assetId}`);
-        // The machine's name reaches the body, in Bulgarian.
-        expect(String(sent[0].body)).toContain('Трактор 3');
+        /*
+         * THE BODY NAMES THE KEY AND NOT THE NAME — #1999, and asserted in
+         * BOTH directions because only the second one is the property.
+         *
+         * An APNs payload is not end-to-end encrypted, so `Трактор 3` in the
+         * body is farm prose Apple reads. A test that only asserted the key
+         * was present would pass just as happily with the name appended, which
+         * is exactly the regression the owner's 2026-11-01 ruling is about.
+         */
+        expect(String(sent[0].body)).toContain('AST-31');
+        expect(String(sent[0].body)).not.toContain('Трактор 3');
+        // In Bulgarian, because both recipients carry `uiLanguage: 'bg'`.
+        expect(String(sent[0].body)).toContain('излезе');
+        expect(String(sent[0].title)).toBe('Машина извън стопанството');
+    }, 60_000);
+
+    it('a machine with NO key pushes its title and an EMPTY body — never the name', async () => {
+        await prisma.asset.update({ where: { id_tenantId: { id: assetId, tenantId: TENANT } }, data: { key: null } });
+        await fix(assetId, TENANT, minutesBefore(2), FAR);
+        const { result } = await runMachineAreaAlert({ tenantId: TENANT, now: NOW });
+
+        expect(result.details).toMatchObject({ departures: 1 });
+        const sent = pushes();
+        expect(sent).not.toHaveLength(0);
+        /*
+         * `Asset.key` is nullable, and the fallback is NOTHING rather than the
+         * name. Falling back to `name` is the whole defect #1999 names and is
+         * exactly how it would come back — the assignment producer carries the
+         * same note at its own empty-string fallback. The title still says a
+         * machine left, and the link opens the machine, so the name is one
+         * authenticated REST read away.
+         */
+        expect(sent[0].body).toBe('');
+        expect(String(sent[0].title)).toBe('Машина извън стопанството');
+        expect(String(sent[0].body)).not.toContain('Трактор 3');
     }, 60_000);
 
     it('STAYING outside sends nothing on the next run — one push per EVENT', async () => {

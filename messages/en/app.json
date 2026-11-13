@@ -7371,7 +7371,7 @@
     "machines": {
         "areaAlert": {
             "title": "Machine outside the farm",
-            "body": "“{machine}” has left the farm’s area."
+            "pushBody": "Machine {key} has left the farm’s area."
         }
     }
 }

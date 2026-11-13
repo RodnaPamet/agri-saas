@@ -98,13 +98,40 @@ export interface MachineAreaAlertPayload {
     now?: string;
 }
 
-/** OWNER and ADMIN of a farm, by ACTIVE membership. */
-async function alertRecipients(tenantId: string): Promise<string[]> {
+/**
+ * OWNER and ADMIN of EVERY named farm, by ACTIVE membership, in ONE query.
+ *
+ * Batched rather than per-farm because the caller runs over every farm with a
+ * recent fix: a per-farm version is a Prisma read inside a loop, which
+ * `query-shape-guardrails` Layer D1 refuses, and it refuses it for a reason
+ * this job makes concrete — the loop's length is the number of FARMS with
+ * tracked machines, so the query count grows with adoption rather than with
+ * the thing being alerted about.
+ *
+ * Returns a Map so a farm with no OWNER or ADMIN is an ABSENT key rather than
+ * an empty array that reads as "asked and found nobody". The caller treats
+ * both the same, but the distinction is what a future reading would need.
+ */
+async function alertRecipients(tenantIds: string[]): Promise<Map<string, string[]>> {
+    if (tenantIds.length === 0) return new Map();
     const rows = await prisma.tenantMembership.findMany({
-        where: { tenantId, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
-        select: { userId: true },
+        where: {
+            tenantId: { in: tenantIds },
+            status: 'ACTIVE',
+            role: { in: ['OWNER', 'ADMIN'] },
+        },
+        select: { tenantId: true, userId: true },
     });
-    return [...new Set(rows.map((r) => r.userId))];
+    const byTenant = new Map<string, string[]>();
+    for (const r of rows) {
+        const seen = byTenant.get(r.tenantId);
+        if (seen) {
+            if (!seen.includes(r.userId)) seen.push(r.userId);
+        } else {
+            byTenant.set(r.tenantId, [r.userId]);
+        }
+    }
+    return byTenant;
 }
 
 export async function runMachineAreaAlert(
@@ -137,7 +164,26 @@ export async function runMachineAreaAlert(
         let pushed = 0;
         let skippedNoArea = 0;
         let skippedStale = 0;
-        const recipientCache = new Map<string, string[]>();
+
+        /*
+         * PASS 0 — every stored verdict, in one read.
+         *
+         * `prior` is needed for each target, and reading it per target is a
+         * Prisma read inside a loop: Layer D1 refuses it, and the loop is as
+         * long as the number of tracked machines on the platform, so the
+         * query count would grow with adoption rather than with departures.
+         * An absent key means NO prior verdict, which is a real state this
+         * job distinguishes from `outside: false` — the first verdict for a
+         * machine already away counts as a departure.
+         */
+        const priorRows = await prisma.machineAreaState.findMany({
+            where: { assetId: { in: targets.map((t) => t.assetId) } },
+            select: { assetId: true, outside: true, evaluatedAt: true },
+        });
+        const priors = new Map(priorRows.map((r) => [r.assetId, r]));
+
+        /** Departures found in pass 1, enqueued in pass 2. */
+        const departed: Array<{ tenantId: string; assetId: string }> = [];
 
         for (const t of targets) {
             try {
@@ -161,10 +207,7 @@ export async function runMachineAreaAlert(
                 }
                 evaluated += 1;
 
-                const prior = await prisma.machineAreaState.findUnique({
-                    where: { assetId: t.assetId },
-                    select: { outside: true, evaluatedAt: true },
-                });
+                const prior = priors.get(t.assetId) ?? null;
 
                 // Idempotence: the same fix cannot produce a second alert, so a
                 // job that wakes twice before the tracker reports again is a
@@ -173,7 +216,7 @@ export async function runMachineAreaAlert(
                     continue;
                 }
 
-                const departed = v.outside && prior?.outside !== true;
+                const isDeparture = v.outside && prior?.outside !== true;
                 const changed = prior === null || prior.outside !== v.outside;
 
                 await prisma.machineAreaState.upsert({
@@ -184,17 +227,17 @@ export async function runMachineAreaAlert(
                         outside: v.outside,
                         changedAt: now,
                         evaluatedAt: v.evaluated_at,
-                        ...(departed ? { alertedAt: now } : {}),
+                        ...(isDeparture ? { alertedAt: now } : {}),
                     },
                     update: {
                         outside: v.outside,
                         evaluatedAt: v.evaluated_at,
                         ...(changed ? { changedAt: now } : {}),
-                        ...(departed ? { alertedAt: now } : {}),
+                        ...(isDeparture ? { alertedAt: now } : {}),
                     },
                 });
 
-                if (!departed) continue;
+                if (!isDeparture) continue;
                 departures += 1;
 
                 /*
@@ -205,53 +248,7 @@ export async function runMachineAreaAlert(
                  * staying silent — hides exactly the case somebody fitted the
                  * tracker to find.
                  */
-                const asset = await prisma.asset.findUnique({
-                    where: { id_tenantId: { id: t.assetId, tenantId: t.tenantId } },
-                    select: { name: true },
-                });
-                const tenant = await prisma.tenant.findUnique({
-                    where: { id: t.tenantId },
-                    select: { slug: true },
-                });
-                if (!asset || !tenant) continue;
-
-                let recipients = recipientCache.get(t.tenantId);
-                if (!recipients) {
-                    recipients = await alertRecipients(t.tenantId);
-                    recipientCache.set(t.tenantId, recipients);
-                }
-
-                for (const userId of recipients) {
-                    const user = await prisma.user.findUnique({
-                        where: { id: userId },
-                        select: { uiLanguage: true },
-                    });
-                    const locale = resolveRecipientLocale(user?.uiLanguage ?? null);
-                    await enqueue('push-send', {
-                        tenantId: t.tenantId,
-                        recipientUserId: userId,
-                        // AWAITED. `translateFor` is async, and without this
-                        // the body ships as the string "[object Promise]" —
-                        // which is what the first version of this did, and
-                        // what the suite's body assertion caught. Nothing
-                        // else would have: the push enqueues fine, the job
-                        // reports success, and the farmer gets a
-                        // notification whose text is a type name.
-                        title: await translateFor(locale, 'machines.areaAlert.title', {}),
-                        body: await translateFor(locale, 'machines.areaAlert.body', {
-                            machine: asset.name,
-                        }),
-                        // Root-relative and tenant-prefixed, per the rule
-                        // `task.ts` states: the server owns the shape, so
-                        // correcting it never needs a client release. #2932 is
-                        // what a bare path cost.
-                        link: `/t/${tenant.slug}/machines/${t.assetId}`,
-                        // One key per machine, so a second departure replaces
-                        // the first rather than stacking.
-                        collapseKey: `machine-area-${t.assetId}`,
-                    });
-                    pushed += 1;
-                }
+                departed.push(t);
             } catch (err) {
                 logger.warn('machine-area-alert.asset_failed', {
                     component: 'machine-area-alert',
@@ -260,6 +257,122 @@ export async function runMachineAreaAlert(
                     assetId: t.assetId,
                     error: err instanceof Error ? err.message : String(err),
                 });
+            }
+        }
+
+        /*
+         * PASS 2 — the pushes, with every read batched.
+         *
+         * Split from the verdict loop so the four reads a push needs (asset,
+         * farm slug, recipients, each recipient's language) are four queries
+         * for the whole run instead of four per departing machine. The state
+         * write in pass 1 has already happened, so a failure here does NOT
+         * re-alert on the next run: that is the cost of the split and it is
+         * the right direction — a missed alert is recoverable by the operator
+         * opening the map, a duplicate "your machine left" is the kind of
+         * alert people turn off.
+         *
+         * Nothing runs at all when nothing departed, which is the common case.
+         */
+        if (departed.length > 0) {
+            const assetIds = [...new Set(departed.map((d) => d.assetId))];
+            const tenantIds = [...new Set(departed.map((d) => d.tenantId))];
+
+            const assetRows = await prisma.asset.findMany({
+                where: { id: { in: assetIds }, tenantId: { in: tenantIds } },
+                select: { id: true, tenantId: true, key: true },
+            });
+            // Keyed on BOTH ids: `Asset` is identified by `@@id([id, tenantId])`,
+            // so an id alone is not a key here.
+            const assets = new Map(assetRows.map((a) => [`${a.tenantId}:${a.id}`, a]));
+
+            const tenantRows = await prisma.tenant.findMany({
+                where: { id: { in: tenantIds } },
+                select: { id: true, slug: true },
+            });
+            const slugs = new Map(tenantRows.map((t) => [t.id, t.slug]));
+
+            const recipientsByTenant = await alertRecipients(tenantIds);
+            const everyRecipient = [...new Set([...recipientsByTenant.values()].flat())];
+            const userRows = await prisma.user.findMany({
+                where: { id: { in: everyRecipient } },
+                select: { id: true, uiLanguage: true },
+            });
+            const locales = new Map(
+                userRows.map((u) => [u.id, resolveRecipientLocale(u.uiLanguage ?? null)]),
+            );
+
+            /*
+             * One composition per LOCALE rather than per recipient: the body
+             * names the machine's key, so two OWNERs reading the same language
+             * get byte-identical text and `translateFor` need not be asked
+             * twice. Keyed by `locale:assetId` because the key is interpolated.
+             */
+            const composed = new Map<string, { title: string; pushBody: string }>();
+
+            for (const d of departed) {
+                const asset = assets.get(`${d.tenantId}:${d.assetId}`);
+                const slug = slugs.get(d.tenantId);
+                if (!asset || !slug) continue;
+                const recipients = recipientsByTenant.get(d.tenantId) ?? [];
+
+                for (const userId of recipients) {
+                    const locale = locales.get(userId) ?? resolveRecipientLocale(null);
+                    const cacheKey = `${locale}:${d.assetId}`;
+                    let copy = composed.get(cacheKey);
+                    if (!copy) {
+                        /*
+                         * THE PUSH BODY NAMES THE KEY, NEVER `Asset.name`
+                         * (#1999, owner ruling 2026-11-01: keep the KEY, drop
+                         * the free text). An APNs payload is not end-to-end
+                         * encrypted, so Apple reads it, and a machine's name
+                         * is farmer-written prose — «Джон Диър на Петър» is a
+                         * person's name on a tractor. `Asset.key` is a
+                         * generated per-tenant short key (`AST-7`) and
+                         * discloses nothing.
+                         *
+                         * `key` is NULLABLE, and a missing one means the push
+                         * carries its TITLE ONLY — never the name as a
+                         * fallback, which is the whole defect #1999 is about
+                         * and exactly how it would come back. The link still
+                         * opens the machine, so the name is one REST read away
+                         * on a screen that is already authenticated.
+                         *
+                         * AWAITED. `translateFor` is async, and without this
+                         * the body ships as the literal "[object Promise]" —
+                         * which is what the first version of this did, and
+                         * what the suite's body assertion caught. Nothing else
+                         * would have: the push enqueues fine, the job reports
+                         * success, and the farmer gets a notification whose
+                         * text is a type name.
+                         */
+                        copy = {
+                            title: await translateFor(locale, 'machines.areaAlert.title', {}),
+                            pushBody: asset.key
+                                ? await translateFor(locale, 'machines.areaAlert.pushBody', {
+                                      key: asset.key,
+                                  })
+                                : '',
+                        };
+                        composed.set(cacheKey, copy);
+                    }
+
+                    await enqueue('push-send', {
+                        tenantId: d.tenantId,
+                        recipientUserId: userId,
+                        title: copy.title,
+                        body: copy.pushBody,
+                        // Root-relative and tenant-prefixed, per the rule
+                        // `task.ts` states: the server owns the shape, so
+                        // correcting it never needs a client release. #2932 is
+                        // what a bare path cost.
+                        link: `/t/${slug}/machines/${d.assetId}`,
+                        // One key per machine, so a second departure replaces
+                        // the first rather than stacking.
+                        collapseKey: `machine-area-${d.assetId}`,
+                    });
+                    pushed += 1;
+                }
             }
         }
 
