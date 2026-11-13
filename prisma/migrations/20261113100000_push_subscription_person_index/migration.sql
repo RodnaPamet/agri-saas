@@ -1,0 +1,37 @@
+-- ═══════════════════════════════════════════════════════════════════
+--  #2987 — an index for the PERSON-scoped push read.
+-- ═══════════════════════════════════════════════════════════════════
+--
+--  `PushSubscription` carried `@@unique([tenantId, userId, endpoint])` and
+--  `@@index([tenantId, userId, platform])`. Both LEAD with `tenantId`, which
+--  served every reader this table had: the push registration route and the two
+--  tenant-scoped transports all know the farm.
+--
+--  The person-scoped push does not. A channel mention and a direct message
+--  carry no `tenantId` at all, so `sendApnsToPerson`, `sendWebPushToPerson`
+--  and `resolvePersonDelivery` filter on `userId` across every farm — and
+--  nothing served that. A sequential scan on a table that grows with every
+--  device of every user, on the response path of a channel post.
+--
+--  Found by `schema-index-coverage`'s Layer C-completeness rather than by me:
+--  the new `findMany` on a tenant-scoped model forced a triage, and the triage
+--  is what surfaced that the leading column was wrong for the new reader.
+--
+--  `(userId, platform)` and not `(userId)`:
+--
+--    * both transports filter on BOTH — each one's `platform` clause is
+--      load-bearing, because this table holds Web Push rows with no device
+--      token and APNs rows with no endpoint, so dropping it would fetch rows
+--      that fail the other transport's own shape check;
+--    * `userId` LEADS, so the resolver's `userId`-only read is served by the
+--      same B-tree.
+--
+--  One index for three reads rather than two for the same columns.
+--
+--  ADDITIVE and safe to roll back past: an index the previous image does not
+--  know about costs it nothing, so this needs no `deploy/rollback/` inverse —
+--  that convention is for a migration that would break the previous image
+--  (a rename, a drop, a rewrite of persisted data).
+
+CREATE INDEX "PushSubscription_userId_platform_idx"
+    ON "PushSubscription"("userId", "platform");

@@ -30,8 +30,33 @@ import * as path from 'path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT as ROOT } from '../helpers/collect-files';
 
-/** The two transports a producer must not reach for directly. */
-const TRANSPORTS = ['sendWebPushToUser', 'sendApnsToUser'] as const;
+/**
+ * The transports a producer must not reach for directly.
+ *
+ * FOUR since #2987: the `…ToPerson` siblings are the tenantless path for a
+ * channel mention, a channel reply and a direct message, and they are here for
+ * the same reason their namesakes are — calling one WORKS. It sends, nothing
+ * fails, and the preference the person set is simply not consulted.
+ *
+ * Naming only the `…ToUser` pair would have graded the three producers that
+ * already existed and said nothing about the three new ones, which is this
+ * file's own argument ("it has to fail on the NEXT one") with the population
+ * one name short. That omission is easy to make and was made twice more in the
+ * same feature — `notification-publish-after-commit` named
+ * `publishNotificationEvent` and not `publishChannelActivityEvent`, and
+ * `push-payload-carries-no-free-text` matched `enqueue('push-send')` and not
+ * its person sibling.
+ *
+ * No substring hazard between the two spellings — `…ToPerson` is not a suffix
+ * of `…ToUser` or vice versa — unlike `publishLibraryBook` inside
+ * `unpublishLibraryBook`, which needed a lookbehind in `seed-deployment`.
+ */
+const TRANSPORTS = [
+    'sendWebPushToUser',
+    'sendApnsToUser',
+    'sendWebPushToPerson',
+    'sendApnsToPerson',
+] as const;
 
 /**
  * Modules allowed to call a transport, each for a stated reason.
@@ -48,12 +73,36 @@ const MAY_CALL_TRANSPORTS = [
     'src/app-layer/jobs/push-summary.ts',
     'src/lib/notifications/web-push.ts',
     'src/lib/notifications/apns.ts',
+    // #2987 — the tenantless immediate path. It is on this list for
+    // `push-send`'s reason and it consults `resolvePersonDelivery` first,
+    // which `MUST_RESOLVE` asserts below: being allowed to call a transport
+    // is permission to send, never permission to skip the decision.
+    'src/app-layer/jobs/person-push-send.ts',
 ] as const;
 
-/** The modules that must consult the resolver, i.e. the producers. */
+/**
+ * The modules that must consult the resolver, i.e. the producers.
+ *
+ * `person-push-send` consults `resolvePersonDelivery`, which is a READ wrapped
+ * around the same pure `resolveDelivery` — a sibling module rather than two
+ * more lines in it, because that file is pure on purpose ("no database, no
+ * clock, no Redis") and a tenantless caller needs two questions answered that
+ * only a read can answer: which of a person's per-farm preferences applies,
+ * and what devices they hold across all of them.
+ *
+ * So the needle for this file is the PERSON resolver, not the bare one. A
+ * single list of allowed needles would let `person-push-send` satisfy the rule
+ * by naming `resolveDelivery` directly and skipping the preference union —
+ * which is the #1994 defect in the one shape this feature could produce.
+ */
 const MUST_RESOLVE = [
     'src/app-layer/jobs/push-send.ts',
     'src/app-layer/jobs/push-summary.ts',
+] as const;
+
+/** Producers that must consult the PERSON resolver instead. */
+const MUST_RESOLVE_PERSON = [
+    'src/app-layer/jobs/person-push-send.ts',
 ] as const;
 
 const rel = (abs: string): string => path.relative(ROOT, abs).split(path.sep).join('/');
@@ -121,7 +170,8 @@ describe('one resolveDelivery', () => {
         console.log(
             `[one-resolve-delivery] swept ${files.length} files; ` +
                 `${MAY_CALL_TRANSPORTS.length} may call a transport, ` +
-                `${MUST_RESOLVE.length} must resolve first`,
+                `${MUST_RESOLVE.length} must resolve first, `
+                + `${MUST_RESOLVE_PERSON.length} must resolve PERSON-scoped`,
         );
         expect(files.length).toBeGreaterThan(50);
     });
@@ -129,7 +179,7 @@ describe('one resolveDelivery', () => {
     it('the exemption list is not stale — every entry exists', () => {
         // An exemption naming a deleted file is an exemption that covers
         // nothing while looking like it covers something.
-        for (const f of [...MAY_CALL_TRANSPORTS, ...MUST_RESOLVE]) {
+        for (const f of [...MAY_CALL_TRANSPORTS, ...MUST_RESOLVE, ...MUST_RESOLVE_PERSON]) {
             expect(fs.existsSync(path.join(ROOT, f))).toBe(true);
         }
     });
@@ -158,6 +208,31 @@ describe('one resolveDelivery', () => {
             if (!resolvesIn(fs.readFileSync(path.join(ROOT, f), 'utf8'))) missing.push(f);
         }
         expect(missing).toEqual([]);
+    });
+
+    it('every PERSON-scoped producer consults resolvePersonDelivery', () => {
+        // The same half for the tenantless path, and it needs its OWN needle.
+        // `resolvePersonDelivery` is what unions a person's per-farm
+        // preferences and counts their devices across farms; a producer that
+        // called the bare `resolveDelivery` instead would be deciding with a
+        // preference and a device count it had to invent, which is #1994's
+        // defect in the one shape this feature can produce.
+        const missing: string[] = [];
+        for (const f of MUST_RESOLVE_PERSON) {
+            const code = sourceOf(path.join(ROOT, f));
+            if (!code.includes('resolvePersonDelivery(')) missing.push(f);
+        }
+        expect(missing).toEqual([]);
+    });
+
+    it('resolvePersonDelivery is defined exactly once', () => {
+        const defs: string[] = [];
+        for (const abs of files) {
+            if (/export async function resolvePersonDelivery\b/.test(sourceOf(abs))) {
+                defs.push(rel(abs));
+            }
+        }
+        expect(defs).toEqual(['src/app-layer/notifications/person-delivery.ts']);
     });
 
     it('resolveDelivery is defined exactly once', () => {

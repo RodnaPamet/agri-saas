@@ -267,7 +267,30 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // tenant slug collapsed out for cardinality — there is no tenant axis
         // in the data, and an endpoint a client cannot satisfy is broken for
         // every tenant calling it.
-        'zero-success-route-check'];
+        'zero-success-route-check',
+        // #2987 — `person-push-send` is the tenantless push, for a channel
+        // mention, a channel reply or a direct message. Person-scoped for the
+        // STRONGEST reason on this list: the thing being notified about has no
+        // farm at all. P9.1's five channel tables and P8.1's four DM tables
+        // carry no `tenantId`, deliberately, because a crop channel spans
+        // every farm growing that crop and two people in a conversation may
+        // share none.
+        //
+        // A `tenantId` on this payload would not narrow a sweep — it would be
+        // FABRICATED. The nearest thing available is one of the recipient's
+        // memberships, and picking one is P5.4a's invent-a-tenant mistake
+        // ("resolving one would invent a tenant for a person-scoped
+        // obligation"). It would also pick WRONG: `PushSubscription` is one
+        // row per (tenant, user, endpoint) and the registration route is
+        // tenant-scoped, so a person in three farms may hold a row under only
+        // the farm they happened to be in when the device registered.
+        //
+        // What stands in for tenant scoping is that the subject is always the
+        // RECIPIENT USER and every query under `person-push-devices` filters
+        // `userId` to that one person. A function here that took a tenant from
+        // the payload — or resolved one from the recipient — is the defect
+        // this exemption could hide, and is the thing to check in review.
+        'person-push-send'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -392,7 +415,15 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // they are keyed by collapses the tenant slug (`/api/t/:tenantSlug/`)
         // for cardinality, so a tenantId on this payload would name an axis
         // the data does not have.
-        'ZeroSuccessRouteCheckPayload'];
+        'ZeroSuccessRouteCheckPayload',
+        // #2987 — see `person-push-send` in EXEMPT_JOBS above. The payload
+        // carries a recipient and composed copy and nothing else; a tenantId
+        // on it would have to be invented, because a channel post and a direct
+        // message have no farm. A SEPARATE interface rather than
+        // `PushSendPayload` with an optional tenant, precisely so this audit
+        // reads an ABSENCE that was decided rather than a field somebody
+        // forgot.
+        'PersonPushSendPayload'];
 
     test('every non-exempt payload interface has tenantId field', () => {
         // Extract all payload interfaces
