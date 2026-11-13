@@ -119,7 +119,20 @@ describe('the privacy notice discloses machinery position tracking (#3024)', () 
             const text = privacyOf(loc).collectPositions ?? '';
             expect(text.length).toBeGreaterThan(120);
             expect(/machine|МАШИНАТА|машин/i.test(text)).toBe(true);
-            expect(/\byou\b|Вас|сте били/i.test(text)).toBe(true);
+            /*
+             * THE PERSON'S LOCATION, not merely the word "you" — measured,
+             * because the looser version survived its own mutation. Replacing
+             * "the record belongs to the MACHINE rather than to you — but if
+             * you were on it, it shows where you were" with bland fleet-
+             * management prose left `/\byou\b/` matching the NEXT sentence
+             * ("the farm is required to tell you which of its machines are
+             * tracked"), so the assertion passed over a paragraph that no
+             * longer made the disclosure.
+             *
+             * The claim is specifically that the machine's record reveals where
+             * the PERSON was. Anchored on that, the same mutation reddens.
+             */
+            expect(/where you were|къде сте били/i.test(text)).toBe(true);
         }
     });
 
