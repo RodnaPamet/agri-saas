@@ -427,6 +427,11 @@ function classCodes(src: string): string[] {
  * no-stale-entries test below removes the entry's cover the moment the code
  * stops being emitted, so this list cannot outlive what it excuses.
  */
+// #3026 removed `ASSET_NOT_FOUND`: the attach operation's 404 now names it, so
+// the ratchet required it to leave this list in the same diff. That assertion —
+// "a baselined code that HAS been documented is removed from the baseline" — is
+// what stops the list becoming a place codes go to be forgotten once they are
+// described.
 const UNDOCUMENTED_BASELINE: readonly string[] = [
     // #2019's three Drive codes LEFT this list when the export routes landed,
     // which is what the entry above them predicted: "the PR that adds the route
@@ -579,7 +584,7 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'FILE_NOT_FOUND',
     'ARTICLE_NOT_FOUND',
     'ASSET_EVIDENCE_NOT_FOUND',
-    'ASSET_NOT_FOUND',
+
     'MAINTENANCE_RECORD_NOT_FOUND',
     'TASK_EVIDENCE_NOT_FOUND',
     'TASK_LINK_NOT_FOUND',
