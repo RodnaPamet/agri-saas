@@ -28,7 +28,7 @@
  * asserts an absence asserts in the same breath that something IS there, or
  * that the row exists when read privileged.
  */
-import { PrismaClient } from '@prisma/client';
+import { BookUseCase, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -282,20 +282,41 @@ describeFn('#2980 — the library reads, and a book nobody published', () => {
             expect(() => readBookFile(p)).toThrow(/useCases/);
         });
 
-        it('ACCEPTS `MANAGEMENT`, the second member — the control for the refusal above', () => {
-            // Without this, the refusal is satisfied by a schema that admits
-            // NOTHING but `STRATEGY` for ever, and the #2980 second-book
-            // change would have been invisible to this suite. Measured on that
-            // change: a peer hit the zod refusal with the DB value already
-            // added, because this FILE schema is the fourth place the
-            // vocabulary lives and the easiest to forget.
-            const p = fileFor({ ...bookFixture(), useCases: ['MANAGEMENT'] });
-            expect(readBookFile(p).useCases).toEqual(['MANAGEMENT']);
+        it('ACCEPTS EVERY member of the DATABASE enum — derived, not listed', () => {
+            // The control for the refusal above, and it is DERIVED because
+            // listing the members is what failed twice.
+            //
+            // Without a control, the refusal is satisfied by a schema admitting
+            // NOTHING but `STRATEGY` for ever. The first version of this test
+            // named `MANAGEMENT` explicitly, which covered the second book and
+            // went blind again for the third: `FARMING` arrived, the database
+            // enum and the spec had it, and `BookFileSchema` did not — so a
+            // staged Bailey file whose sha256 had been checked on both sides of
+            // the copy was refused as though it were corrupt.
+            //
+            // Ranging over `Object.values(BookUseCase)` closes it structurally:
+            // the FILE schema is the fourth place this vocabulary lives and the
+            // easiest to forget, and now forgetting it fails here rather than
+            // on the VM with a confusing error.
+            const members = Object.values(BookUseCase);
+            // A floor, so a generated client that resolved to an empty object
+            // cannot make this pass over nothing.
+            expect(members.length).toBeGreaterThanOrEqual(3);
+
+            for (const code of members) {
+                const p = fileFor({ ...bookFixture(), useCases: [code] });
+                expect(readBookFile(p).useCases).toEqual([code]);
+            }
         });
 
-        it('accepts BOTH codes on one book', () => {
-            const p = fileFor({ ...bookFixture(), useCases: ['STRATEGY', 'MANAGEMENT'] });
-            expect(readBookFile(p).useCases).toEqual(['STRATEGY', 'MANAGEMENT']);
+        it('accepts SEVERAL codes on one book', () => {
+            // Also derived: a book may legitimately carry two, and pinning a
+            // pair by name is the same staleness one level down.
+            const members = Object.values(BookUseCase);
+            const pair = members.slice(0, 2);
+            expect(pair).toHaveLength(2);
+            const p = fileFor({ ...bookFixture(), useCases: pair });
+            expect(readBookFile(p).useCases).toEqual(pair);
         });
 
         it('accepts the valid fixture — the positive control', () => {
