@@ -1,0 +1,46 @@
+-- ═══════════════════════════════════════════════════════════════════
+--  #2980 — «Земеделие» joins `BookUseCase`.
+-- ═══════════════════════════════════════════════════════════════════
+--
+--  Owner decision 2026-11-13: publish a third book, Liberty Hyde Bailey's
+--  *The Holy Earth* (1915, public domain), whose `useCases` is `["FARMING"]`.
+--  The sibling migration one directory up cashed the enum docblock's
+--  PROVISIONAL note for the second book; this is the third, and the note still
+--  reads the same way.
+--
+--  ── The owner was asked, and that is recorded here on purpose ──
+--
+--  The decision reached this session through the agrent-ios session rather
+--  than from the owner directly. `ALTER TYPE ... DROP VALUE` does not exist in
+--  PostgreSQL, so the value cannot be withdrawn once shipped — only stopped
+--  being used. A relayed ruling is not what you spend a one-way door on, so it
+--  was put to the owner with the cheaper alternative stated (file the book
+--  under MANAGEMENT: no migration now, a data migration later to correct the
+--  label). The owner confirmed FARMING.
+--
+--  ── `IF NOT EXISTS`, for the reason the MANAGEMENT migration gives ──
+--
+--  This repo's existing form, and re-runnable: `prisma migrate deploy` runs
+--  from `scripts/entrypoint.sh` on every container start, so a half-applied
+--  migration row from an interrupted deploy converges instead of failing the
+--  next start on a duplicate value.
+--
+--  ── No backfill, no default ──
+--
+--  `Book.useCases` is an ARRAY with `DEFAULT ARRAY[]::"BookUseCase"[]`. The two
+--  books in production keep `{STRATEGY}` and `{MANAGEMENT}`; nothing gains
+--  this value until the Bailey file is seeded.
+--
+--  ── ADDITIVE, so no rollback inverse is owed ──
+--
+--  An enum value the previous image does not know about costs it nothing: it
+--  reads and writes the two existing values exactly as before.
+--
+--  READING THE RESULT BY HAND: the production database is `agrent_production`,
+--  not `agrent`, and after this deploys the check is
+--      SELECT unnest(enum_range(NULL::"BookUseCase"));
+--  which must return THREE values. Merging is not enough — the migration runs
+--  from the entrypoint when the new container starts, so `/api/readyz` naming
+--  the new sha is the gate, not the merge.
+
+ALTER TYPE "BookUseCase" ADD VALUE IF NOT EXISTS 'FARMING';

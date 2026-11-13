@@ -121,6 +121,25 @@ enum BookUseCase {
   /// readable error rather than a 22P02. Adding the value here and not there
   /// produces a refusal that looks like a bad staged file.
   MANAGEMENT
+  /// «Земеделие» — Bailey, *The Holy Earth* (#2980, owner 2026-11-13).
+  ///
+  /// The THIRD member, and the first one that is about the farm itself rather
+  /// than about how to run one. agrent-ios shelves it as «Земеделие»,
+  /// case-blind, so the phone needed no change for it.
+  ///
+  /// The owner was asked before this landed rather than after. The decision
+  /// reached this session through the iOS session, and an enum value is
+  /// effectively one-way — PostgreSQL has no `ALTER TYPE ... DROP VALUE` — so
+  /// a relayed ruling was not enough to spend it on. The alternative offered
+  /// was filing a farming book under MANAGEMENT, which costs nothing now and
+  /// a data migration later.
+  ///
+  /// The four places above apply unchanged, and the zod one bit again: the
+  /// staged Bailey file was refused by `BookFileSchema` before this landed,
+  /// which surfaces as a Zod parse failure on a file whose sha256 had just
+  /// been checked on both sides of the copy — i.e. as a corrupt file rather
+  /// than a missing enum value.
+  FARMING
 }
 
 /// One book in «Вдъхновение». A GLOBAL CATALOGUE row — see the header.

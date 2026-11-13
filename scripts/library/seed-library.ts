@@ -100,7 +100,7 @@ export const BookFileSchema = z
         // zod refusal naming `useCases`, which reads as a bad staged file
         // rather than a missing code — measured on #2980's second book, where
         // a peer would have hit exactly that.
-        useCases: z.array(z.enum(['STRATEGY', 'MANAGEMENT'])).min(1),
+        useCases: z.array(z.enum(['STRATEGY', 'MANAGEMENT', 'FARMING'])).min(1),
         chapters: z.array(ChapterSchema).min(1),
     })
     .strict()
