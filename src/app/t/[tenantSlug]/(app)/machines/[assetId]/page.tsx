@@ -42,7 +42,12 @@ export default function MachineRedirect() {
     useEffect(() => {
         router.replace(tenantHref(`/assets/${assetId}`));
     }, [router, tenantHref, assetId]);
-    return (
-        <div className="p-12 text-center text-content-subtle animate-pulse">{t('redirecting')}</div>
-    );
+    /*
+     * No `animate-pulse`, unlike the `/issues/[issueId]` redirect this is
+     * otherwise copied from. `no-raw-skeleton-pulse` holds raw pulses in
+     * `src/app` at 14, and spending one on a frame that is visible for a few
+     * milliseconds would take budget from a real loading surface. The line is a
+     * courtesy for a slow replace, not a skeleton.
+     */
+    return <div className="p-12 text-center text-content-subtle">{t('redirecting')}</div>;
 }
