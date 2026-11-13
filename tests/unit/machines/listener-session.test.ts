@@ -14,43 +14,16 @@ import { ImeiRateCap } from '@/lib/machines/imei-rate-cap';
 import { crc16Ibm, CODEC_8 } from '@/lib/machines/codec8';
 import type { TrackerIdentity, Action } from '@/lib/machines/listener-session';
 
-const T0 = 1_794_312_000_000;
-const IMEI = '356938035643809';
+/*
+ * The frame builders live in `tests/helpers/codec8-frames.ts` rather than here,
+ * because the process-level suite speaks the SAME bytes to a real socket. Two
+ * builders would be two definitions of a valid frame, and every negative in
+ * both files means "the listener refused a good frame" — which stops being
+ * true the moment they drift.
+ */
+import { T0, IMEI, imeiPacket, record, frame } from '../../helpers/codec8-frames';
+
 const IDENTITY: TrackerIdentity = { trackerId: 'mt-1', assetId: 'a-1', tenantId: 't-1' };
-
-function imeiPacket(imei = IMEI): Buffer {
-    const body = Buffer.from(imei, 'latin1');
-    const head = Buffer.alloc(2);
-    head.writeUInt16BE(body.length, 0);
-    return Buffer.concat([head, body]);
-}
-
-function record(ms = T0): Buffer {
-    const head = Buffer.alloc(24);
-    head.writeBigUInt64BE(BigInt(ms), 0);
-    head.writeUInt8(1, 8);
-    head.writeInt32BE(233219000, 9);
-    head.writeInt32BE(426977000, 13);
-    head.writeInt16BE(550, 17);
-    head.writeUInt16BE(180, 19);
-    head.writeUInt8(11, 21);
-    head.writeUInt16BE(12, 22);
-    return Buffer.concat([head, Buffer.from([239, 1, 1, 239, 1, 0, 0, 0])]);
-}
-
-function frame(records: Buffer[] = [record()]): Buffer {
-    const data = Buffer.concat([
-        Buffer.from([CODEC_8, records.length]),
-        ...records,
-        Buffer.from([records.length]),
-    ]);
-    const head = Buffer.alloc(8);
-    head.writeUInt32BE(0, 0);
-    head.writeUInt32BE(data.length, 4);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc16Ibm(data), 0);
-    return Buffer.concat([head, data, crc]);
-}
 
 interface Harness {
     session: ListenerSession;
@@ -189,6 +162,107 @@ describe('§2 the allowlist — an unknown IMEI stores NOTHING', () => {
         const reasons = out.flatMap((a) => (a.type === 'close' ? [a.reason] : []));
         expect(reasons).toHaveLength(1);
         expect(reasons[0]).not.toContain(IMEI);
+    });
+});
+
+describe('§2a overlapping feeds — one connection, one handshake (#2948 stage 6)', () => {
+    /**
+     * `feed` is async and mutates `buf` and `identity` AFTER the lookup
+     * resolves, so two calls that overlap both see an unconsumed IMEI and no
+     * identity. This is not hypothetical: `scripts/machine-listener.ts`
+     * dispatches every `data` event in its own async IIFE — it has to, because
+     * an `on('data')` handler cannot be awaited — so a device whose handshake
+     * and first frame arrive close together produces exactly this overlap.
+     *
+     * Measured against the real process before the fix: TWO allowlist queries
+     * and TWO `ACCEPT` bytes. The second byte is the damaging one — a device
+     * reads `01 00 00 00` as a four-byte ack of 16,777,216 records and
+     * discards field work it has not delivered.
+     *
+     * A slow lookup is what makes the window observable rather than
+     * timing-dependent: without it the two calls do not overlap and the test
+     * passes whether or not the serialisation exists.
+     */
+    function slowHarness(delayMs: number): { session: ListenerSession; lookups: string[] } {
+        const lookups: string[] = [];
+        const session = new ListenerSession({
+            lookup: async (imei) => {
+                lookups.push(imei);
+                await new Promise((r) => setTimeout(r, delayMs));
+                return IDENTITY;
+            },
+        });
+        return { session, lookups };
+    }
+
+    it('queries the allowlist ONCE and sends ONE accept, even fed concurrently', async () => {
+        const h = slowHarness(25);
+        const [a, b] = await Promise.all([
+            h.session.feed(imeiPacket(), T0),
+            h.session.feed(frame([record(T0)]), T0),
+        ]);
+        const all = [...a, ...b];
+
+        expect(h.lookups).toEqual([IMEI]);
+        expect(all.filter((x) => x.type === 'reply' && x.bytes[0] === ACCEPT[0])).toHaveLength(1);
+    });
+
+    it('stores the frame exactly once, and acks it exactly once', async () => {
+        const h = slowHarness(25);
+        const [a, b] = await Promise.all([
+            h.session.feed(imeiPacket(), T0),
+            h.session.feed(frame([record(T0), record(T0 + 1_000)]), T0),
+        ]);
+        const all = [...a, ...b];
+
+        const stored = stores(all);
+        expect(stored).toHaveLength(1);
+        expect(stored[0].positions).toHaveLength(2);
+        // The ack is the 4-byte count; exactly one, carrying 2.
+        const acks = replies(all).filter((r) => r.length === 4);
+        expect(acks).toHaveLength(1);
+        expect(acks[0].readUInt32BE(0)).toBe(2);
+    });
+
+    it('a REFUSED handshake is refused once, however the bytes are split', async () => {
+        const lookups: string[] = [];
+        const session = new ListenerSession({
+            lookup: async (imei) => {
+                lookups.push(imei);
+                await new Promise((r) => setTimeout(r, 25));
+                return null;
+            },
+        });
+        const [a, b] = await Promise.all([
+            session.feed(imeiPacket(), T0),
+            session.feed(frame([record(T0)]), T0),
+        ]);
+        const all = [...a, ...b];
+
+        expect(lookups).toEqual([IMEI]);
+        expect(all.filter((x) => x.type === 'reply' && x.bytes[0] === REFUSE[0])).toHaveLength(1);
+        expect(stores(all)).toHaveLength(0);
+        // One close, not two — a second `close` action makes the dispatcher
+        // call `socket.end()` twice and logs the refusal twice per probe.
+        expect(all.filter((x) => x.type === 'close')).toHaveLength(1);
+    });
+
+    it('the ORDER survives serialisation — the accept precedes the ack', async () => {
+        const h = slowHarness(25);
+        const [a, b] = await Promise.all([
+            h.session.feed(imeiPacket(), T0),
+            h.session.feed(frame([record(T0)]), T0),
+        ]);
+        /*
+         * Each call resolves with the actions for ITS OWN chunk, so the
+         * handshake's ACCEPT is in the first result and the ack in the second.
+         * A lock that returned the whole queue's actions to whichever call
+         * finished first would put the ack on the wire before the accept, and
+         * the device would read the ack as its handshake answer.
+         */
+        expect(replies(a).map((r) => r.length)).toEqual([1]);
+        expect(replies(a)[0][0]).toBe(ACCEPT[0]);
+        expect(replies(b).map((r) => r.length)).toEqual([4]);
     });
 });
 
