@@ -4011,6 +4011,38 @@ with its own mapping would hand back content the moderation path had taken
 down. Same class as #1664, where two spellings of one rule made the divergence
 a disclosure instead of a wrong sentence.
 
+**Since #2989 that mapper also decides ATTRIBUTION, and it is the same
+collapse.** A post shows «Иван Петров, ЗК Победа» (owner, 2026-11-12), and
+`author` is NULL on a hidden post — the body is already empty, and naming
+somebody above content nobody can read attributes an accusation to them. The
+name comes from a **published** `PersonProfile.displayName`, never from
+`User.name`, which is encrypted BECAUSE it is PII and is published nowhere;
+the fallback is the farm alone. The farm comes from `ChannelPost.authorTenantId`
+**recorded at write time**, because the only read-time rule available is
+"oldest membership, then id" and under it a person who leaves a farm has every
+past post silently relabelled.
+
+Two things about that which are easy to get wrong. The farm is **supplied by
+the client** as `tenantSlug` and checked against an ACTIVE membership — #2989
+assumed a slug in the path, and there is none, because channel routes are
+person-scoped; an absent slug records NULL rather than guessing. And
+`PersonProfile` has RLS **disabled** (measured, `relrowsecurity` false), so the
+`published: true` clause in `resolveAuthors` is the ONLY thing withholding an
+unpublished name — the inverted posture P5.6a names, which is why the test
+asserts an unpublished profile is not rendered rather than only that a
+published one is. #3007 proposes the policy that would make the database the
+backstop again.
+
+**The entry point is part of the feature, not a nicety.** Production held
+**zero** `PersonProfile` rows because nothing ever wrote one, so without a way
+in every post shows the farm alone for ever — #2844 a third time. `PUT
+/api/social/profile` is that way in, prompted from the composer, and **setting
+a name PUBLISHES it**: `published` defaults false, so a writer that set the
+name and left the flag alone would change nothing visible. Giving the name is
+the opt-in, and the copy says so. It gates on `social.channels` rather than a
+flag of its own, so the entry point cannot be dark while the feature needing it
+is live.
+
 **A write with no reader is the shape this phase shipped three times (#2961).**
 `replyToPost` wrote replies that no read path returned — the feed filters
 `parentPostId: null`, correctly, and nothing else looked — so a reply went into

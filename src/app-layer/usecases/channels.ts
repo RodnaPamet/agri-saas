@@ -262,6 +262,112 @@ export interface ChannelPostView {
      * hid one reply would tell every reader that something had been removed.
      */
     readonly replyCount: number;
+    /**
+     * Who wrote it — name and farm (#2989), or null on a hidden post.
+     *
+     * The owner decided (2026-11-12) that a channel post shows name + farm,
+     * e.g. «Иван Петров, ЗК Победа». Both halves are independently absent:
+     *
+     * - `displayName` is null until the person has set one AND published it.
+     *   `PersonProfile.published` defaults false, so this is null for
+     *   everybody on day one — zero rows existed in production when this was
+     *   built — and the fallback is the FARM ALONE rather than an id or
+     *   «Анонимен». An id is unusable and a placeholder invites the reader to
+     *   think the person is hiding.
+     * - `farmName` is null when the post recorded no farm. See
+     *   `ChannelPost.authorTenantId` for the three different truths that
+     *   produce it; all three render as the name alone.
+     *
+     * Both null is a legitimate state and renders as neither — which is why
+     * `authorUserId` stays on this view, so a client has something stable to
+     * key a reply or a report on without having a name to show.
+     *
+     * NULL ON A HIDDEN POST — owner ruling, relayed 2026-11-12: "no author
+     * line on a removed post, its time only". The body is already emptied,
+     * and naming a person above content nobody can read attributes an
+     * accusation to them; the timestamp stays, so the gap is still placed in
+     * time. It cannot leak WHICH removal applied, because the three collapse
+     * into `deleted` before this point.
+     */
+    readonly author: {
+        readonly displayName: string | null;
+        readonly farmName: string | null;
+    } | null;
+}
+
+/**
+ * Names and farms for one PAGE of posts, resolved in two queries — #2989.
+ *
+ * TWO QUERIES FOR A PAGE, NEVER ONE PER POST. A Prisma read inside a loop is
+ * what the D1 guardrail refuses, and P9.3d's auto-hide had to be rewritten
+ * into exactly this shape after its first draft tripped it. So: collect the
+ * distinct ids from the rows already in hand, one `findMany` each, two maps.
+ *
+ * ## `published: true` is the control, and it is the ONLY control
+ *
+ * `PersonProfile` has row-level security DISABLED — measured on the migrated
+ * database, not inferred: `relrowsecurity` is false, and the P6 migration
+ * that created it says "no policy, because nothing reaches it under
+ * app_user". This function is the reader that comment says did not exist, so
+ * nothing in the database will withhold an UNPUBLISHED display name if this
+ * `where` stops asking for one. That is the inverted posture P5.6a names,
+ * where RLS is usually the backstop and here the clause is the whole fence —
+ * which is why the test asserts an unpublished profile is NOT rendered rather
+ * than only that a published one is. #3007 proposes the policy that would
+ * make the database the backstop again.
+ *
+ * ## Why these two tables can be read on the caller's own client
+ *
+ * Both are outside RLS (`Tenant` likewise measured false), so this runs on
+ * the same `tx` the feed is already using, inside the same transaction, with
+ * no bypass and no second pool connection — #1191's P0.8 deadlock is reached
+ * by taking a second connection while holding one, which is exactly what a
+ * privileged read here would do.
+ *
+ * `Tenant.name` is plaintext and NOT NULL, so a farm that resolves always has
+ * a name. `displayName` is nullable even on a published row, so a published
+ * profile with no name set still renders the farm alone.
+ */
+interface AuthorBook {
+    readonly names: ReadonlyMap<string, string>;
+    readonly farms: ReadonlyMap<string, string>;
+}
+
+async function resolveAuthors(
+    tx: Pick<typeof prisma, 'personProfile' | 'tenant'>,
+    rows: readonly { authorUserId: string; authorTenantId: string | null }[],
+): Promise<AuthorBook> {
+    const userIds = [...new Set(rows.map((r) => r.authorUserId))];
+    const tenantIds = [
+        ...new Set(rows.map((r) => r.authorTenantId).filter((id): id is string => id != null)),
+    ];
+
+    const [profiles, tenants] = await Promise.all([
+        userIds.length
+            ? tx.personProfile.findMany({
+                  where: { userId: { in: userIds }, published: true },
+                  select: { userId: true, displayName: true },
+              })
+            : Promise.resolve([]),
+        tenantIds.length
+            ? tx.tenant.findMany({
+                  where: { id: { in: tenantIds } },
+                  select: { id: true, name: true },
+              })
+            : Promise.resolve([]),
+    ]);
+
+    const names = new Map<string, string>();
+    for (const p of profiles) {
+        // A published row with a null or blank name is the same as no name:
+        // rendering an empty string would print «, ЗК Победа» with a comma
+        // and nothing before it.
+        const name = p.displayName?.trim();
+        if (name) names.set(p.userId, name);
+    }
+    const farms = new Map<string, string>();
+    for (const t of tenants) farms.set(t.id, t.name);
+    return { names, farms };
 }
 
 /**
@@ -278,18 +384,22 @@ export interface ChannelPostView {
  * That is the #1664 class — two spellings of one rule, where the divergence
  * is a disclosure rather than a wrong sentence.
  */
-function toPostView(r: {
-    id: string;
-    authorUserId: string;
-    body: string;
-    kind: unknown;
-    createdAt: Date;
-    deletedAt: Date | null;
-    removedByModerationAt: Date | null;
-    autoHiddenAt: Date | null;
-    resolvedAt: Date | null;
-    _count: { replies: number };
-}): ChannelPostView {
+function toPostView(
+    r: {
+        id: string;
+        authorUserId: string;
+        authorTenantId: string | null;
+        body: string;
+        kind: unknown;
+        createdAt: Date;
+        deletedAt: Date | null;
+        removedByModerationAt: Date | null;
+        autoHiddenAt: Date | null;
+        resolvedAt: Date | null;
+        _count: { replies: number };
+    },
+    authors: AuthorBook,
+): ChannelPostView {
     const hidden =
         r.deletedAt != null
         || r.removedByModerationAt != null
@@ -303,6 +413,17 @@ function toPostView(r: {
         deleted: hidden,
         resolvedAt: r.resolvedAt,
         replyCount: r._count.replies,
+        // Suppressed on a hidden post — see the field's docblock. Written as
+        // part of the SAME collapse as the empty body, so the two cannot
+        // drift: a reader of this function sees one rule for one state.
+        author: hidden
+            ? null
+            : {
+                  displayName: authors.names.get(r.authorUserId) ?? null,
+                  farmName: r.authorTenantId
+                      ? authors.farms.get(r.authorTenantId) ?? null
+                      : null,
+              },
     };
 }
 
@@ -346,7 +467,8 @@ export async function readChannelFeed(
             // make `hasMore` wrong, which P8.5 shipped once and corrected.
             take: limit + 1,
             select: {
-                id: true, authorUserId: true, body: true, kind: true,
+                id: true, authorUserId: true, authorTenantId: true,
+                body: true, kind: true,
                 createdAt: true, deletedAt: true,
                 removedByModerationAt: true, autoHiddenAt: true,
                 resolvedAt: true,
@@ -357,7 +479,12 @@ export async function readChannelFeed(
             },
         });
         const hasMore = rows.length > limit;
-        const posts = rows.slice(0, limit).map((r) => toPostView(r));
+        const page = rows.slice(0, limit);
+        // Resolved for the PAGE, after the slice — the extra `limit + 1` row
+        // is a hasMore probe that is never rendered, so looking its author up
+        // would be one wasted id per page.
+        const authors = await resolveAuthors(tx, page);
+        const posts = page.map((r) => toPostView(r, authors));
         return { posts, hasMore };
     });
 }
@@ -492,7 +619,8 @@ export async function readPostReplies(
             // which P8.5 shipped once and corrected.
             take: limit + 1,
             select: {
-                id: true, authorUserId: true, body: true, kind: true,
+                id: true, authorUserId: true, authorTenantId: true,
+                body: true, kind: true,
                 createdAt: true, deletedAt: true,
                 removedByModerationAt: true, autoHiddenAt: true,
                 resolvedAt: true,
@@ -503,7 +631,9 @@ export async function readPostReplies(
             },
         });
         const hasMore = rows.length > limit;
-        return { replies: rows.slice(0, limit).map((r) => toPostView(r)), hasMore };
+        const page = rows.slice(0, limit);
+        const authors = await resolveAuthors(tx, page);
+        return { replies: page.map((r) => toPostView(r, authors)), hasMore };
     });
 }
 
@@ -520,6 +650,13 @@ export async function postToChannel(
          * platform's own data.
          */
         kind?: 'POST' | 'QUESTION';
+        /**
+         * The farm to post AS, by slug — #2989. Optional; absent records
+         * null, which renders as the name alone. See
+         * `resolveAuthorTenantId` for why it is supplied rather than read
+         * off the path, and why a missing one is never guessed.
+         */
+        tenantSlug?: string;
     },
 ): Promise<{ postId: string; createdAt: Date; mentionsRecorded: number }> {
     const body = cleanBody(input.body);
@@ -528,6 +665,7 @@ export async function postToChannel(
     const recordable = await resolveMentionable(
         channelId, ctx.userId, input.mentionUserIds ?? [],
     );
+    const authorTenantId = await resolveAuthorTenantId(ctx.userId, input.tenantSlug);
 
     return runInUserContext(ctx, async (tx) => {
         const channel = await tx.channel.findUnique({
@@ -581,6 +719,11 @@ export async function postToChannel(
             data: {
                 channelId, authorUserId: ctx.userId, body,
                 ...(input.kind ? { kind: input.kind } : {}),
+                // Spread rather than written as `?? null`, so an absent farm
+                // leaves the column at its own default instead of putting a
+                // second definition of it in the app layer — the same reason
+                // `kind` is spread directly above.
+                ...(authorTenantId ? { authorTenantId } : {}),
             },
             select: { id: true, createdAt: true },
         });
@@ -643,6 +786,8 @@ export async function replyToPost(
         body: string;
         alsoToChannel?: boolean;
         mentionUserIds?: readonly string[];
+        /** The farm to reply AS, by slug — #2989. See `postToChannel`. */
+        tenantSlug?: string;
     },
 ): Promise<{
     postId: string;
@@ -668,6 +813,10 @@ export async function replyToPost(
     const recordable = await resolveMentionable(
         parentChannel.channelId, ctx.userId, input.mentionUserIds ?? [],
     );
+    // Resolved once for BOTH rows below: a reply and its «Също изпрати в
+    // канала» copy are the same person posting as the same farm, and two
+    // calls would be two chances to disagree.
+    const authorTenantId = await resolveAuthorTenantId(ctx.userId, input.tenantSlug);
 
     return runInUserContext(ctx, async (tx) => {
         const parent = await tx.channelPost.findUnique({
@@ -734,6 +883,7 @@ export async function replyToPost(
                 authorUserId: ctx.userId,
                 body,
                 parentPostId: parent.id,
+                ...(authorTenantId ? { authorTenantId } : {}),
             },
             select: { id: true, createdAt: true },
         });
@@ -755,7 +905,10 @@ export async function replyToPost(
         let channelCopyPostId: string | null = null;
         if (input.alsoToChannel) {
             const copy = await tx.channelPost.create({
-                data: { channelId: channel.id, authorUserId: ctx.userId, body },
+                data: {
+                    channelId: channel.id, authorUserId: ctx.userId, body,
+                    ...(authorTenantId ? { authorTenantId } : {}),
+                },
                 select: { id: true },
             });
             channelCopyPostId = copy.id;
@@ -875,6 +1028,63 @@ export async function setQuestionResolved(
  * and the insert — is harmless for a mention and is the price of not holding
  * two connections.
  */
+/**
+ * Which farm a post is being made AS — #2989.
+ *
+ * ## The farm is SUPPLIED, and #2989's premise about where from was wrong
+ *
+ * That issue says to take it from "the tenant slug already present in the
+ * posting request's own path". There is no such slug: channel routes are
+ * `/api/social/channels/...`, person-scoped, because the DM and channel
+ * policies key on `app.user_id` and a tenant route would read zero rows with
+ * no error (#1664). The PAGE is at `/t/{slug}/channels`, the API is not.
+ *
+ * So the client sends it and this validates it. It is not forgeable: an
+ * ACTIVE membership of that farm is required, which is the same bar posting
+ * anywhere else in the product clears.
+ *
+ * ## A missing slug is recorded as NULL, never guessed
+ *
+ * The read-time rule this column exists to avoid is "oldest membership, then
+ * id", and applying it at write time would be the same guess merely frozen —
+ * a person in three farms would have one picked for them and the post would
+ * claim a farm they did not choose. Null renders as the name alone, which is
+ * honest, and it is what a post by somebody in no farm shows anyway.
+ *
+ * ## A slug the caller is not in is REFUSED, not downgraded to null
+ *
+ * The client is asserting "I am posting as this farm" and the assertion is
+ * false; recording null would hide a client bug and publish a post under the
+ * wrong attribution. One code covers "no such farm" and "not your farm"
+ * deliberately — two would make this an enumeration oracle for farm slugs.
+ *
+ * On the GLOBAL client and outside any transaction, for `resolveMentionable`'s
+ * reason one level over: `TenantMembership` is RLS-keyed on `app.tenant_id`,
+ * which `runInUserContext` does not set, so this read inside the posting
+ * transaction would match nothing and every post would silently record null.
+ */
+async function resolveAuthorTenantId(
+    userId: string,
+    tenantSlug: string | undefined,
+): Promise<string | null> {
+    if (!tenantSlug) return null;
+    const membership = await prisma.tenantMembership.findFirst({
+        where: {
+            userId,
+            status: 'ACTIVE',
+            tenant: { slug: tenantSlug, deletedAt: null },
+        },
+        select: { tenantId: true },
+    });
+    if (!membership) {
+        throw codedForbidden(
+            'NOT_A_MEMBER_OF_THAT_FARM',
+            'You are not a member of that farm.',
+        );
+    }
+    return membership.tenantId;
+}
+
 async function resolveMentionable(
     channelId: string,
     authorUserId: string,

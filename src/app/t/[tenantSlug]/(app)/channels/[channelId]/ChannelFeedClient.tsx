@@ -69,15 +69,49 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Heading } from '@/components/ui/typography';
 import { apiGet, apiPost } from '@/lib/api-client';
 
+import { DisplayNamePrompt } from './DisplayNamePrompt';
+
 interface PostWire {
     id: string;
     authorUserId: string;
+    /**
+     * Name and farm (#2989), or null on a hidden post — the server suppresses
+     * attribution rather than naming somebody above content nobody can read.
+     * Both halves are independently absent: no published display name, no
+     * recorded farm, or neither.
+     */
+    author: { displayName: string | null; farmName: string | null } | null;
     body: string;
     kind: string;
     createdAt: string;
     deleted: boolean;
     resolvedAt: string | null;
     replyCount: number;
+}
+
+/**
+ * «Иван Петров, ЗК Победа», or whichever half exists — #2989.
+ *
+ * Four states, and three of them are normal rather than degraded. The comma
+ * is the only formatting decision here and it belongs to the catalogue
+ * (`channels.authorNameAndFarm`), because a locale that joins the two
+ * differently must not need a code change.
+ *
+ * `null` for the both-absent case rather than an empty string: the timeline
+ * treats `null` as "no label" and renders nothing, while an empty string is a
+ * deliberate withholding it also honours. Either works; null is the honest
+ * one for "we have nothing to show".
+ */
+function makeAuthorLabel(
+    joinNameAndFarm: (vars: { name: string; farm: string }) => string,
+): (author: PostWire['author']) => string | null {
+    return (author) => {
+        if (!author) return null;
+        const name = author.displayName?.trim() || null;
+        const farm = author.farmName?.trim() || null;
+        if (name && farm) return joinNameAndFarm({ name, farm });
+        return name ?? farm;
+    };
 }
 
 interface FeedWire {
@@ -105,6 +139,12 @@ export function ChannelFeedClient({
     myUserId: string;
 }) {
     const t = useTranslations('channels');
+    // Bound once: `t` is stable for a locale, and rebuilding this inside the
+    // mapping would make a new function per render for no reason.
+    const authorLabel = React.useMemo(
+        () => makeAuthorLabel((vars) => t('authorNameAndFarm', vars)),
+        [t],
+    );
     const locale = useLocale();
 
     // LITERAL person-scoped paths — channel policies key on `app.user_id`.
@@ -218,8 +258,12 @@ export function ChannelFeedClient({
                 // deletion timestamp: the three removal columns are collapsed
                 // so a reader cannot tell a moderator's act from the author's.
                 deleted: p.deleted,
+                // PER MESSAGE, not per sender — one person can have posted
+                // here as two farms, and the farm was recorded at write time
+                // precisely so the older post keeps the older farm.
+                senderLabel: authorLabel(p.author),
             }));
-    }, [data, older, sameChannel]);
+    }, [data, older, sameChannel, authorLabel]);
 
     const canPost = channel?.joined === true && channel?.banned !== true;
 
@@ -227,7 +271,11 @@ export function ChannelFeedClient({
         async (body: string) => {
             setPosting(true);
             try {
-                await apiPost(`${feedPath}/posts`, { body });
+                // The farm this is posted AS. The API is person-scoped and
+                // carries no slug of its own, so the page's slug is what says
+                // which farm the author line should name; the server refuses
+                // it unless the caller is an ACTIVE member.
+                await apiPost(`${feedPath}/posts`, { body, tenantSlug });
                 await mutate();
                 return true;
             } catch {
@@ -243,7 +291,7 @@ export function ChannelFeedClient({
                 setPosting(false);
             }
         },
-        [feedPath, mutate],
+        [feedPath, mutate, tenantSlug],
     );
 
     const name = channel
@@ -295,7 +343,17 @@ export function ChannelFeedClient({
                         />
                     )}
                     {canPost ? (
-                        <div className="shrink-0 pt-default">
+                        <div className="shrink-0 space-y-default pt-default">
+                            {/*
+                              * Above the composer, and only while there is
+                              * nothing to show in the author line — see the
+                              * component. It renders null once a name exists,
+                              * so it cannot become furniture.
+                              */}
+                            <DisplayNamePrompt
+                                userId={myUserId}
+                                onSaved={() => void mutate()}
+                            />
                             <MessageComposer
                                 onSend={send}
                                 pending={posting}

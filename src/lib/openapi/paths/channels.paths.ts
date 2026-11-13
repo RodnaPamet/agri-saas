@@ -61,6 +61,34 @@ const ChannelListItemSchema = z
     })
     .openapi('ChannelListItem');
 
+const PersonProfileSchema = z
+    .object({
+        displayName: z.string().nullable().openapi({
+            description:
+                'Null when there is nothing a channel would show. Reported as absent '
+                + 'unless it would actually RENDER — a caller deciding whether to prompt '
+                + 'must not be told a name exists while the feed shows the farm alone.',
+        }),
+        published: z.boolean().openapi({
+            description:
+                'Whether the profile is published. Reported alongside the name so a '
+                + 'client can tell "never set one" from "set one and withdrew it", which '
+                + '`displayName` alone collapses.',
+        }),
+    })
+    .openapi('PersonProfile');
+
+const SetDisplayNameSchema = z
+    .object({
+        displayName: z.string().nullable().openapi({
+            description:
+                'The new name, or null to clear it. Nullable rather than optional so '
+                + '"remove my name" is expressible: an absent key and an explicit null '
+                + 'would otherwise be indistinguishable.',
+        }),
+    })
+    .openapi('SetDisplayName');
+
 const ChannelPostSchema = z
     .object({
         id: z.string(),
@@ -88,6 +116,27 @@ const ChannelPostSchema = z
                 + 'question was indistinguishable from an open one through every read '
                 + 'path and no client could render it.',
         }),
+        author: z
+            .object({
+                displayName: z.string().nullable(),
+                farmName: z.string().nullable(),
+            })
+            .nullable()
+            .openapi({
+                description:
+                    'Who wrote it — «Иван Петров, ЗК Победа» (#2989). NULL on a deleted '
+                    + 'post: the body is already empty, and naming somebody above content '
+                    + 'nobody can read attributes an accusation to them. Both halves are '
+                    + 'independently null and all four states are normal. `displayName` is '
+                    + 'null until the person has set one AND published it, which is why '
+                    + '`PUT /api/social/profile` exists; the fallback is the FARM ALONE, '
+                    + 'never an id or a placeholder. `farmName` is null when the post '
+                    + 'recorded no farm — a post predating the column, one whose author '
+                    + 'sent no `tenantSlug`, or an author in no farm. Clients render '
+                    + 'whichever half exists and show nothing when neither does; '
+                    + '`authorUserId` stays beside this so a reply or a report has a '
+                    + 'stable key with no name to show.',
+            }),
         replyCount: z.number().int().openapi({
             description:
                 'How many replies hang off this post, so a feed can show that a thread '
@@ -101,6 +150,57 @@ const ChannelPostSchema = z
     .openapi('ChannelPost');
 
 export function registerChannelPaths(registry: OpenAPIRegistry): void {
+    op(registry, {
+        method: 'get',
+        path: '/api/social/profile',
+        operationId: 'readOwnPersonProfile',
+        summary: 'The caller\'s own display name',
+        description:
+            'The SIGNAL a client prompts from (#2989): `displayName` is null when there '
+            + 'is nothing a channel would show — no row, no name, or a name that is not '
+            + 'published — so a composer can ask once before the first post. Those three '
+            + 'states answer identically on purpose, because they mean the same thing to '
+            + 'a reader of a channel. Gated on `social.channels` rather than a flag of '
+            + 'its own, so the entry point cannot be dark while the feature that needs '
+            + 'it is live.',
+        tags: TAGS,
+        success: {
+            status: 200,
+            description: 'The caller\'s own profile, or the empty state.',
+            schema: PersonProfileSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/social/profile',
+        operationId: 'setOwnDisplayName',
+        summary: 'Set or clear the caller\'s display name',
+        description:
+            'Setting a name PUBLISHES it, and that is the design rather than a shortcut: '
+            + '`PersonProfile.published` defaults false, so a writer that set the name and '
+            + 'left the flag alone would change nothing visible and the person would never '
+            + 'learn why. The act of giving a name is therefore the opt-in, and the copy '
+            + 'at the call site says so — «Името Ви ще се вижда от други стопанства». '
+            + 'Sending `null` or a blank string clears the name AND unpublishes, which is '
+            + 'the honest inverse: somebody removing their name is asking not to be named. '
+            + 'The name is sanitised and then capped at 60 characters, in that order, so '
+            + 'markup cannot pass the cap and be stripped to something shorter afterwards.',
+        tags: TAGS,
+        // `body` is the Zod schema itself — the helper owns the media type and
+        // the description. Passing `{ description, schema }` typechecks only
+        // on a WARM tsc; the cold run named it.
+        body: SetDisplayNameSchema,
+        success: {
+            status: 200,
+            description: 'The profile as stored.',
+            schema: PersonProfileSchema,
+        },
+        extraResponses: codedErrorResponses({
+            400: 'DISPLAY_NAME_TOO_LONG — longer than 60 characters once markup is stripped; or INVALID_BODY.',
+        }),
+    });
+
     op(registry, {
         method: 'get',
         path: '/api/social/channels',
@@ -230,10 +330,27 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
                     + 'than refused, so a stale picker does not fail the whole post. '
                     + '`mentionsRecorded` says how many were kept.',
             }),
+            kind: z.enum(['POST', 'QUESTION']).optional().openapi({
+                description:
+                    '«Публикация» or «Въпрос». `CARD` is a THIRD member of the enum and '
+                    + 'is deliberately not accepted: a card is machine-written by the '
+                    + 'platform queue, so taking one from a caller would let any member '
+                    + 'forge a post that renders as the platform\'s own data.',
+            }),
+            tenantSlug: z.string().optional().openapi({
+                description:
+                    'The farm to post AS (#2989), recorded at write time so a person who '
+                    + 'later leaves that farm does not have their past posts relabelled. '
+                    + 'SUPPLIED rather than read from the path, because these routes are '
+                    + 'person-scoped and carry no slug — the PAGE is at `/t/{slug}/channels`, '
+                    + 'the API is not. An ACTIVE membership is required; an ABSENT value '
+                    + 'records no farm and the author line shows the name alone, which is '
+                    + 'preferred to guessing from the caller\'s memberships.',
+            }),
         }),
         extraResponses: codedErrorResponses({
             400: 'CHANNEL_POST_REQUIRED (empty AFTER sanitising — a body of only markup sanitises to nothing), CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, or CHANNEL_SLOW_MODE with `waitSeconds` in the details.',
-            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.',
+            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED; or NOT_A_MEMBER_OF_THAT_FARM when `tenantSlug` names a farm the caller is not an ACTIVE member of (#2989). That last one covers "no such farm" as well, deliberately — two codes would make this an enumeration oracle for farm slugs.',
             404: 'CHANNEL_NOT_FOUND, or the flag is off.',
         }),
         success: {
@@ -324,10 +441,17 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             body: z.string().min(1).max(8000),
             alsoToChannel: z.boolean().optional(),
             mentionUserIds: z.array(z.string()).max(5).optional(),
+            tenantSlug: z.string().optional().openapi({
+                description:
+                    'The farm to reply AS (#2989) — see `postToChannel`. Recorded at '
+                    + 'write time on BOTH rows a reply can produce, the reply and its '
+                    + '«Също изпрати в канала» copy, resolved once so the two cannot '
+                    + 'disagree about which farm sent them.',
+            }),
         }),
         extraResponses: codedErrorResponses({
             400: 'CHANNEL_POST_REQUIRED, CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, CHANNEL_SLOW_MODE, CHANNEL_TOO_MANY_MENTIONS, CHANNEL_THREAD_TOO_DEEP (replying to a reply) or CHANNEL_POST_DELETED (the parent was retracted, so a reply would render beneath «изтрито» with no context).',
-            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.',
+            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED; or NOT_A_MEMBER_OF_THAT_FARM for a `tenantSlug` the caller is not an ACTIVE member of (#2989).',
             404: 'CHANNEL_POST_NOT_FOUND, or the flag is off.',
         }),
         success: {

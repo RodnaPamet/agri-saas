@@ -42,6 +42,7 @@ export const POST = withApiErrorHandling(
             // how a field added to the schema reaches the usecase as
             // `undefined` with a green typecheck.
             kind: parsed.data.kind,
+            tenantSlug: parsed.data.tenantSlug,
         });
         return jsonResponse(post, { status: 201 });
     },

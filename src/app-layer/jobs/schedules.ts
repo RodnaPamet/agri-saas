@@ -232,6 +232,31 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * `notice-triage-alert`'s reason: that would make the rate the
          * reporter's to choose, and `PUBLIC_NOTICE_LIMIT` is 10/min per IP.
          */
+        /*
+         * #2948 stage 4 — derive yesterday's worked parcels, once a night.
+         *
+         * 02:20 UTC is 04:20 Europe/Sofia in winter and 05:20 in summer, which
+         * is after the last night shift and before the morning one: a machine
+         * still working at 02:00 would otherwise have its day cut, and the
+         * `date` default is YESTERDAY precisely so the day being derived is
+         * closed.
+         *
+         * Nightly rather than hourly because nothing waits on it — the read
+         * says «изчисляват се през нощта» until it has run, which is a state
+         * the phone renders deliberately. An hourly run would re-derive a day
+         * that cannot change and spend PostGIS scans on it.
+         *
+         * It is scheduled in UTC because cron here has no timezone, so the
+         * Sofia hour moves twice a year by an hour. That is acceptable for a
+         * nightly derivation and is NOT acceptable for the day boundary, which
+         * is computed in Europe/Sofia inside the job.
+         */
+        name: 'worked-parcel-derivation',
+        pattern: '20 2 * * *',  // 02:20 UTC, nightly
+        description: "Derive yesterday's worked parcels from raw positions (#2948, #2984)",
+        defaultPayload: {},
+    },
+    {
         name: 'notice-score',
         pattern: '*/15 * * * *',  // every 15 minutes
         description: 'Shadow-score DSA notices for abuse likelihood; read by nothing (#1596)',

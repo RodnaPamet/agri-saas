@@ -965,6 +965,17 @@ executorRegistry.register('usage-event-retention', async (payload) => {
     return result;
 });
 
+// ── worked-parcel-derivation ─────────────────────────────────────────
+
+executorRegistry.register('worked-parcel-derivation', async (payload) => {
+    const { runWorkedParcelDerivation } = await import('./worked-parcel-derivation');
+    const { result } = await runWorkedParcelDerivation({
+        tenantId: payload.tenantId,
+        date: payload.date,
+    });
+    return result;
+});
+
 // ── notice-score ─────────────────────────────────────────────────────
 
 executorRegistry.register('notice-score', async (payload) => {

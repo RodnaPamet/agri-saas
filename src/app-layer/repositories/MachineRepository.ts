@@ -348,4 +348,29 @@ export class MachineRepository {
             take: WORKED_PARCEL_CAP,
         });
     }
+
+    /**
+     * The run marker for one (machine, day), or null — #2984.
+     *
+     * Separate from `listWorkedParcels` on purpose: the marker is the answer
+     * to "did the derivation process this day", and the rows are the answer to
+     * "what did it find". Folding the timestamp back out of the rows is what
+     * made "it ran and found nothing" inexpressible in the first place.
+     */
+    static async findWorkedDayMarker(
+        db: PrismaTx,
+        ctx: RequestContext,
+        assetId: string,
+        date: Date,
+    ) {
+        return db.machineWorkedDay.findFirst({
+            where: { tenantId: ctx.tenantId, assetId, date },
+            select: {
+                derivedAt: true,
+                derivedFrom: true,
+                positionsConsidered: true,
+                parcelsMatched: true,
+            },
+        });
+    }
 }

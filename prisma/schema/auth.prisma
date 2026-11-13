@@ -224,6 +224,7 @@ model Tenant {
   machineTrackers       MachineTracker[]
   machinePositions      MachinePosition[]
   workedParcels         WorkedParcel[]
+  machineWorkedDays     MachineWorkedDay[]
   taskAssets            TaskAsset[]
   machineGeofenceStates MachineGeofenceState[]
   machineTelematicsLinks MachineTelematicsLink[]
