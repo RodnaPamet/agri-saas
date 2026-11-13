@@ -444,6 +444,13 @@ export interface NoticeScorePayload {
     limit?: number;
 }
 
+export interface MachineAreaAlertPayload {
+    /** Limit to one tenant. Default: every tenant with a recent fix. */
+    tenantId?: string;
+    /** Override "now" — tests only. */
+    now?: string;
+}
+
 export interface WorkedParcelDerivationPayload {
     /** Limit to one tenant. Default: every tenant that reported that day. */
     tenantId?: string;
@@ -992,6 +999,7 @@ export interface JobPayloadMap {
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
     'worked-parcel-derivation': WorkedParcelDerivationPayload;
+    'machine-area-alert': MachineAreaAlertPayload;
     'channel-auto-hide': ChannelAutoHidePayload;
     'memory-extract': MemoryExtractPayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
@@ -1451,6 +1459,23 @@ export const JOB_DEFAULTS: Record<JobName, {
         // delay. Values copied from the neighbours rather than chosen.
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'machine-area-alert': {
+        /*
+         * `attempts: 1`. A retry is NOT harmless here, which is the
+         * difference from the derivation next door: the push is enqueued
+         * inside the per-asset loop, so an attempt that failed AFTER
+         * enqueueing some pushes would, on retry, re-evaluate the machines it
+         * already alerted. The stored verdict absorbs most of that — a second
+         * run sees `outside` already true and sends nothing — but the window
+         * between the enqueue and the state write is real, and a duplicate
+         * "your machine left" is the kind of alert people turn off.
+         */
+        attempts: 1,
+        // INERT at one attempt — copied from the neighbours, not chosen.
+        backoff: { type: 'exponential', delay: 30000 },
+        removeOnComplete: 100,
         removeOnFail: 500,
     },
     'worked-parcel-derivation': {

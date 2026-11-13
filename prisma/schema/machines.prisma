@@ -312,6 +312,63 @@ model MachineWorkedDay {
   @@index([tenantId, assetId, date])
 }
 
+/// Whether a machine was last seen INSIDE or OUTSIDE its farm's area —
+/// #2948 stage 5.
+///
+/// ## It exists because "one push per EVENT" needs a previous verdict
+///
+/// The owner's rule is one alert per departure, not one per interval while a
+/// machine is away. A departure is a BOUNDARY CROSSING, so the job has to
+/// know what it decided last time — and nothing else records that. Without
+/// this row the choice is a push every few minutes for as long as a tractor
+/// sits at a dealership, or a time-based dedupe that is a different rule from
+/// the one that was asked for.
+///
+/// `evaluatedAt` carries the `recordedAt` of the position that produced the
+/// verdict, which is what makes a re-run idempotent: a job that wakes twice
+/// before the tracker reports again re-reaches the same conclusion from the
+/// same fix and sends nothing.
+///
+/// `alertedAt` is the record of the push, kept separately from `changedAt`
+/// because they answer different questions — when the machine left, and
+/// whether anybody was told. A failed push leaves the second null and the
+/// first set, which is the state an operator asking "why did nobody hear"
+/// needs to see.
+///
+/// One row per machine, by unique index, so the job upserts rather than
+/// appending a history nobody reads. The crossing HISTORY is deliberately not
+/// kept: it would be a second surveillance trace of the same driver, which
+/// #2948 §2's reasoning argues against keeping at all.
+model MachineAreaState {
+  id       String @id @default(cuid())
+  tenantId String
+  assetId  String
+
+  /// TRUE when the last evaluated fix was OUTSIDE the farm area. Never null:
+  /// a machine with no verdict has no row, which is distinguishable from a
+  /// machine known to be inside.
+  outside Boolean
+
+  /// When the verdict last CHANGED — the departure (or return) itself.
+  changedAt DateTime
+
+  /// The `recordedAt` of the fix this verdict came from. Idempotence.
+  evaluatedAt DateTime
+
+  /// When a push went out for the current departure, or null.
+  alertedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  asset  Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+
+  @@unique([assetId])
+  @@index([tenantId])
+  @@index([tenantId, outside])
+}
+
 /// Links a machine to a task. A JOIN TABLE and not a column on `Task`,
 /// because an operation uses a tractor AND an implement — which is what
 /// `AssetType.IMPLEMENT` exists for — and a single `assetId` would force a

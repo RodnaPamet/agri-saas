@@ -636,3 +636,75 @@ export function workedParcelMatchesSql(args: {
         GROUP BY parcel_id
     `;
 }
+
+/**
+ * Is a machine's latest fix OUTSIDE its farm's area? — #2948 stage 5.
+ *
+ * Owner ruling 2026-11-13: the farm's area is the **union of 2 km buffers
+ * around each parcel**, not the convex hull §7 originally proposed. For a
+ * farm whose blocks are 50 km apart a hull swallows every town and road
+ * between them, so a machine taken to a dealership might never count as away
+ * — and an alert that cannot fire is worse than one that fires on a journey
+ * somebody recognises. The accepted cost is the mirror image: a tractor
+ * driving between two distant blocks of the same farm IS outside, and will
+ * alert.
+ *
+ * ## A farm with no mapped parcels gets NO VERDICT, not "outside"
+ *
+ * `ST_Union` over zero rows is NULL, and `NOT ST_Contains(NULL, p)` is NULL
+ * rather than true — but a `COALESCE(..., true)` written for tidiness would
+ * turn "this farm has no area" into "every machine has left", which is an
+ * alert per machine per run for a farm that has simply not drawn its blocks
+ * yet. So `outside` comes back NULL in that case and the caller skips the
+ * machine. The same reasoning applies to a parcel set that is entirely
+ * null-geometry.
+ *
+ * ## Metres, and only after the transform
+ *
+ * The buffer is in METRES, so both the parcel and the point go through
+ * EPSG:32635 first. In SRID 4326 a "2000" buffer is 2000 degrees, which is
+ * not a distance and not an error either — it silently contains the planet.
+ *
+ * ## Simulated positions are INCLUDED here, unlike the derivation
+ *
+ * `workedParcelMatchesSql` excludes `SIMULATED` because a `WorkedParcel` row
+ * feeds the ДНЕВНИК draft and the owner's rule is that simulated work must
+ * never reach it. An ALERT is not the register: it is a notification about a
+ * machine, and on a demo farm a simulated departure SHOULD raise one — that
+ * is what a demo is for. Stated because the asymmetry between two queries in
+ * the same file is exactly the kind of thing a later reader "fixes".
+ */
+export function machineAreaVerdictSql(args: {
+    tenantId: string;
+    assetId: string;
+    /** Only consider fixes at or after this instant. */
+    since: Date;
+    /** Buffer in METRES. */
+    bufferM: number;
+}): Prisma.Sql {
+    return Prisma.sql`
+        WITH latest AS (
+            SELECT p."recordedAt",
+                   ST_SetSRID(ST_MakePoint(p."lon"::float8, p."lat"::float8), 4326) AS geom
+            FROM "MachinePosition" p
+            WHERE p."tenantId" = ${args.tenantId}
+              AND p."assetId" = ${args.assetId}
+              AND p."recordedAt" >= ${args.since}
+            ORDER BY p."recordedAt" DESC
+            LIMIT 1
+        ),
+        area AS (
+            SELECT ST_Union(ST_Buffer(ST_Transform(pa."geometry", 32635), ${args.bufferM}::float8)) AS g
+            FROM "Parcel" pa
+            WHERE pa."tenantId" = ${args.tenantId}
+              AND pa."deletedAt" IS NULL
+              AND pa."geometry" IS NOT NULL
+        )
+        SELECT l."recordedAt" AS evaluated_at,
+               CASE
+                   WHEN a.g IS NULL THEN NULL
+                   ELSE NOT ST_Contains(a.g, ST_Transform(l.geom, 32635))
+               END AS outside
+        FROM latest l CROSS JOIN area a
+    `;
+}

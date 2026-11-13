@@ -251,6 +251,27 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * nightly derivation and is NOT acceptable for the day boundary, which
          * is computed in Europe/Sofia inside the job.
          */
+        /*
+         * #2948 stage 5 — the leaving-the-area alert, every five minutes.
+         *
+         * A LATENCY choice, not a sampling one: a machine leaving the farm is
+         * something somebody wants to know about now, and the alert loses its
+         * point at an hour's delay. Five minutes against a tracker reporting
+         * every 30 s means a departure is noticed within ten fixes.
+         *
+         * Not every 30 s to match the tracker: the verdict needs a PostGIS
+         * union per farm, and the thing being detected — a machine crossing a
+         * 2 km boundary — does not happen at that resolution.
+         *
+         * `FIX_FRESHNESS_MINUTES` (30) is what keeps this from re-judging a
+         * machine switched off last week from its final fix.
+         */
+        name: 'machine-area-alert',
+        pattern: '*/5 * * * *',  // every 5 minutes
+        description: 'Alert OWNER and ADMIN when a machine leaves the farm area (#2948 stage 5)',
+        defaultPayload: {},
+    },
+    {
         name: 'worked-parcel-derivation',
         pattern: '20 2 * * *',  // 02:20 UTC, nightly
         description: "Derive yesterday's worked parcels from raw positions (#2948, #2984)",
