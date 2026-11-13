@@ -19,6 +19,7 @@
  *     `/t/{slug}/exchange/threads/dm/{id}`. Two docs said so and the comment
  *     three lines above the literal said so;
  *   - `machine-area-alert`'s `link:` pointed at `/t/{slug}/machines/{assetId}`
+ *     — FIXED in #3032 by adding the page; the exemption deleted itself
  *     (#3032). Correctly prefixed, and there is no `machines` page — the live
  *     map and day history are iOS screens — so a web recipient clicking that
  *     notification got a 404 from the moment it merged.
@@ -114,13 +115,17 @@ const MAX_UNGRADABLE = 1;
  * added above a producer moves the line and would silently un-exempt it.
  */
 const DEAD_BY_KNOWN_ISSUE: Readonly<Record<string, string>> = {
-    'src/app-layer/jobs/machine-area-alert.ts :: t/*/machines/*':
-        '#3032. The live map and day history are iOS screens, so `(app)` has no '
-        + '`machines` segment and a web recipient of this alert got a 404. Fixed '
-        + 'there by ADDING a redirect page rather than by changing the link, '
-        + 'because agrent-ios #577 resolves this shape in a shipped TestFlight '
-        + 'build (128.1) and moving it would break it. When #3032 lands, '
-        + '`machines/[assetId]/page.tsx` exists and this entry must be deleted.',
+    // EMPTY, and it emptied itself.
+    //
+    // `machine-area-alert :: t/*/machines/*` was the one entry, exempted
+    // against #3032. That PR added `machines/[assetId]/page.tsx`, so the
+    // destination resolves, so the "no stale entries" assertion below failed
+    // the moment the two met — which is the entry deleting its own cover
+    // exactly as its author designed. Removed here, in the diff that fixed the
+    // defect, rather than left as a permanent excuse.
+    //
+    // The reading on every run is the thing to watch: `15 resolve, 0 dead`
+    // after this. Anything else wants investigating rather than a floor moved.
 };
 
 /**
@@ -388,9 +393,23 @@ describe('a notification destination resolves to a page', () => {
         expect(resolves(['channels', '*'], patterns)).toBe(true);
         expect(resolves(['exchange', 'threads', 'dm', '*'], patterns)).toBe(true);
 
-        // The two real defects.
+        // The real defect that is still a defect. `/messages/{id}` is the page
+        // P8.4 ruled out explicitly, so nothing serves it.
         expect(resolves(['messages', '*'], patterns)).toBe(false);
-        expect(resolves(['machines', '*'], patterns)).toBe(false);
+
+        /*
+         * `['machines', '*']` USED to be here as the second real defect and
+         * now resolves: #3032 added `machines/[assetId]/page.tsx`, a redirect
+         * to the asset, because the alert's link shape is one a shipped
+         * TestFlight build already parses.
+         *
+         * It moved to the TRUE side rather than being deleted, which keeps the
+         * control honest in both directions — and it is the better assertion
+         * now, because the page is a redirect whose whole purpose is that this
+         * destination resolves. Delete it only when the alert points somewhere
+         * else.
+         */
+        expect(resolves(['machines', '*'], patterns)).toBe(true);
 
         // An interpolation standing where a literal segment belongs.
         expect(resolves(['*', 'threads'], patterns)).toBe(false);
