@@ -291,6 +291,7 @@ export async function runMachineAreaAlert(
              * test can realistically produce the same one in two tenants. It
              * stays because the schema says the id is half a key, not because
              * a test fails without it.
+             */
             const assets = new Map(assetRows.map((a) => [`${a.tenantId}:${a.id}`, a]));
 
             const tenantRows = await prisma.tenant.findMany({

@@ -32,7 +32,15 @@ jest.mock('@/app-layer/jobs/queue', () => ({
     enqueue: (...a: unknown[]) => mockEnqueue(...a),
 }));
 
-// eslint-disable-next-line import/order
+/*
+ * The subject is imported AFTER `jest.mock`, which is the house pattern for a
+ * mocked dependency and is what `import/order` would normally object to. It
+ * does not object here — the rule is not enabled for this root — so the
+ * `eslint-disable-next-line import/order` this line carried was INERT, and
+ * `lint-ceiling` holds inert directives at zero: a directive that suppresses
+ * nothing is either stale or misplaced, and either way it reads as a settled
+ * question that nothing is actually asking.
+ */
 import { runMachineAreaAlert, AREA_BUFFER_M } from '@/app-layer/jobs/machine-area-alert';
 import { hashForLookup } from '@/lib/security/encryption';
 
