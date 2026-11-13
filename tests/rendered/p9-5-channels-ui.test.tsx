@@ -49,10 +49,16 @@ jest.mock('next/navigation', () => ({
 
 const apiGet = jest.fn();
 const apiPost = jest.fn();
+const apiPut = jest.fn();
 const apiDelete = jest.fn();
 jest.mock('@/lib/api-client', () => ({
     apiGet: (...a: unknown[]) => apiGet(...a),
     apiPost: (...a: unknown[]) => apiPost(...a),
+    // Added by #2989: the composer's display-name prompt PUTs here. A double
+    // that omits a function the subject calls does not fail with "not
+    // mocked" — it returns undefined, and the subject dies on `.then` of
+    // undefined, which surfaced as seven unrelated feed tests failing.
+    apiPut: (...a: unknown[]) => apiPut(...a),
     apiDelete: (...a: unknown[]) => apiDelete(...a),
     apiPatch: jest.fn(),
 }));
@@ -151,7 +157,25 @@ beforeEach(() => {
     undoInput.length = 0;
     apiGet.mockReset();
     apiPost.mockReset();
+    apiPut.mockReset();
     apiDelete.mockReset();
+    /*
+     * A DEFAULT for the display-name probe (#2989).
+     *
+     * `mockReset` leaves `apiGet` returning undefined, and the prompt mounted
+     * in the composer awaits it — so every composer test died inside an
+     * unrelated component. Resolving a profile that HAS a name is also the
+     * right default for this file: it keeps the prompt out of the DOM, so
+     * these tests go on measuring the feed and the composer rather than a
+     * panel above them. The prompt's own behaviour is asserted in
+     * `channels-display-name-prompt.test.tsx`.
+     *
+     * Per-test implementations still override this; the ones that do are
+     * about the feed's own fetches and answer every path alike, which is
+     * harmless here because a feed payload has no `displayName` and the
+     * prompt then treats the name as present.
+     */
+    apiGet.mockResolvedValue({ displayName: 'Иван Петров', published: true });
     plainSwr.mockReset();
 });
 

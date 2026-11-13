@@ -3625,6 +3625,31 @@ exports[`API contract — per-schema snapshots schema: ChannelPost 1`] = `
       "format": "date-time",
       "description": "When a «Въпрос» was marked «Решено», else null — always null on a \`POST\` or a \`CARD\`, which cannot carry the state. Added by #2961: the column had been written since P9.3b and returned by nothing, so a resolved question was indistinguishable from an open one through every read path and no client could render it."
     },
+    "author": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "farmName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "displayName",
+        "farmName"
+      ],
+      "description": "Who wrote it — «Иван Петров, ЗК Победа» (#2989). NULL on a deleted post: the body is already empty, and naming somebody above content nobody can read attributes an accusation to them. Both halves are independently null and all four states are normal. \`displayName\` is null until the person has set one AND published it, which is why \`PUT /api/social/profile\` exists; the fallback is the FARM ALONE, never an id or a placeholder. \`farmName\` is null when the post recorded no farm — a post predating the column, one whose author sent no \`tenantSlug\`, or an author in no farm. Clients render whichever half exists and show nothing when neither does; \`authorUserId\` stays beside this so a reply or a report has a stable key with no name to show."
+    },
     "replyCount": {
       "type": "integer",
       "description": "How many replies hang off this post, so a feed can show that a thread exists without a request per post. Always 0 on a reply, since threads are one level deep. It counts HIDDEN replies too, matching how a hidden post is reported rather than omitted — a count that shrank when a moderator hid one reply would tell every reader that something had been removed."
@@ -3638,6 +3663,7 @@ exports[`API contract — per-schema snapshots schema: ChannelPost 1`] = `
     "createdAt",
     "deleted",
     "resolvedAt",
+    "author",
     "replyCount"
   ]
 }"
@@ -15564,6 +15590,29 @@ exports[`API contract — per-schema snapshots schema: PersonBlock 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PersonProfile 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "displayName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Null when there is nothing a channel would show. Reported as absent unless it would actually RENDER — a caller deciding whether to prompt must not be told a name exists while the feed shows the farm alone."
+    },
+    "published": {
+      "type": "boolean",
+      "description": "Whether the profile is published. Reported alongside the name so a client can tell \\"never set one\\" from \\"set one and withdrew it\\", which \`displayName\` alone collapses."
+    }
+  },
+  "required": [
+    "displayName",
+    "published"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PersonalDataExport 1`] = `
 "{
   "type": "object",
@@ -18278,6 +18327,24 @@ exports[`API contract — per-schema snapshots schema: SetBottomTabOrderRequest 
   },
   "required": [
     "order"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetDisplayName 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "displayName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The new name, or null to clear it. Nullable rather than optional so \\"remove my name\\" is expressible: an absent key and an explicit null would otherwise be indistinguishable."
+    }
+  },
+  "required": [
+    "displayName"
   ]
 }"
 `;

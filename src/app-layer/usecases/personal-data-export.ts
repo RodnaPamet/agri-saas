@@ -548,6 +548,15 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
                 resolvedAt: true, parentPostId: true,
                 removedByModerationAt: true, autoHiddenAt: true,
                 deletedAt: true, createdAt: true,
+                // The farm they posted AS (#2989). Their own affiliation at
+                // the time of writing, on their own row, so it is their
+                // information — and it is the one fact here that a reader
+                // could not otherwise reconstruct, because the channel feed
+                // shows the farm NAME and a farm can be renamed. An opaque id
+                // is of limited use to a person, which is an argument for
+                // resolving it to a name later, not for withholding a column
+                // of their own row.
+                authorTenantId: true,
                 // `updatedAt` deliberately omitted — `EXEMPT_BY_RULE` in
                 // `export-select-covers-every-column` states the principle:
                 // when something happened is the person's information, when a

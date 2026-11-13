@@ -78,6 +78,24 @@ export interface TimelineMessage {
      * neither path lie: the DM adapter keeps passing a timestamp.
      */
     deleted?: boolean;
+    /**
+     * The label for THIS message, overriding the `senderLabel` resolver — the
+     * channel case (#2989).
+     *
+     * A DM label is a property of the SENDER, which is why the resolver is
+     * keyed by `senderUserId` and why this component owns the one resolver. A
+     * channel label is a property of the POST: it is «name, farm», the farm
+     * comes from `ChannelPost.authorTenantId` recorded at write time, and one
+     * person can have posted in the same channel as two different farms. A
+     * userId-keyed resolver cannot express that — it would relabel the older
+     * posts with the newer farm, which is the read-time guess that column
+     * exists to avoid.
+     *
+     * Same shape and same reason as `deleted` above: the channel case
+     * genuinely differs, so it gets a field rather than the adapter faking
+     * one. The DM path passes nothing and keeps the resolver.
+     */
+    senderLabel?: string | null;
     reactions?: MessageBubbleProps['reactions'];
     /**
      * `DirectMessageView.replyTo`, as the API returns it — the SENDER's id
@@ -370,7 +388,14 @@ export const MessageTimeline = React.forwardRef<
                     mine={row.mine}
                     grouped={row.grouped}
                     senderLabel={
-                        row.mine || row.grouped ? undefined : senderLabel?.(row.message.senderUserId)
+                        row.mine || row.grouped
+                            ? undefined
+                            // The message's own label wins — see the field.
+                            // `??` and not `||`, so an explicit empty string
+                            // stays empty instead of falling back to a name
+                            // the caller deliberately withheld.
+                            : row.message.senderLabel
+                              ?? senderLabel?.(row.message.senderUserId)
                     }
                     reactions={row.message.reactions}
                     onRequestReactions={
