@@ -1243,8 +1243,14 @@ scripts — the production runtime image ships no `tsx` and no source
 `scripts/` tree (devDependencies are pruned before the runner stage),
 so none of the three can run there directly. **Production seeding goes
 through `dist/seed.mjs`** — `scripts/seed.ts`, one CLI with
-`knowledge`/`satellite`/`corpus`/`all` subcommands, calling the exact
-same idempotent exported functions as the three scripts above. It is
+`knowledge`/`satellite`/`corpus`/`channels`/`library`/`all` subcommands,
+calling the exact same idempotent exported functions as the three scripts
+above. (`channels` arrived with P9.2 and `library` with #2980; this list named
+four until the second of them, which is why `seed-deployment` now asserts the
+COUNT from the declaration rather than only the names it remembers.)
+**`library` is the one subcommand `all` does NOT run** — it needs a `--file`
+the operator supplies, because the book text is deliberately not in this
+public repository, so there is nothing for `all` to default to. It is
 esbuild-bundled by `npm run build:seed` (mirroring `build:worker`
 exactly — same mechanism, same esbuild config shape), wired into the
 Dockerfile right after `build:worker`, before the dev-dependency

@@ -11038,6 +11038,138 @@ exports[`API contract — per-schema snapshots schema: LeasePayment 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: LibraryBookChapter 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "number": {
+      "type": "integer",
+      "description": "1-based, and the chapter’s identity within the book."
+    },
+    "title": {
+      "type": "string"
+    },
+    "originalTitle": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The chapter’s title in the ORIGINAL language where there is one — e.g. 始計 beside «Планиране». Null for a book written in its own language. For display, never for matching."
+    },
+    "paragraphs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The body, one entry per paragraph. Render paragraph by paragraph: splitting display text on a delimiter is a decision that silently changes with the text. Never empty — the database refuses a chapter with no paragraphs."
+    }
+  },
+  "required": [
+    "number",
+    "title",
+    "originalTitle",
+    "paragraphs"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LibraryBookDetail 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/LibraryBookSummary"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "sourceNote": {
+          "type": "string",
+          "description": "Where the text came from. Displayed, because a public-domain claim a reader cannot check is not a claim."
+        },
+        "licenseNote": {
+          "type": "string",
+          "description": "Under what licence the text is distributed."
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/LibraryBookChapter"
+          },
+          "description": "The whole text, ordered by \`number\`. One payload rather than a chapter-per-request: a book is ~7,500 words that never changes between versions, and thirteen round trips on rural LTE to assemble it is the cost this avoids."
+        }
+      },
+      "required": [
+        "sourceNote",
+        "licenseNote",
+        "chapters"
+      ]
+    }
+  ],
+  "description": "One book in the directory. Only PUBLISHED books ever appear: a book awaiting review is invisible to every caller, enforced in the query AND in the row-level policy beneath it."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LibraryBookSummary 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "slug": {
+      "type": "string",
+      "description": "The stable handle every read is keyed on. UNIQUE, and what makes the seed idempotent by construction — so a renamed TITLE keeps the book’s identity and a phone’s offline copy stays addressable. The internal id is deliberately not published: nothing accepts it as input."
+    },
+    "title": {
+      "type": "string",
+      "description": "The title in the language of the TEXT, NOT of the UI — there is deliberately no \`titleBg\`/\`titleEn\` pair. A book title names an ARTEFACT: «Изкуството на войната» is this project’s own Bulgarian translation from the public-domain classical Chinese, and rendering it as “The Art of War” would name a different artefact. Display it as given, whatever the interface language."
+    },
+    "author": {
+      "type": "string",
+      "description": "The author, in the same language as \`title\`."
+    },
+    "locale": {
+      "type": "string",
+      "description": "The language of the TEXT (\`bg\` for every book today). A free string rather than the UI’s two-language enum, because a library may hold a text in a language the interface does not speak."
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A short blurb in the book’s own language, or null."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Monotonic INTEGER, bumped whenever the text changes. **This is the field an offline copy compares** — if it is unchanged, the stored text is current and needs no download. Never compare \`updatedAt\` for this: a timestamp invites a string comparison and a clock question."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601, for DISPLAY. Not a cache key — see \`version\`."
+    },
+    "useCases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "STRATEGY"
+        ],
+        "description": "What the book is FOR, as a CODE the client localises — never display text. An enum rather than a free-text list so the DATABASE refuses an unknown value and a seed cannot introduce one; a client renders an unknown code as a missing string, which is what keeps the two in step. PROVISIONAL: the vocabulary grows as books are added, and a client should tolerate a value it does not know."
+      }
+    }
+  },
+  "required": [
+    "slug",
+    "title",
+    "author",
+    "locale",
+    "summary",
+    "version",
+    "updatedAt",
+    "useCases"
+  ],
+  "description": "One book in the directory. Only PUBLISHED books ever appear: a book awaiting review is invisible to every caller, enforced in the query AND in the row-level policy beneath it."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: LiftAccountSuspension 1`] = `
 "{
   "type": "object",
