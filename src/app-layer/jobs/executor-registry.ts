@@ -976,6 +976,17 @@ executorRegistry.register('machine-area-alert', async (payload) => {
     return result;
 });
 
+// ── machine-position-sweep ───────────────────────────────────────────
+
+executorRegistry.register('machine-position-sweep', async (payload) => {
+    const { runMachinePositionSweep } = await import('./machine-position-sweep');
+    const { result } = await runMachinePositionSweep({
+        limit: payload.limit,
+        today: payload.today,
+    });
+    return result;
+});
+
 // ── worked-parcel-derivation ─────────────────────────────────────────
 
 executorRegistry.register('worked-parcel-derivation', async (payload) => {

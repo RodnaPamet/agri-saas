@@ -53,8 +53,13 @@ import { importKnowledge } from './import-knowledge';
 import { ingestSatelliteGuide } from './rag/ingest-satellite-guide';
 import { ingestGlobalCorpus, GLOBAL_CORPUS } from './rag/corpus';
 import { seedChannels } from './channels/seed-channels';
+import {
+    seedLibraryBook,
+    publishLibraryBook,
+    unpublishLibraryBook,
+} from './library/seed-library';
 
-const SUBCOMMANDS = ['knowledge', 'satellite', 'corpus', 'channels', 'all'] as const;
+const SUBCOMMANDS = ['knowledge', 'satellite', 'corpus', 'channels', 'library', 'all'] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 function isSubcommand(v: string | undefined): v is Subcommand {
@@ -76,6 +81,14 @@ function printUsage(): void {
             '  channels    Seed the GLOBAL channel catalogue — 10 crop, 5 input, 28 oblast (P9.2).',
             '              Idempotent on `Channel.key`; a re-run updates NAMES only and leaves',
             '              memberCount, slowModeSeconds and archivedAt alone. Joins nobody.',
+            '  library     Seed ONE book from a JSON file you supply (#2980). Idempotent on',
+            '              `Book.slug`; chapters are replaced wholesale. Writes an UNPUBLISHED',
+            '              book and never touches `publishedAt` on a re-run.',
+            '              Options: --file <path>        write or update the book',
+            '                       --publish <slug>     make it readable (a separate decision)',
+            '                       --unpublish <slug>   take it back out of the library',
+            '              Exactly one of the three. NOT part of `all`: there is no file to',
+            '              default to, so including it would fail every `all` run.',
             '  all         Run knowledge, then satellite, then corpus, then channels. Each step is',
             "              reported independently — one step's failure does not skip the others.",
             '              Exits non-zero if any step failed.',
@@ -83,6 +96,8 @@ function printUsage(): void {
             'Examples:',
             '  node dist/seed.mjs knowledge --tenant acme-farms',
             '  node dist/seed.mjs all',
+            '  node dist/seed.mjs library --file /tmp/sun-tzu.json',
+            '  node dist/seed.mjs library --publish sun-tzu-izkustvoto-na-voynata',
         ].join('\n'),
     );
 }
@@ -100,6 +115,69 @@ function describeError(err: unknown): string {
 function readTenantSlugArg(): string | undefined {
     const idx = process.argv.indexOf('--tenant');
     return idx >= 0 ? process.argv[idx + 1] : undefined;
+}
+
+function readArg(flag: string): string | undefined {
+    const idx = process.argv.indexOf(flag);
+    return idx >= 0 ? process.argv[idx + 1] : undefined;
+}
+
+/**
+ * The library step — see `scripts/library/seed-library.ts` for why the text is
+ * a FILE and why publishing is a separate verb.
+ *
+ * EXACTLY ONE of the three flags, refused rather than resolved by precedence:
+ * an operator who typed `--file x --publish y` meant something, and guessing
+ * which half to honour is how a text gets published before it was reviewed.
+ */
+async function runLibrary(prisma: PrismaClient): Promise<StepResult> {
+    const file = readArg('--file');
+    const publish = readArg('--publish');
+    const unpublish = readArg('--unpublish');
+    const given = [file, publish, unpublish].filter((v) => v !== undefined);
+
+    try {
+        if (given.length !== 1) {
+            throw new Error(
+                'pass exactly one of --file <path>, --publish <slug>, --unpublish <slug>'
+                + ` (got ${given.length})`,
+            );
+        }
+        if (file !== undefined) {
+            const res = await seedLibraryBook(prisma, file);
+            return {
+                name: 'library',
+                ok: true,
+                detail:
+                    `${res.slug}: ${res.created ? 'created' : 'updated'}, `
+                    + `${res.chapters} chapter(s), version ${res.version}, `
+                    // The reading an operator actually needs: a book nobody can
+                    // see is the EXPECTED state here, and saying so is what
+                    // stops it being read as a failed seed.
+                    + `${res.published ? 'PUBLISHED' : 'not published (use --publish)'}.`,
+            };
+        }
+        if (publish !== undefined) {
+            const res = await publishLibraryBook(prisma, publish);
+            return {
+                name: 'library',
+                ok: true,
+                detail: res.alreadyPublished
+                    ? `${res.slug}: already published at ${res.publishedAt.toISOString()}.`
+                    : `${res.slug}: published at ${res.publishedAt.toISOString()}.`,
+            };
+        }
+        const res = await unpublishLibraryBook(prisma, unpublish as string);
+        return {
+            name: 'library',
+            ok: true,
+            detail: res.wasPublished
+                ? `${res.slug}: taken out of the library.`
+                : `${res.slug}: was not published.`,
+        };
+    } catch (err) {
+        return { name: 'library', ok: false, detail: describeError(err) };
+    }
 }
 
 async function runKnowledge(prisma: PrismaClient): Promise<StepResult> {
@@ -188,7 +266,9 @@ async function main(): Promise<number> {
                     ? [await runCorpus(prisma)]
                     : cmd === 'channels'
                       ? [await runChannels(prisma)]
-                      : [
+                      : cmd === 'library'
+                        ? [await runLibrary(prisma)]
+                        : [
                               await runKnowledge(prisma),
                               await runSatellite(prisma),
                               await runCorpus(prisma),
@@ -198,7 +278,14 @@ async function main(): Promise<number> {
                               // corpus step, by contrast, fails loudly without
                               // `AI_EMBED_BASE_URL`.
                               await runChannels(prisma),
-                          ];
+                              // `library` is deliberately NOT here. It needs a
+                              // FILE the operator supplies — the text is not in
+                              // this repository, because a commit to a public
+                              // repo IS publication — so there is nothing for
+                              // `all` to default to and including it would fail
+                              // every `all` run. That is the opposite of
+                              // `channels`, which is self-contained.
+                            ];
 
         results.forEach(printResult);
 

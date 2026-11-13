@@ -197,27 +197,6 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
-         * P5.5b — shadow-score the unscored notices.
-         *
-         * Quarter-hourly, which is a SAMPLING decision rather than a latency
-         * one: nothing reads a score, so nothing is waiting for it. What the
-         * cadence buys is an even spread of the monthly platform AI budget
-         * across the month — a sparser schedule with a bigger batch would
-         * spend it in a few runs and leave the rest of the month unscored,
-         * which is the worst possible sampling for judging whether the scorer
-         * works.
-         */
-        name: 'channel-auto-hide',
-        pattern: '*/10 * * * *',  // every 10 minutes
-        description:
-            'Hide a channel post after 3 reports from VERIFIED farms (#2937). DORMANT: '
-            + 'production has zero verified farms, so the threshold is unreachable — the '
-            + 'job logs a denominator saying so rather than letting hidden=0 read as '
-            + '"the rule is working"',
-        defaultPayload: {},
-    },
-    {
-        /**
          * P9.3d (#2937) — the cadence, and why it is not `notice-score`'s.
          *
          * Every ten minutes, matching `statement-dispatch` rather than the
@@ -232,6 +211,16 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * `notice-triage-alert`'s reason: that would make the rate the
          * reporter's to choose, and `PUBLIC_NOTICE_LIMIT` is 10/min per IP.
          */
+        name: 'channel-auto-hide',
+        pattern: '*/10 * * * *',  // every 10 minutes
+        description:
+            'Hide a channel post after 3 reports from VERIFIED farms (#2937). DORMANT: '
+            + 'production has zero verified farms, so the threshold is unreachable — the '
+            + 'job logs a denominator saying so rather than letting hidden=0 read as '
+            + '"the rule is working"',
+        defaultPayload: {},
+    },
+    {
         /*
          * #2948 stage 4 — derive yesterday's worked parcels, once a night.
          *
@@ -251,6 +240,12 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * nightly derivation and is NOT acceptable for the day boundary, which
          * is computed in Europe/Sofia inside the job.
          */
+        name: 'worked-parcel-derivation',
+        pattern: '20 2 * * *',  // 02:20 UTC, nightly
+        description: "Derive yesterday's worked parcels from raw positions (#2948, #2984)",
+        defaultPayload: {},
+    },
+    {
         /*
          * #2948 stage 5 — the leaving-the-area alert, every five minutes.
          *
@@ -272,12 +267,43 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
-        name: 'worked-parcel-derivation',
-        pattern: '20 2 * * *',  // 02:20 UTC, nightly
-        description: "Derive yesterday's worked parcels from raw positions (#2948, #2984)",
+        /*
+         * #3012 — delete raw positions past the 30-day window.
+         *
+         * 03:10 UTC, fifty minutes AFTER the derivation, and the order is the
+         * point: a day must be derived before its raw rows can go, or that
+         * day's work becomes unknowable. Fifty minutes is not the guarantee —
+         * the guarantee is the 30-day window, which leaves a 29-day margin —
+         * but running the sweep first would make that margin the only thing
+         * between a slow derivation and a permanent loss, for no reason.
+         *
+         * DRY RUN until `MACHINE_POSITION_SWEEP=delete` is set. Every dry run
+         * logs at WARN with the backlog it would remove, because an
+         * unconfigured destructive control looks exactly like a working one.
+         */
+        name: 'machine-position-sweep',
+        pattern: '10 3 * * *',  // 03:10 UTC, nightly, after the derivation
+        description: 'Delete raw machine positions past the 30-day window (#3012)',
         defaultPayload: {},
     },
     {
+        /**
+         * P5.5b — shadow-score the unscored notices.
+         *
+         * Quarter-hourly, which is a SAMPLING decision rather than a latency
+         * one: nothing reads a score, so nothing is waiting for it. What the
+         * cadence buys is an even spread of the monthly platform AI budget
+         * across the month — a sparser schedule with a bigger batch would
+         * spend it in a few runs and leave the rest of the month unscored,
+         * which is the worst possible sampling for judging whether the scorer
+         * works.
+         *
+         * The three docblocks in this stretch each documented the entry BELOW
+         * the one they describe until this merge: inserting `channel-auto-hide`
+         * ahead of `notice-score` took its comment, and every later insertion
+         * shifted the error along. Realigned here because a cadence rationale
+         * attached to the wrong schedule is read as that schedule's reasoning.
+         */
         name: 'notice-score',
         pattern: '*/15 * * * *',  // every 15 minutes
         description: 'Shadow-score DSA notices for abuse likelihood; read by nothing (#1596)',

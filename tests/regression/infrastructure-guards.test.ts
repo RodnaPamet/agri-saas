@@ -209,7 +209,21 @@ describe('Infrastructure Regression Guards', () => {
             // rule has existed. What actually happened is that I hand-picked
             // suites instead of running the derived population, which
             // CLAUDE.md names as the mistake that costs three CI cycles.
-            expect(SCHEDULED_JOBS).toHaveLength(36);
+            //
+            // 35 → 36 (#3012): `machine-position-sweep`. Nightly at 03:10
+            // UTC, deleting raw `MachinePosition` rows past the 30-day
+            // retention window the product tells farmers about. DRY RUN
+            // until an operator sets `MACHINE_POSITION_SWEEP=delete`, so the
+            // schedule existing and the deletion happening are two separate
+            // facts and the reading says which.
+            //
+            // 36 → 37 (#2948 stage 5): `machine-area-alert`. Every five
+            // minutes, telling a farm's OWNERs and ADMINs that a machine has
+            // left the union of 2 km buffers around its parcels. The two
+            // increments above landed within hours of each other on separate
+            // branches, and each side pinned 36 — so this line exists because
+            // the MERGE is where the arithmetic was wrong, not either branch.
+            expect(SCHEDULED_JOBS).toHaveLength(37);
         });
 
         test('scheduled job names match expected set', () => {
@@ -284,6 +298,10 @@ describe('Infrastructure Regression Guards', () => {
                 // #2948 stage 5 — the leaving-the-area alert, every five
                 // minutes. Sorts before `mail-canary` ('mac' < 'mai').
                 'machine-area-alert',
+                // #3012 — nightly deletion of raw positions past the 30-day
+                // retention window the product tells farmers about. DRY RUN
+                // until armed by an operator.
+                'machine-position-sweep',
                 'mail-canary',
                 // Trends → News — daily aggregation of free agri RSS/Atom feeds
                 // into the global market-news cache.

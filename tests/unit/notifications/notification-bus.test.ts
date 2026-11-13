@@ -12,11 +12,14 @@
 import {
     subscribeToNotifications,
     subscribeToPersonEvents,
+    subscribeToChannelActivity,
     publishNotificationEvent,
     publishPersonEvent,
+    publishChannelActivityEvent,
     getNotificationSubscriberCount,
     __resetNotificationBusForTests,
     PERSON_CHANNEL_PREFIX,
+    CHANNEL_ACTIVITY_PREFIX,
     PERSON_SCOPE_SENTINEL,
     type NotificationEvent,
 } from '@/lib/notifications/notification-bus';
@@ -228,6 +231,118 @@ describe('the PERSON channel — a third address, not a fourth farm (#2809)', ()
         expect(getNotificationSubscriberCount()).toBe(0);
         // Idempotent, like its sibling: the SSE route can reach cleanup from
         // both an abort and a stream cancel (#1984).
+        release();
+        expect(getNotificationSubscriberCount()).toBe(0);
+    });
+});
+
+describe('the CHANNEL-ACTIVITY channel — a fourth address (#2987)', () => {
+    /**
+     * A channel post has no tenant either — P9.1's five tables carry none,
+     * because a crop channel spans every farm growing that crop — so it is
+     * person-scoped like a DM. It is a separate ADDRESS rather than a field on
+     * the person event, and the reason is a rolling deploy: the person
+     * channel's wire payload is `{ id }` and the subscriber refuses anything
+     * else, so an old subscriber would drop a new discriminator and deliver a
+     * CHANNEL id labelled `dm` — a client would try to open a conversation
+     * that does not exist. A separate address is simply not subscribed, so the
+     * event is undelivered rather than mislabelled.
+     *
+     * These tests are therefore mostly about the two namespaces NOT meeting,
+     * and each zero is paired with the positive that makes it mean something.
+     */
+    it('reaches the addressed person', () => {
+        const got: NotificationEvent[] = [];
+        subscribeToChannelActivity({ userId: 'u-alice', send: (e) => got.push(e) });
+
+        publishChannelActivityEvent('u-alice', { id: 'chan-1' });
+
+        expect(got).toEqual([{ id: 'chan-1' }]);
+    });
+
+    it('does NOT reach a different person', () => {
+        const mine: NotificationEvent[] = [];
+        const theirs: NotificationEvent[] = [];
+        subscribeToChannelActivity({ userId: 'u-alice', send: (e) => mine.push(e) });
+        subscribeToChannelActivity({ userId: 'u-boris', send: (e) => theirs.push(e) });
+
+        publishChannelActivityEvent('u-alice', { id: 'chan-1' });
+
+        expect(mine).toHaveLength(1);
+        expect(theirs).toHaveLength(0);
+    });
+
+    it('does NOT arrive on the DM address, in either direction', () => {
+        // THE assertion of this block. The two are delivered to the same
+        // person and become DIFFERENT SSE frame kinds (`channel` vs `dm`), so
+        // a crossover is not a lost event — it is a client opening the wrong
+        // surface on an id that does not exist there.
+        const dm: NotificationEvent[] = [];
+        const channel: NotificationEvent[] = [];
+        subscribeToPersonEvents({ userId: 'u-alice', send: (e) => dm.push(e) });
+        subscribeToChannelActivity({ userId: 'u-alice', send: (e) => channel.push(e) });
+
+        publishChannelActivityEvent('u-alice', { id: 'chan-1' });
+        expect(channel).toEqual([{ id: 'chan-1' }]);
+        expect(dm).toHaveLength(0);
+
+        publishPersonEvent('u-alice', { id: 'conv-1' });
+        expect(dm).toEqual([{ id: 'conv-1' }]);
+        expect(channel).toHaveLength(1);
+    });
+
+    it('does NOT arrive on a farm channel either', () => {
+        const farm: NotificationEvent[] = [];
+        const channel: NotificationEvent[] = [];
+        subscribeToNotifications({
+            tenantId: 't-acme', userId: 'u-alice', send: (e) => farm.push(e),
+        });
+        subscribeToChannelActivity({ userId: 'u-alice', send: (e) => channel.push(e) });
+
+        publishChannelActivityEvent('u-alice', { id: 'chan-1' });
+
+        expect(channel).toHaveLength(1);
+        expect(farm).toHaveLength(0);
+    });
+
+    it('cannot be impersonated by a tenant whose id is the prefix word', () => {
+        // The disjoint-prefix property, same as its sibling's. Asserted
+        // against a real subscriber rather than by comparing strings, because
+        // "the constants differ" is a statement about this file and not about
+        // routing.
+        const channel: NotificationEvent[] = [];
+        const impostor: NotificationEvent[] = [];
+        subscribeToChannelActivity({ userId: 'u-alice', send: (e) => channel.push(e) });
+        subscribeToNotifications({
+            tenantId: 'channel-activity', userId: 'u-alice', send: (e) => impostor.push(e),
+        });
+
+        publishChannelActivityEvent('u-alice', { id: 'chan-1' });
+
+        expect(channel).toHaveLength(1);
+        expect(impostor).toHaveLength(0);
+    });
+
+    it('keeps all three prefixes pairwise disjoint', () => {
+        // The structural half, and it is the one that would fail FIRST if
+        // somebody renamed an address to share a prefix — before any routing
+        // test, because a shared prefix only collides on specific ids.
+        const prefixes = ['notif:', PERSON_CHANNEL_PREFIX, CHANNEL_ACTIVITY_PREFIX];
+        expect(new Set(prefixes).size).toBe(3);
+        for (const a of prefixes) {
+            for (const b of prefixes) {
+                if (a === b) continue;
+                expect(a.startsWith(b)).toBe(false);
+            }
+        }
+    });
+
+    it('unsubscribes cleanly, leaving no subscriber behind', () => {
+        const release = subscribeToChannelActivity({ userId: 'u-alice', send: () => {} });
+        expect(getNotificationSubscriberCount()).toBe(1);
+        release();
+        expect(getNotificationSubscriberCount()).toBe(0);
+        // Idempotent, like both siblings (#1984).
         release();
         expect(getNotificationSubscriberCount()).toBe(0);
     });
