@@ -29,9 +29,9 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
 import { op } from './helpers';
 
-const BookUseCaseSchema = z.enum(['STRATEGY']).openapi({
+const BookUseCaseSchema = z.enum(['STRATEGY', 'MANAGEMENT']).openapi({
     description:
-        'What the book is FOR, as a CODE the client localises — never display text. An enum rather than a free-text list so the DATABASE refuses an unknown value and a seed cannot introduce one; a client renders an unknown code as a missing string, which is what keeps the two in step. PROVISIONAL: the vocabulary grows as books are added, and a client should tolerate a value it does not know.',
+        'What the book is FOR, as a CODE the client localises — never display text. An enum rather than a free-text list so the DATABASE refuses an unknown value and a seed cannot introduce one; a client renders an unknown code as a missing string, which is what keeps the two in step. PROVISIONAL: the vocabulary grows as books are added, and a client should tolerate a value it does not know \u2014 `MANAGEMENT` («\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435») joined on 2026-11-13 with the second book, which is the note being cashed rather than a change of design. Widening an enum is additive, so a client pinned to the older spec keeps working on every book it already knew.',
 });
 
 const BookSummarySchema = z
