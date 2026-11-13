@@ -496,4 +496,125 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             }),
         },
     });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/social/channels/{channelId}/media',
+        operationId: 'postChannelMedia',
+        summary: 'Post a photograph or a voice note to a channel',
+        description:
+            'ONE route for both kinds; the FIELD NAME decides — `photo` or `voice`. '
+            + 'Exactly one is required, and both at once is a refusal rather than a '
+            + 'precedence rule: a post carries one attachment, so silently preferring '
+            + 'one would make the other vanish without telling the caller. A caption is '
+            + 'optional, because a recording or a photograph alone is a complete post '
+            + '(P9.6) — `ChannelPost.body` is nullable and the CHECK accepts a row with '
+            + 'an attachment and no text.\n\n'
+            + '**The record-less upload class**, which decides the ordering: there is no '
+            + '`FileRecord` (its `tenantId` is NOT NULL and a channel has no tenant), so '
+            + 'nothing downstream carries a `scanStatus` and there is no download gate '
+            + 'to defer to. The AV scan runs at INGEST on the ORIGINAL bytes, before '
+            + 'anything is stripped or stored.\n\n'
+            + '**«max 2:00» is enforced by the BYTE CEILING, not by the duration.** The '
+            + 'server sees bytes, not seconds: `durationMs` is a validated claim stored '
+            + 'so a client can size a scrubber without downloading the file, and the '
+            + '1.5 MB ceiling is what bounds storage. That bounds duration only '
+            + 'approximately — speech at 8 kbps fits far more than two minutes under it, '
+            + 'and 320 kbps stereo is refused well short — because enforcing seconds '
+            + 'exactly would mean decoding the container server-side, which this does '
+            + 'not do.\n\n'
+            + '**Photographs are stripped of metadata; VOICE NOTES ARE NOT.** Nothing in '
+            + 'this repo strips an audio container, so a recorder that writes a location '
+            + 'atom would carry it — #3044 tracks that, and it is stated here rather '
+            + 'than left for the image path to imply.\n\n'
+            + 'An AV scan of an audio container establishes that the bytes are not a '
+            + 'known-malicious payload. Not that the file is a valid recording, and not '
+            + 'that it is safe to decode.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `INVALID_BODY` — not multipart, or not exactly one of `photo` / `voice`.\n'
+            + '- `FILE_TOO_LARGE`, `FILE_EMPTY`, `FILE_TYPE_NOT_ALLOWED` — the SHARED '
+            + 'upload bounds and vocabulary. 4 MB for a photograph (the avatar ruling), '
+            + '1.5 MB for a recording. The type is checked on the MAGIC NUMBER: '
+            + 'image/jpeg, image/png, image/webp, audio/mp4, audio/ogg. `audio/webm` is '
+            + 'deliberately absent — its EBML magic is shared with video/webm and the '
+            + 'two cannot be separated without parsing the track list, so accepting it '
+            + 'would let a video through a cap written for speech.\n'
+            + '- `VOICE_NOTE_DURATION_REQUIRED`, `VOICE_NOTE_TOO_LONG` — a missing or '
+            + 'nonsensical length, and one over two minutes. Distinct from '
+            + '`FILE_TOO_LARGE` because the remedies differ: record less, versus the '
+            + 'file is too big.\n'
+            + '- `CHANNEL_NOT_A_MEMBER`, `CHANNEL_BANNED`, `CHANNEL_SLOW_MODE`, '
+            + '`CHANNEL_ARCHIVED` — the channel\'s own posting rules, through the same '
+            + 'gate `POST /posts` uses.',
+        tags: TAGS,
+        bodyContentType: 'multipart/form-data',
+        body: z.object({
+            photo: z.string().optional().openapi({ format: 'binary' }),
+            voice: z.string().optional().openapi({ format: 'binary' }),
+            durationMs: z
+                .string()
+                .optional()
+                .openapi({ description: 'Required with `voice`. Milliseconds, 1–120000.' }),
+            body: z.string().optional().openapi({ description: 'Optional caption.' }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_BODY, FILE_TOO_LARGE, FILE_EMPTY, FILE_TYPE_NOT_ALLOWED, VOICE_NOTE_DURATION_REQUIRED, VOICE_NOTE_TOO_LONG or CHANNEL_ARCHIVED.',
+            403: 'CHANNEL_NOT_A_MEMBER, CHANNEL_BANNED or CHANNEL_SLOW_MODE.',
+            404: 'CHANNEL_NOT_FOUND, or the flag is off.',
+        }),
+        success: {
+            status: 201,
+            description: 'The post that now carries the attachment.',
+            schema: z.object({
+                postId: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/social/channel-posts/{postId}/attachment',
+        operationId: 'readChannelAttachment',
+        summary: 'Serve a channel post\'s photograph or voice note',
+        description:
+            'MEMBERSHIP, which is NARROWER than the post itself. `channel_post_select` '
+            + 'is public to any authenticated caller — nobody joins a channel they '
+            + 'cannot look into first — so the post\'s text and even its storage key are '
+            + 'readable by anybody signed in. The bytes are not, and the reason is the '
+            + 'voice note rather than the photograph: a recording carries the speaker\'s '
+            + 'VOICE, which is a different class of personal data from their words.\n\n'
+            + 'So a NON-MEMBER reading a channel gets a post whose text is there and '
+            + 'whose media is 404. A client must not render a broken player or a '
+            + 'placeholder for them.\n\n'
+            + 'A REMOVED post serves nothing, for all three removal columns — the '
+            + 'author\'s retraction, a moderator\'s decision and the auto-hide '
+            + 'threshold — and the refusal is the same 404 a missing post gives, so '
+            + 'neither answer says which.\n\n'
+            + '`Cache-Control: no-store`, so there is no ETag: these bytes must not sit '
+            + 'in a shared cache on a phone that may be lost, sold or handed on, and no '
+            + 'entry is added to the persistent-SWR allowlist. The content type is the '
+            + 'SNIFFED one recorded at upload, served with `X-Content-Type-Options: '
+            + 'nosniff`.',
+        tags: TAGS,
+        extraResponses: codedErrorResponses({
+            404: 'CHANNEL_POST_NOT_FOUND — no such post, it carries no attachment, it was removed, the caller is not a member, or the flag is off.',
+        }),
+        success: {
+            status: 200,
+            description:
+                'The bytes, as the type the upload SNIFFED — `image/jpeg`, `image/png`, '
+                + '`image/webp`, `audio/mp4` or `audio/ogg`. A client reads the '
+                + 'content type rather than guessing from the post, because the stored '
+                + 'type is per attachment and `nosniff` means a wrong guess is a broken '
+                + 'file rather than a corrected one.',
+            // `binary`, the DM photo egress's shape — a declared 2xx body rather
+            // than a bare content type. `openapi-response-shapes-ratchet` holds
+            // shapeless 2xx responses at zero, and it is right to: an operation
+            // with no declared body is one a client cannot generate against, and
+            // this one serves two media families.
+            schema: z.string().openapi({ format: 'binary' }),
+        },
+    });
+
 }

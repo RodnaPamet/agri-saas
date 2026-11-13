@@ -56,7 +56,7 @@
  * A photograph on this path IS stripped, through the shared helper, because a
  * farm photo carries GPS and a parcel location is exactly what must not
  * travel. A voice note is not, and the honest consequence is that a recording
- * made by an app that writes location into the container would carry it. #3042
+ * made by an app that writes location into the container would carry it. #3044
  * tracks that; it is a real gap and it is smaller than the photo one, since a
  * voice note is recorded in the app rather than picked from a library.
  */
@@ -65,7 +65,6 @@ import type { Readable } from 'node:stream';
 
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { runInUserContext } from '@/lib/db-context';
-import { prisma } from '@/lib/prisma';
 import { getStorageProvider } from '@/lib/storage';
 import { stripImageMetadata } from '@/lib/images/strip-metadata';
 import { sniffMimeType } from '@/lib/storage/mime-sniff';

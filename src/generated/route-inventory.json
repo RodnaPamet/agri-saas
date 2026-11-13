@@ -611,6 +611,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/channel-posts/{postId}/attachment",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/channel-posts/{postId}/replies",
       "status": "live",
       "documented": true
@@ -632,6 +637,11 @@
     },
     {
       "path": "/api/social/channels/{channelId}/join",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/channels/{channelId}/media",
       "status": "live",
       "documented": true
     },

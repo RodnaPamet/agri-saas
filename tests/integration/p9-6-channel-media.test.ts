@@ -15,7 +15,7 @@
  *     conflating them is exactly what #2940 warns about;
  *   · a photograph is STRIPPED and a voice note is NOT, which is a limitation
  *     rather than an oversight and is asserted so nobody "fixes" the test
- *     instead of the gap (#3042).
+ *     instead of the gap (#3044).
  *
  * Every refusal is paired with the same call by somebody entitled to make it.
  * P8.1 is why that is a rule here: three refusal cases passed there while
@@ -178,7 +178,7 @@ describeFn('P9.6 — channel media (#2940)', () => {
             expect(row.body).toBe('Чуйте това');
         }, 60_000);
 
-        it('a voice note is NOT stripped, and that is the known gap (#3042)', async () => {
+        it('a voice note is NOT stripped, and that is the known gap (#3044)', async () => {
             /*
              * Asserted so the limitation is visible in a test rather than only
              * in a docblock. `stripImageMetadata` handles images and
