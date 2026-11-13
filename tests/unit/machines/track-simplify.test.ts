@@ -231,17 +231,47 @@ describe('§4a the work budget bounds a pathological track', () => {
     const sawtooth = (n: number) =>
         Array.from({ length: n }, (_, i) => pt(i * 5, (i % 2 === 0 ? 1 : -1) * 6));
 
-    it('returns in bounded time on a sawtooth the radial pass cannot thin', () => {
-        // The radial pre-pass collapses points that are CLOSE; a sawtooth's
-        // points are 13 m apart, so it legitimately keeps them all and DP pays
-        // the quadratic cost. Measured at 1,215 ms for 2,900 points, times up
-        // to 12 tolerance passes — which is why the budget exists.
-        const t0 = Date.now();
+    it('returns a usable line on a sawtooth the radial pass cannot thin', () => {
+        /*
+         * The radial pre-pass collapses points that are CLOSE; a sawtooth's
+         * points are 13 m apart, so it legitimately keeps them all and DP pays
+         * the quadratic cost. Measured at 1,215 ms for 2,900 points, times up
+         * to 12 tolerance passes — which is why the budget exists. That figure
+         * is kept as HISTORY; nothing asserts it any more.
+         *
+         * THE WALL-CLOCK ASSERTION IS GONE (#3027). It read
+         * `expect(ms).toBeLessThan(5_000)`, and the property it stood for —
+         * that the work budget bounds the quadratic blowup — is asserted
+         * structurally in the two cases below, with a negative control. A
+         * clock adds nothing those two do not already say and subtracts
+         * determinism: measured at **43.5 s** in a contended run against the
+         * same tree that passes in isolation, because the simplifier was
+         * sharing cores with another jest population. A unit test whose
+         * verdict depends on what else the machine is doing is a test that
+         * fails on somebody else's work.
+         *
+         * WHAT THE DELETION COSTS, stated rather than waved away: a slowdown
+         * the budget does NOT reach — the radial pre-pass turning quadratic,
+         * say — would no longer be caught here. That case was never covered
+         * reliably (the bound was ~4× a measured single-pass cost, which a
+         * loaded box exceeds by an order of magnitude for reasons that are not
+         * the code's), and the honest place for it is a benchmark that reports
+         * rather than a unit test that fails.
+         *
+         * REMOVING THE BUDGET ITSELF IS STILL CAUGHT, and not by an assertion:
+         * measured by raising `PERP_BUDGET` to `Number.MAX_SAFE_INTEGER`, this
+         * suite stops RETURNING — 2,900 sawtooth points with no ceiling do not
+         * finish inside a test's patience — so jest fails it on the suite
+         * timeout. Ugly, and real: a `budgetExhausted` that cannot be read
+         * because the call never came back is a failure either way. That is
+         * why the clock was not the thing protecting this.
+         */
         const r = simplifyTrack(sawtooth(2900));
-        const ms = Date.now() - t0;
-        expect(ms).toBeLessThan(5_000);
         expect(r.rawCount).toBe(2900);
         expect(r.points.length).toBeGreaterThan(0);
+        // A line, not a pile of points: DP must have discarded something even
+        // in the pathological case, or "usable" is not what came back.
+        expect(r.points.length).toBeLessThan(r.rawCount);
     });
 
     it('says so, rather than reporting a coarse line as if the tolerance caused it', () => {

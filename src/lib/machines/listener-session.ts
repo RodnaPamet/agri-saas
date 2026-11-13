@@ -88,6 +88,10 @@ export interface SessionOptions {
 export class ListenerSession {
     private buf: Buffer = Buffer.alloc(0);
     private identity: TrackerIdentity | null = null;
+    /**
+     * The serialisation chain. Always a promise that RESOLVES — see `feed`.
+     */
+    private queue: Promise<void> = Promise.resolve();
     private closed = false;
     private readonly cap: ImeiRateCap;
     private readonly maxBuffer: number;
@@ -109,7 +113,44 @@ export class ListenerSession {
      * frame's records must be judged against ONE instant, and a test must be
      * able to sit exactly on a boundary without sleeping.
      */
+    /**
+     * SERIALISED, and that is a correctness property rather than tidiness.
+     *
+     * `feed` mutates `this.buf` and `this.identity` AFTER awaiting the
+     * allowlist lookup, so two overlapping calls both see `identity === null`
+     * with the IMEI still at the head of the buffer and both run the
+     * handshake. Measured on the real process (#2948 stage 6): a device whose
+     * handshake and first frame arrive as two `data` events close together got
+     * **two allowlist queries and two `ACCEPT` bytes**.
+     *
+     * The second ACCEPT is the one that costs something. After the handshake a
+     * Teltonika device expects exactly ONE byte, then a four-byte big-endian
+     * count; given `01 01 00 00 00 01` it reads `01 00 00 00` as its ack —
+     * 16,777,216 records accepted — and discards a buffer it has not actually
+     * delivered. That is the field-data loss the rate cap refuses to cause by
+     * acking, arriving instead through a framing bug.
+     *
+     * The lock lives HERE rather than in the caller because the invariant is
+     * this object's: a caller cannot be expected to know that an async method
+     * must not overlap, and `scripts/machine-listener.ts` dispatches each
+     * `data` event in its own async IIFE precisely because an `on('data')`
+     * handler cannot be awaited. Serialising inside keeps every caller safe
+     * and preserves the per-call contract — each call still resolves with the
+     * actions produced for ITS chunk, in arrival order.
+     */
     async feed(chunk: Buffer, nowMs: number): Promise<Action[]> {
+        const run = this.queue.then(() => this.feedSerial(chunk, nowMs));
+        // The chain is kept on a SWALLOWED copy: chaining on `run` itself
+        // would make one rejected call poison every later feed on this
+        // connection, which is a dead socket rather than a refused chunk.
+        this.queue = run.then(
+            () => undefined,
+            () => undefined,
+        );
+        return run;
+    }
+
+    private async feedSerial(chunk: Buffer, nowMs: number): Promise<Action[]> {
         if (this.closed) return [];
         const out: Action[] = [];
 
