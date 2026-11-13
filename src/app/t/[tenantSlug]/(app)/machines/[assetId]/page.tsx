@@ -26,12 +26,25 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
  * from an alert about it. It is NOT a map, and a reader should not expect one
  * here until the web gets a fleet surface.
  *
- * Unlinked ON PURPOSE, which is why it is in `pages-are-reachable`'s
- * `DELIBERATELY_UNLINKED` with this reason: nothing inside the product should
- * send anybody the long way round. The path exists to catch a destination
- * another client already resolves — the `/issues/[issueId]` and
- * `/grain/payroll` shape, for the same reason, which is that a URL in the wild
- * must land somewhere real.
+ * ## Not NAVIGABLE, but reachable — and those are different (#3048)
+ *
+ * Nothing inside the product should link here: a web reader goes to the asset
+ * directly, and sending them through a redirect would be the long way round.
+ * The path exists to catch a destination another client already resolves —
+ * the `/issues/[issueId]` and `/grain/payroll` shape, for the same reason,
+ * which is that a URL in the wild must land somewhere real.
+ *
+ * It is deliberately NOT in `pages-are-reachable`'s `DELIBERATELY_UNLINKED`,
+ * and it used to be. That guard asks whether anything offers a way IN, and
+ * the push payload above — `` `/t/${slug}/machines/${assetId}` `` — is one: a
+ * notification somebody taps is how a person actually arrives here. So the
+ * guard finds this page reachable, correctly, and the exemption suppressed
+ * nothing from the day it was written. An exemption that excuses nothing
+ * keeps its path pre-approved for whatever is created there next (#1285),
+ * which is why the claim lives here instead.
+ *
+ * Delete the page when the web gets a fleet surface, and point the alert at
+ * that instead.
  */
 export default function MachineRedirect() {
     const router = useRouter();

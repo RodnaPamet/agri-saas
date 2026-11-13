@@ -24,6 +24,20 @@ import { env } from '@/env';
  * of the old spelling to notice. It is dynamic today because it awaits
  * `params` and because `t/[tenantSlug]/layout.tsx` calls `noStore()`, and
  * `tests/guards/vapid-key-is-served-at-runtime.test.ts` is what keeps it so.
+ *
+ * ## Nothing in the product NAVIGATES here, and that is deliberate (#3048)
+ *
+ * An operator arrives from a QR code on the machine or from a push
+ * notification, never from in-app navigation: the MECHANISATOR persona is
+ * locked out of the rest of the product by `isOperatorAllowedPath`, so a link
+ * from a screen they cannot open would be the wrong affordance.
+ *
+ * That is a statement about the PAGE, not about any guard.
+ * `pages-are-reachable` finds this page reachable — a push payload and a QR
+ * code are both ways in — so it carries no `DELIBERATELY_UNLINKED` entry; it
+ * had one until #3048, and that entry suppressed nothing from the day it was
+ * written. Keep the reasoning here, where it is checkable against the
+ * persona lockdown rather than against a list in a test.
  */
 export default async function OperatorFieldPage({ params }: { params: Promise<{ tenantSlug: string; taskId: string }> }) {
     const { taskId } = await params;

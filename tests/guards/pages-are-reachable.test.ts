@@ -144,13 +144,8 @@ const SUBTREES: readonly Subtree[] = [
 const DELIBERATELY_UNLINKED: Readonly<Record<string, string>> = {
     'tenant:/grain/payroll':
         'A retired surface kept as a REDIRECT to `/grain/costs`, where payroll became a category. Unlinked on purpose — the sidebar and `GrainSectionNav` point at the category — and kept rather than deleted because the URL is in browser histories and bookmarks, and a farmer who followed one to a 404 would reasonably conclude their payroll data had been lost.',
-    'tenant:/machines/[assetId]':
-        'A redirect to `/assets/[assetId]`, and unlinked is the POINT. #2948 stage 5\'s area alert pushes `link: /t/{slug}/machines/{assetId}`, a shape agrent-ios #577 already resolves in TestFlight 128.1 — so the server cannot change it without breaking a shipped build. One `push-send` reaches BOTH transports, and the web has no machine surface at all (the live map and day history are iOS screens), so a web-push recipient who clicked that notification reached a 404. Nothing inside the product should link here: a web reader goes to the asset directly, and this exists only to make another client\'s destination land somewhere real. Delete it when the web gets a fleet surface, and point the alert at that instead.',
     'tenant:/issues/[issueId]':
         'A legacy redirect to `/farm-tasks/[id]`, and being unlinked is the POINT: it exists to catch bookmarks and old links from before the rename, so a link to it from inside the product would send somebody the long way round. Deleting it instead would 404 those bookmarks — #1087 is what a silent route removal costs.',
-    'tenant:/field/[taskId]':
-        'The offline operator PWA. Reached from a QR code on the machine or a push notification, never from in-app navigation — the MECHANISATOR persona is locked out of the rest of the product by `isOperatorAllowedPath`, so a link from a screen they cannot open would be the wrong affordance.',
-
     // ── the app root (#3037) ──────────────────────────────────────────────
     //
     // Only TWO root pages have no in-app link at all. The other nineteen are
@@ -642,18 +637,22 @@ describe('every page is reachable from inside the product (#2844, #3037)', () =>
         // page something already links excuses nothing today and keeps that
         // path pre-approved for whatever happens to it next (#1285).
         //
-        // Scoped to the root entries, which #3037 added. The two TENANT
-        // entries it does not cover — `/machines/[assetId]` and
-        // `/field/[taskId]` — are ALREADY inert on main, because the guard
-        // counts their push payload `` `/t/${slug}/machines/${assetId}` `` as
-        // a link, and it is right to: a push notification is a way in, and
-        // `/field/[taskId]`'s own reason says so. Their prose records a real
-        // decision, so retiring them is its own change rather than a side
-        // effect of this one — tracked on #3048.
+        // EVERY subtree, since #3048. It was scoped to the root entries when
+        // #3037 added it, because two TENANT entries were already inert on
+        // main — `/machines/[assetId]` and `/field/[taskId]`, both found
+        // linked by their push payload `` `/t/${slug}/machines/${assetId}` ``.
+        // The guard was right and the entries were wrong: a push notification
+        // IS a way in, and `/field/[taskId]`'s own reason said so. Both pages
+        // now carry that reasoning in their own docblocks, where "nothing
+        // should link here" is a statement about the page rather than about
+        // this guard, and the entries are gone.
+        //
+        // So the map means exactly one thing: nothing links this, and nothing
+        // is meant to. An entry that fails this test is describing an
+        // intention, which belongs in the page.
         const inert: string[] = [];
         for (const page of pages) {
             if (page.route === '/') continue;
-            if (page.tree !== 'root') continue;
             if (!DELIBERATELY_UNLINKED[keyOf(page)]) continue;
 
             const patterns = linkPatterns(page.route, page.prefix);
