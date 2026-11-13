@@ -247,6 +247,39 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
         ['message_reaction_select', 'message_reaction_insert',
          'message_reaction_delete'],
     ],
+    // ── #3007 — PersonProfile, now that a reader exists ──
+    //
+    // P6.1 shipped this table with NO policy and said why: "no reader of any
+    // kind yet". It also named the condition for revisiting, and this file's
+    // own NO_RLS entry repeated it — "The policy belongs to the FIRST PR that
+    // routes a person-scoped read through app_user". #2989 was that PR (the
+    // channel author line reads this table on every feed) and shipped without
+    // it; #3007 is the correction.
+    //
+    // FIVE per-command policies, because the read and the write admit
+    // DIFFERENT rows. A published profile is readable by any authenticated
+    // caller — that cross-farm read IS the author line the owner approved —
+    // while writes are own-row only. One `ALL` policy whose USING said
+    // `published = true OR own` would govern UPDATE too and let every caller
+    // rename anybody; `person-profile-rls` asserts exactly that case.
+    //
+    // KNOWN LIMIT, written down rather than left to be found: this bucket is
+    // CONTAINMENT, so the ABSENCE of a delete arm is not guarded. Adding
+    // `person_profile_delete_own` would leave every policy below in place and
+    // pass. That absence is deliberate — erasure runs privileged, and
+    // clearing a name is an unpublish rather than a row deletion, so a person
+    // cannot take their own channel authorship out from under a thread —
+    // and making it ENFORCED means moving this to the equality bucket, which
+    // is the #3014 treatment and a different measurement.
+    [
+        'PersonProfile',
+        [
+            'person_profile_select_published',
+            'person_profile_select_own',
+            'person_profile_insert_own',
+            'person_profile_update_own',
+        ],
+    ],
     // ── P9.1 (#2935) — channels ──
     //
     // Party-scoped, keyed on `app.user_id` like the DM family above, and for
@@ -542,7 +575,6 @@ const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
     ['OutboundMessage', '#1769 \u2014 one row per outbound email, keyed by the provider\u2019s message id, so a delivery webhook can undo what the send caused. Written by `sendEmail` and read by `/api/webhooks/resend`, both on the GLOBAL client: tenant context binds `app_user` with `SET LOCAL ROLE` inside a `$transaction` and hands the callback that `tx`, so the global client is a different connection and never carries the role. Verified for the hardest case rather than assumed \u2014 the invite routes call `sendInviteEmail` at route scope, AFTER `createInviteToken` has committed its own context, which is also why the recorder works there at all. The webhook has no tenant to scope by: it self-authenticates by signature and its caller is Resend. Deliberately not tenant-scoped \u2014 password resets and the canary have no tenant, and a nullable `tenantId` on a lookup-by-message-id table invites a query that silently misses them. Holds the recipient DOMAIN only, never the address.'],
     ['User', 'The person. Read via the global client on auth paths; pii-middleware handles the encrypted columns.'],
     ['Account', 'NextAuth OAuth link rows, owned by the adapter. No src/ call site runs under app_user.'],
-    ['PersonProfile', 'P6.1 \u2014 a person\u2019s own public identity, keyed by userId with no tenantId, following User above: a person exists once across every farm they belong to, which is what TenantMembership is for. Measured 2026-10-14: NO reader of any kind yet \u2014 the P6.1 migration ships the table and the writer comes a release later, per the phase rule that tables precede the code that writes them. I first wrote a user-scoped fail-closed policy citing P1.4, and that was the wrong precedent: P1.4 narrowed tables that ALREADY HAD an over-permissive policy (UserSession\u2019s unconditional null-tenant arm), where there was a live over-permission to close. This has no policy and no reader, which is the User / Tenant / FeatureFlag situation. The policy belongs to the FIRST PR that routes a person-scoped read through app_user \u2014 P6.6\u2019s editor or P6.9\u2019s iOS profile view \u2014 which is also the only PR that can write an integration test with real negative controls for it, and a control that cannot express failure is green for ever.'],
     ['AuthSession', 'NextAuth adapter session table (@@map "Session"). ZERO src/ references — the adapter owns it.'],
     ['PasswordResetToken', 'Single-purpose reset tokens, claimed by a conditional updateMany on the auth path.'],
     ['VerificationToken', 'Single-purpose verify-email tokens, keyed by identifier rather than by user.'],
