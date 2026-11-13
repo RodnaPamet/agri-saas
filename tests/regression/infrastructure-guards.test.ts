@@ -191,13 +191,25 @@ describe('Infrastructure Regression Guards', () => {
             // job logs a denominator rather than letting `hidden: 0` read as
             // "the rule is working".
             //
-            // MEASURED from the failing assertion rather than computed from the
-            // line above, for the reason the previous entry records. This one
-            // was measured in CI and not locally, because `tests/regression` is
-            // not in `verify:changed`'s derived population for a schedule
-            // change — fixed in the same commit, since a pin nothing local
-            // reaches is a pin that only ever fails after a push.
-            expect(SCHEDULED_JOBS).toHaveLength(34);
+            // 34 → 35 (#2948 stage 4, #2984): `worked-parcel-derivation`.
+            // Nightly at 02:20 UTC, turning a day of raw `MachinePosition`
+            // rows into `WorkedParcel` records, and writing a
+            // `MachineWorkedDay` marker whether or not it matched anything —
+            // without which an idle machine is indistinguishable from an
+            // unprocessed day and the phone says «изчисляват се през нощта»
+            // for ever.
+            //
+            // MEASURED from the failing assertion rather than computed from
+            // the line above, for the reason the previous entry records. And
+            // it failed in CI rather than locally for a reason worth
+            // correcting in the record: the entry above says `tests/regression`
+            // is outside `verify:changed`'s population for a schedule change,
+            // and that is NOT true — `^src/app-layer/jobs/` maps to
+            // `tests/unit` and `tests/regression`, and has for as long as that
+            // rule has existed. What actually happened is that I hand-picked
+            // suites instead of running the derived population, which
+            // CLAUDE.md names as the mistake that costs three CI cycles.
+            expect(SCHEDULED_JOBS).toHaveLength(35);
         });
 
         test('scheduled job names match expected set', () => {
@@ -343,6 +355,10 @@ describe('Infrastructure Regression Guards', () => {
                 // ALPHABETICALLY: this list is compared against `.sort()`.
                 'usage-event-retention',
                 'weather-pull',
+                // #2948 stage 4 — nightly worked-parcel derivation, 02:20 UTC.
+                // Last ALPHABETICALLY, which is what this list is compared
+                // against.
+                'worked-parcel-derivation',
                 // Daily 06:45 UTC — names every API route that took failures
                 // and ZERO successes in the last 24h, read from the hourly
                 // per-route outcome counters the request wrapper writes.
