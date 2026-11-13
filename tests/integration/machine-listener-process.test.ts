@@ -28,6 +28,20 @@
  * before storing, ignored `close`, or reused one identity across sockets is
  * invisible to every suite above and visible here.
  *
+ * ## WHAT THIS SUITE DETECTS, AND WHAT IT DOES NOT
+ *
+ * It FOUND the re-entrancy defect in `ListenerSession.feed` (two allowlist
+ * queries and two ACCEPT bytes for one connection) on its second run, which is
+ * the case for existing at all. It is a WEAK detector of it: measured against
+ * the un-serialised session, this file fails **2 runs in 5**, because the
+ * overlap depends on how the kernel groups two writes into `data` events.
+ *
+ * So the reliable guard for that defect is `listener-session.test.ts` §2a,
+ * which forces the overlap with a slow lookup and kills the mutation every
+ * time. Stated here rather than left to be assumed: a reader who sees this
+ * suite green must not conclude the serialisation is intact — and a reader
+ * debugging a flake here should suspect the dispatch, not the test.
+ *
  * ## The one property that is genuinely new
  *
  * `stored`, `accepted` and `drops` are MODULE-scope in that script while the
