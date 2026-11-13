@@ -115,6 +115,14 @@ export interface ChannelListItem {
     /** Whether the caller is banned. Shown so a ban is not a silent refusal. */
     readonly banned: boolean;
     /**
+     * Whether the caller has muted this channel — #3042.
+     *
+     * NULL for a channel the caller has not joined, for `unreadCount`'s
+     * reason: a mute is a property of a membership, and `false` would read as
+     * "joined and hearing about it".
+     */
+    readonly muted: boolean | null;
+    /**
      * Top-level posts since the caller's read cursor — #2990.
      *
      * **NULL for a channel the caller has not joined**, never 0. A count for a
@@ -151,7 +159,7 @@ export async function listChannels(ctx: UserContext): Promise<ChannelListItem[]>
             // The caller's own rows. ONE query, then a map — not a lookup per
             // channel, which is the N+1 the D1 guardrail refuses.
             tx.channelMembership.findMany({
-                select: { channelId: true, bannedAt: true },
+                select: { channelId: true, bannedAt: true, mutedAt: true },
             }),
         ]);
         const byChannel = new Map(mine.map((m) => [m.channelId, m]));
@@ -163,6 +171,8 @@ export async function listChannels(ctx: UserContext): Promise<ChannelListItem[]>
                 kind: String(c.kind),
                 joined: m !== undefined,
                 banned: m?.bannedAt != null,
+                // NULL for a non-member, like `unreadCount` — see the type.
+                muted: m === undefined ? null : m.mutedAt !== null,
                 // NULL, not 0, for a channel the caller has not joined — see
                 // `ChannelListItem`.
                 unreadCount: m === undefined ? null : (unread.get(c.id) ?? 0),
@@ -293,6 +303,96 @@ async function unreadByChannel(
  * catching an error to tell them apart — and a zero count is checked against a
  * separate membership read rather than assumed to mean one of them.
  */
+/**
+ * Mute or unmute a channel for the caller — #3042.
+ *
+ * ## The column was honoured and unwritable, which is the defect
+ *
+ * P9.1 declared `ChannelMembership.mutedAt` and #2987 made it MEAN something:
+ * `reachableTargets` filters on it for every mention and every reply, so a
+ * muted member is not pushed to. Nothing could set it. A mute control on the
+ * phone would have done nothing and looked exactly like a working one — which
+ * is the sentence #2987 was filed about, arriving back at the same column from
+ * the other side.
+ *
+ * It was orphaned rather than merely unbuilt: #2990 excluded it because "a
+ * mute with no push is inert", pointing at #2987, and that PR shipped the push
+ * and went green without a writer. The exclusion was correct when written and
+ * its premise then went false — a scoping argument with the same expiry as a
+ * safety one.
+ *
+ * ## No monotonic guard, unlike the read cursor next door
+ *
+ * `markChannelRead` guards with `lastReadAt: { lt: now }` because a cursor has
+ * an ORDER and a stale client must not drag it backwards. A mute is a TOGGLE:
+ * there is no later-or-earlier about it, so the same guard would be ceremony
+ * copied for its shape rather than its reason — and it would make unmuting
+ * impossible, since clearing the column is not "moving forward".
+ *
+ * What does transfer is the `updateMany`-and-count idiom. `update` on a
+ * composite unique throws when the row is absent, and a non-member muting a
+ * channel is a REFUSAL rather than an insert: an insert here would be a second
+ * `ChannelMembership` writer, which `channels-are-never-auto-joined` refuses
+ * by name, and `channel_membership_update` would not admit it anyway.
+ *
+ * ## Unmute writes NULL; it does not delete the row
+ *
+ * The row also carries `lastReadAt` and `joinedAt`, so deleting it to unmute
+ * would silently discard the read cursor and the boundary the first unread
+ * count is measured from — P9.5's "leaving is not lossless", reached by
+ * accident instead of by a Leave button.
+ *
+ * ## Idempotent, and the stored state is what comes back
+ *
+ * Muting a muted channel is not an error and does not re-stamp `mutedAt`: that
+ * timestamp is when the person chose silence, and an idempotent call must not
+ * rewrite history to report success. So a no-op returns the STORED value
+ * rather than echoing the request — #2990's lesson, where a function that
+ * echoes its input cannot report that it did nothing.
+ *
+ * ## It takes effect on the NEXT publish, not retroactively
+ *
+ * `reachableTargets` reads `mutedAt` when a post is made, so muting does not
+ * withdraw a push already enqueued. Worth stating because "I muted it and
+ * still got one" is otherwise a bug report rather than a race nobody can
+ * close: the alternative is re-checking the mute inside the job, which would
+ * make a mute at 23:59 silently cancel a notification somebody was already
+ * being told about.
+ */
+export async function setChannelMuted(
+    ctx: UserContext,
+    channelId: string,
+    muted: boolean,
+    now: Date = new Date(),
+): Promise<{ muted: boolean; mutedAt: string | null }> {
+    return runInUserContext(ctx, async (tx) => {
+        const changed = await tx.channelMembership.updateMany({
+            // Only rows whose state actually differs, so `count` distinguishes
+            // "changed it" from "already like that" without a second read in
+            // the common case.
+            where: muted ? { channelId, mutedAt: null } : { channelId, mutedAt: { not: null } },
+            data: { mutedAt: muted ? now : null },
+        });
+
+        if (changed.count > 0) {
+            return { muted, mutedAt: muted ? now.toISOString() : null };
+        }
+
+        // Either not a member, or already in the requested state. Only the
+        // first is an error, so ask which rather than inferring it.
+        const mine = await tx.channelMembership.findFirst({
+            where: { channelId },
+            select: { mutedAt: true },
+        });
+        if (mine === null) throw codedNotFound('CHANNEL_NOT_JOINED', 'Not a member');
+
+        return {
+            muted: mine.mutedAt !== null,
+            mutedAt: mine.mutedAt?.toISOString() ?? null,
+        };
+    });
+}
+
 export async function markChannelRead(
     ctx: UserContext,
     channelId: string,

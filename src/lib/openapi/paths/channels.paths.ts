@@ -302,6 +302,62 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'post',
+        path: '/api/social/channels/{channelId}/mute',
+        operationId: 'muteChannel',
+        summary: 'Mute a channel',
+        description:
+            'Stops the mention and reply PUSH for this caller in this channel. '
+            + '`ChannelMembership.mutedAt` has been honoured since #2987 — '
+            + '`reachableTargets` filters on it for every mention and reply — and was '
+            + 'writable by nobody until #3042, so a mute control would have done nothing '
+            + 'while looking exactly like a working one. '
+            + 'IDEMPOTENT, and muting an already-muted channel does NOT re-stamp '
+            + '`mutedAt`: that moment is when the person chose silence, so the response '
+            + 'carries the STORED value rather than the request\'s. '
+            + 'It takes effect on the NEXT post and is not retroactive — a push already '
+            + 'enqueued is not withdrawn, because re-checking the mute inside the job '
+            + 'would let a mute at 23:59 silently cancel a notification somebody was '
+            + 'already being told about. '
+            + 'The mention ROW is still written for a muted member: a mention records '
+            + 'being NAMED, a mute is a statement about being INTERRUPTED, and the Art 15 '
+            + 'export reads those rows.',
+        tags: TAGS,
+        extraResponses: codedErrorResponses({
+            404: 'CHANNEL_NOT_JOINED — not a member, so there is no membership row to '
+                + 'mute. Shared with the read cursor and deliberately NOT '
+                + '`CHANNEL_NOT_A_MEMBER`, whose sentence is about posting. Also 404 when '
+                + 'the `social.channels` flag is off for this caller.',
+        }),
+        success: {
+            status: 200,
+            description: 'Muted. `mutedAt` is the stored moment, not necessarily now.',
+            schema: z.object({ muted: z.boolean(), mutedAt: z.string().nullable() }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/social/channels/{channelId}/mute',
+        operationId: 'unmuteChannel',
+        summary: 'Unmute a channel',
+        description:
+            'Clears `mutedAt` to NULL and KEEPS the membership row — deleting the row to '
+            + 'unmute would discard `lastReadAt` and `joinedAt` with it, which is P9.5\'s '
+            + '"leaving is not lossless" reached by accident rather than by a Leave '
+            + 'button. Idempotent: unmuting something that is not muted is not an error.',
+        tags: TAGS,
+        extraResponses: codedErrorResponses({
+            404: 'CHANNEL_NOT_JOINED, or the flag is off (see the note on this tag).',
+        }),
+        success: {
+            status: 200,
+            description: 'Unmuted, or was never muted.',
+            schema: z.object({ muted: z.boolean(), mutedAt: z.string().nullable() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
         path: '/api/social/channels/{channelId}/read',
         operationId: 'markChannelRead',
         summary: 'Move the read cursor to now',
