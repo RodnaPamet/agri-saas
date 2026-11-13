@@ -83,6 +83,22 @@ function m4a(payloadBytes = 2048, brand = 'M4A '): Buffer {
     return Buffer.concat([head, body]);
 }
 
+/**
+ * An m4a carrying a LOCATION atom — #3044's subject.
+ *
+ * Built by splicing `©xyz` and an ISO-6709 string into the payload of an
+ * otherwise-valid file, which is where a recorder that wrote one would put it
+ * (inside `moov`/`udta`). The scan is a byte-level marker check rather than a
+ * parser, so a spliced atom is exactly as visible to it as a real one — and if
+ * the check ever becomes a parser, THIS fixture is the one that has to become
+ * a real container.
+ */
+function m4aWithLocation(): Buffer {
+    const base = m4a(2048);
+    const atom = Buffer.from('\u00a9xyz+42.6977+023.3219/', 'latin1');
+    return Buffer.concat([base.subarray(0, 64), atom, base.subarray(64)]);
+}
+
 describeFn('P9.6 — channel media (#2940)', () => {
     beforeAll(async () => {
         await prisma.$connect();
@@ -254,6 +270,102 @@ describeFn('P9.6 — channel media (#2940)', () => {
             await expect(
                 postChannelPhoto(ctxFor(MEMBER), channelId, { bytes: m4a() }),
             ).rejects.toMatchObject({ code: 'FILE_TYPE_NOT_ALLOWED' });
+        }, 60_000);
+    });
+
+    describe('§2a a recording carrying its LOCATION is refused (#3044)', () => {
+        it('refuses an m4a with a ©xyz atom', async () => {
+            await expect(
+                postChannelVoiceNote(ctxFor(MEMBER), channelId, {
+                    bytes: m4aWithLocation(),
+                    durationMs: 5_000,
+                }),
+            ).rejects.toMatchObject({ code: 'VOICE_NOTE_HAS_LOCATION' });
+        }, 60_000);
+
+        it('accepts the SAME recording without the atom — the control', async () => {
+            /*
+             * Without this, the refusal above passes for a fixture that was
+             * never acceptable: `m4aWithLocation` splices bytes into a valid
+             * file, and a splice that broke the container would be refused as
+             * the wrong TYPE while reading as a privacy pass.
+             */
+            await expect(
+                postChannelVoiceNote(ctxFor(MEMBER), channelId, {
+                    bytes: m4a(2048),
+                    durationMs: 5_000,
+                }),
+            ).resolves.toMatchObject({ postId: expect.any(String) });
+        }, 60_000);
+
+        it('does NOT refuse an encoder tag — the rule is location, not metadata', async () => {
+            /*
+             * `©too` names a device model and a future recorder may write one
+             * legitimately. Refusing it would reject honest recordings for no
+             * privacy gain, and a control that fires on honest input is one
+             * somebody switches off. Asserted so a later widening to "any
+             * metadata" has to argue with a test rather than a comment.
+             */
+            const base = m4a(2048);
+            const tag = Buffer.from('\u00a9tooCore Audio', 'latin1');
+            const withTag = Buffer.concat([base.subarray(0, 64), tag, base.subarray(64)]);
+            await expect(
+                postChannelVoiceNote(ctxFor(MEMBER), channelId, {
+                    bytes: withTag,
+                    durationMs: 5_000,
+                }),
+            ).resolves.toMatchObject({ postId: expect.any(String) });
+        }, 60_000);
+
+        it('a PHOTOGRAPH carrying the marker is ACCEPTED — the rule is audio-only', async () => {
+            /*
+             * A VALID JPEG whose bytes genuinely contain `©xyz`, placed there
+             * through EXIF rather than by splicing — my first version spliced
+             * the atom into the file and asserted "rejected, but not with the
+             * location code", which PASSED for the wrong reason: the splice
+             * survives the magic-number check, so the refusal came from libvips
+             * choking on a corrupt JPEG. An assertion satisfied by an
+             * incidental decoder error says nothing about the rule.
+             *
+             * The property is that the photo path strips metadata rather than
+             * refusing it — re-encoding an image is a solved operation that
+             * preserves what the user wanted, while re-encoding audio to drop a
+             * tag is a transcode. So this must be ACCEPTED and come back
+             * stripped, and if the audio rule ever reached images this case
+             * fails with `VOICE_NOTE_HAS_LOCATION`.
+             */
+            /*
+             * `loci` rather than `©xyz`, and the fixture control is why: sharp
+             * writes EXIF through exiv2, which TRANSLITERATES U+00A9 to the
+             * three characters `(C)`. My first version asserted the bytes
+             * contained `©xyz` and the control failed on a buffer holding
+             * `(C)xyz` — a fixture that did not carry what the test claimed,
+             * caught by the one assertion whose job is to say so.
+             *
+             * `loci` is the 3GPP location box name, pure ASCII, and is in the
+             * same marker list — so it tests the same property with a string
+             * the writer cannot rewrite.
+             */
+            const located = await sharp({
+                create: { width: 48, height: 32, channels: 3, background: { r: 9, g: 9, b: 9 } },
+            })
+                .withMetadata({ exif: { IFD0: { Copyright: 'loci+42.6977+023.3219/' } } })
+                .jpeg()
+                .toBuffer();
+            // The control for the fixture: the marker must actually be in the
+            // bytes, or "accepted" is true of a photograph that never carried
+            // it.
+            expect(located.toString('latin1')).toContain('loci');
+
+            const posted = await postChannelPhoto(ctxFor(MEMBER), channelId, { bytes: located });
+            const out = await readChannelAttachment(ctxFor(MEMBER), posted.postId);
+            const chunks: Buffer[] = [];
+            for await (const c of out.stream) chunks.push(Buffer.from(c));
+            const served = Buffer.concat(chunks);
+
+            // Accepted AND stripped — the marker is gone because the EXIF is.
+            expect((await sharp(served).metadata()).exif).toBeUndefined();
+            expect(served.toString('latin1')).not.toContain('loci');
         }, 60_000);
     });
 
