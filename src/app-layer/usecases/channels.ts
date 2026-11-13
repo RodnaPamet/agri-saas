@@ -63,7 +63,10 @@
  */
 import { prisma } from '@/lib/prisma';
 import { runInUserContext } from '@/lib/db-context';
+import { afterCommit } from '@/lib/db/after-commit';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
+import { publishChannelActivityEvent } from '@/lib/notifications/notification-bus';
+import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { UserContext } from '@/app-layer/types';
 
@@ -731,6 +734,17 @@ export async function postToChannel(
         // splitting the transaction or taking a second pool connection while
         // holding one — #1191's P0.8 deadlock.
         const mentionsRecorded = await recordMentions(tx, post.id, recordable);
+        // Queued from INSIDE the callback and drained after COMMIT — see
+        // `queueChannelActivityNotify`. No `parentAuthorUserId`: a top-level
+        // post notifies the people it MENTIONS and nobody else, because
+        // telling every member would make a 2,000-member crop channel
+        // reachable by anybody who joined it.
+        queueChannelActivityNotify({
+            channelId,
+            authorUserId: ctx.userId,
+            mentionedUserIds: recordable,
+            parentAuthorUserId: null,
+        });
         return { postId: post.id, createdAt: post.createdAt, mentionsRecorded };
     });
 }
@@ -751,8 +765,12 @@ export async function postToChannel(
  *
  * ## Mentions are recorded on the REPLY only
  *
- * Recording them on both rows would push twice for one act. The reply is where
- * the mention was made; the copy exists for visibility.
+ * Recording them on both rows would notify twice for one act. The reply is
+ * where the mention was made; the copy exists for visibility.
+ *
+ * Since #2987 that is a statement about live behaviour rather than an
+ * intention — `queueChannelActivityNotify` is called once, for the REPLY, and
+ * not again for the channel copy, which is the same rule one level up.
  *
  * ## Threads are ONE level deep
  *
@@ -803,7 +821,14 @@ export async function replyToPost(
     return runInUserContext(ctx, async (tx) => {
         const parent = await tx.channelPost.findUnique({
             where: { id: parentPostId },
-            select: { id: true, channelId: true, parentPostId: true, deletedAt: true },
+            select: {
+                id: true, channelId: true, parentPostId: true, deletedAt: true,
+                // #2987 — the reply's notify target. Selected here rather than
+                // read again afterwards: the row is already being fetched, and
+                // a second read would be a second chance to disagree about
+                // which post the reply is under.
+                authorUserId: true,
+            },
         });
         if (!parent) {
             throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
@@ -864,6 +889,18 @@ export async function replyToPost(
         });
 
         const mentionsRecorded = await recordMentions(tx, reply.id, recordable);
+
+        // ONE event per person even when a reply also MENTIONS its parent's
+        // author — `notifyChannelActivity` unions the two causes into a set.
+        // Queued once for the REPLY and not again for «Също изпрати в канала»'s
+        // channel copy, which is the same rule that stops the copy re-recording
+        // the mentions: one act, one notification.
+        queueChannelActivityNotify({
+            channelId: channel.id,
+            authorUserId: ctx.userId,
+            mentionedUserIds: recordable,
+            parentAuthorUserId: parent.authorUserId,
+        });
 
         let channelCopyPostId: string | null = null;
         if (input.alsoToChannel) {
@@ -1063,7 +1100,7 @@ async function resolveMentionable(
     }
 
     // Deduplicated before the read, so a body naming somebody twice costs one
-    // lookup and cannot push twice. `@@unique([postId, userId])` would refuse
+    // lookup and cannot notify twice. `@@unique([postId, userId])` would refuse
     // the second row anyway; this keeps the COUNT honest.
     //
     // A SELF-mention is dropped rather than refused: a picker allows it, and
@@ -1101,4 +1138,166 @@ async function recordMentions(
         data: recordable.map((userId) => ({ postId, userId })),
     });
     return recordable.length;
+}
+
+interface ChannelActivityTargets {
+    channelId: string;
+    authorUserId: string;
+    mentionedUserIds: readonly string[];
+    /** The author of the post being replied to, or null for a top-level post. */
+    parentAuthorUserId: string | null;
+}
+
+/**
+ * Who may be TOLD about a post — the mute and the ban are applied here.
+ *
+ * ## TWO causes, ONE event — and the `Set` is NOT what achieves that
+ *
+ * P9.3 notifies for mentions and replies and nothing else — never for an
+ * ordinary post, which would make every member of a 2,000-member crop channel
+ * reachable by anybody who joined it. A reply that also mentions its parent's
+ * author is ONE act and must produce ONE event.
+ *
+ * The obvious claim is that the `new Set` below is what holds that, and it is
+ * false — MEASURED, by a mutation that removed the `Set` and left every case
+ * in `channel-mention-notifies` green. The duplicate dies one line later: the
+ * publish iterates the ROWS of a `findMany`, and there is one
+ * `ChannelMembership` row per person per channel, so `in: [x, x]` returns one
+ * row and one event however many times `x` appears.
+ *
+ * The `Set` stays, for two smaller reasons rather than the big one: it keeps
+ * the `in` list from carrying needless duplicates, and it keeps the
+ * `candidates` figure in the log below honest — a count of 2 for one person
+ * mentioned twice would make the `suppressed` arithmetic beside it read as a
+ * mute that did not happen.
+ *
+ * Recorded this way rather than quietly deleted, because the mechanism a
+ * reader would credit and the mechanism that works are different ones, and
+ * the test asserting ONE event is right either way: it grades the OUTCOME, so
+ * it survives a future change to which of the two does the work. This is the
+ * same shape as `sendDirectMessage`'s `!deduplicated` guard — a condition that
+ * cannot be false reads as a safeguard and is one more thing to keep true.
+ *
+ * ## THE MUTE IS APPLIED HERE, NOT AT THE MENTION
+ *
+ * `resolveMentionable` deliberately does not filter `mutedAt`: the mention ROW
+ * is a record — and the thing the Art 15 export returns — while a mute is a
+ * statement about being INTERRUPTED. Filtering earlier would make a muted
+ * person's mention vanish from their own data download, which is the opposite
+ * of what muting a channel means.
+ *
+ * ## Banned, and LEFT, are both read as "do not tell me"
+ *
+ * `bannedAt: null` is required, so a banned member is not notified even though
+ * they may still READ the channel. And a parent author who has LEFT has no row
+ * at all, so a reply to their old post tells them nothing: leaving discards
+ * `lastReadAt` and `mutedAt` (P9.5 — rejoining writes a FRESH row), so there
+ * is no preference left to honour and treating the absence as "not interested
+ * in this channel" is the only reading that does not invent one.
+ *
+ * ## PRIVILEGED, and necessarily so
+ *
+ * `channel_membership_select` admits the caller's OWN ROW ONLY — forced by
+ * P8.1's recursion rule — so a user-context read here returns at most the
+ * author's own row and every recipient is silently dropped. That is the shape
+ * `resolveMentionable` already carries a docblock about, and it is also why
+ * this runs after the commit: a privileged read taken while a user-context
+ * transaction is still open is #1191's P0.8 deadlock at `PG_POOL_MAX`.
+ */
+async function reachableTargets(args: ChannelActivityTargets): Promise<string[]> {
+    const candidates = [...new Set([
+        ...args.mentionedUserIds,
+        ...(args.parentAuthorUserId ? [args.parentAuthorUserId] : []),
+    ])].filter((id) => id !== args.authorUserId);
+    if (candidates.length === 0) return [];
+
+    const rows = await prisma.channelMembership.findMany({
+        where: {
+            channelId: args.channelId,
+            userId: { in: candidates },
+            mutedAt: null,
+            bannedAt: null,
+        },
+        select: { userId: true },
+    });
+
+    // The DENOMINATOR beside the answer, because `notified=0` is otherwise
+    // ambiguous between "nobody was addressed" and "everybody addressed is
+    // muted" — and the defect this closes was a mechanism whose absence was
+    // invisible for exactly that kind of reason.
+    logger.info('channel.activity_targets', {
+        component: 'channels',
+        channelId: args.channelId,
+        candidates: candidates.length,
+        reachable: rows.length,
+        suppressed: candidates.length - rows.length,
+    });
+    return rows.map((r) => r.userId);
+}
+
+/**
+ * Tell the people a post is FOR — #2987.
+ *
+ * ## What this closes, and why nothing failed before it
+ *
+ * `recordMentions` was the only writer of `ChannelPostMention` and the GDPR
+ * export was the only reader, so a mention's sole observable effect was that
+ * it appeared in the mentioned person's Art 15 download, possibly months
+ * later. Three docblocks described a push that did not exist — one of them a
+ * SECURITY argument (`channel_post_mention_insert` has no `app_user` arm
+ * "because a mention is a PUSH TRIGGER") and one of them `mutedAt`'s, a column
+ * no writer touched and nothing consulted.
+ *
+ * Every check stayed green: a missing notification is not a route, no copy was
+ * absent because none is composed, and the behavioural suites asserted that
+ * the ROW was written — which was true. #2961's rule verbatim: when you add a
+ * write, name the read path that makes its effect observable.
+ *
+ * ## `afterCommit`, and the publish is INSIDE the callback on purpose
+ *
+ * `runInUserContext` OWNS an after-commit scope (both helpers in
+ * `db-context.ts` do, placed outside `$transaction`), so queuing from inside
+ * its callback defers correctly and a ROLLBACK drops the queue unrun.
+ * `sendDirectMessage` cannot use this — a bare `prisma.$transaction` opens no
+ * scope and `afterCommit` there fires `void runEffect(...)` un-awaited, which
+ * is #1619 — and the difference is worth naming because the two sit one domain
+ * apart.
+ *
+ * The publish is written INSIDE the callback rather than in a function the
+ * callback calls, because `notification-publish-after-commit` is LEXICAL: it
+ * asks whether the call sits inside an `afterCommit(` span. A publish one hop
+ * away is unwrapped as far as that guard can tell, and it reported exactly
+ * that on the first draft of this file — correctly, since the next person to
+ * call that helper from somewhere else would not be warned.
+ *
+ * One consequence is measured and worth relying on: the scope owner AWAITS
+ * the drain, so by the time `postToChannel` resolves the event has been
+ * published. Replacing `afterCommit` with an un-awaited `void (async () =>
+ * …)()` reddened 12 of 14 cases in `channel-mention-notifies` — not because
+ * the rollback leaked, but because the publish had not happened yet when the
+ * caller looked. So this is not fire-and-forget with respect to the REQUEST;
+ * it is one indexed membership query on the response path, which is the price
+ * of the event being observable at all.
+ *
+ * ## What is NOT delivered yet, stated here because the issue is still open
+ *
+ * This is the SSE half. A person with the app open learns about a mention or a
+ * reply at once; a person with it closed learns nothing until they open it,
+ * because every push transport in this repo is tenant-scoped end to end —
+ * `PushSubscription.tenantId` is NOT NULL, `sendApnsToUser` binds RLS through
+ * `runInTenantContext`, and `UserNotificationPreference` is per (user, farm).
+ * A channel has no farm, so there is no tenant to resolve without inventing
+ * one, which is the mistake P5.4a names for `NotificationOutbox`. A DM is in
+ * exactly the same position today and equally silent.
+ */
+function queueChannelActivityNotify(args: ChannelActivityTargets): void {
+    afterCommit('channel-activity-notify', async () => {
+        for (const userId of await reachableTargets(args)) {
+            // The CHANNEL id, never the post id — see `StreamFrame`. The
+            // publisher returns void by design: the post is committed by the
+            // time this runs, a lost event degrades to the client's REST
+            // refetch, and this cannot become a new unhandled-rejection path.
+            publishChannelActivityEvent(userId, { id: args.channelId });
+        }
+    });
 }

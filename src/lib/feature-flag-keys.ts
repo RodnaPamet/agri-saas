@@ -111,6 +111,25 @@ export const REFERENCED_FLAG_KEYS = [
     // the only difference is whether the probe can see that somebody decided.
     'assistant.memory',
     'integrations.google',
+    /**
+     * «Вдъхновение» — the book library (#2980). Gates both reads:
+     * `GET /api/library/books` and `GET /api/library/books/{slug}`.
+     *
+     * Dark by default, and expected to STAY dark longer than its neighbours.
+     * Two switches have to be on before anybody reads a book, and they are
+     * independent on purpose: this flag opens the surface, and
+     * `Book.publishedAt` opens one book. A seeded text is invisible until an
+     * operator runs `dist/seed.mjs library --publish <slug>`, because the
+     * owner's constraint is that publishing waits for their review — so
+     * turning this flag on does NOT publish anything, and a flag flip cannot
+     * be the thing that leaks a text.
+     *
+     * `feature-flags-capability` will report it in `missingRows` until the row
+     * is inserted, which is the correct reading for the same reason as its
+     * neighbours above: a key gating routes with no row is what that
+     * capability exists to surface.
+     */
+    'library.enabled',
     'notifications.sse',
     // Direct messages (P8.2, #2796). Dark by default, and expected to stay
     // dark until P8.3/P8.4 ship a UI: the nine routes answer 404 while the

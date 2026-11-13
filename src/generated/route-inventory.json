@@ -401,6 +401,16 @@
       "documented": false
     },
     {
+      "path": "/api/library/books",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/library/books/{slug}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/livez",
       "status": "live",
       "documented": false

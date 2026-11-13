@@ -72,6 +72,7 @@ import { getLegacyCtx, getUserCtx } from '@/app-layer/context';
 import {
     subscribeToNotifications,
     subscribeToPersonEvents,
+    subscribeToChannelActivity,
     PERSON_SCOPE_SENTINEL,
 } from '@/lib/notifications/notification-bus';
 import { replayNotificationIdsAfter } from '@/app-layer/usecases/notification-replay';
@@ -331,10 +332,47 @@ export async function GET(req: NextRequest): Promise<Response> {
                 },
             });
 
+            // ── the CHANNEL-ACTIVITY address, one subscription — #2987 ──
+            //
+            // A FOURTH address, not a field on the `dm` payload. A channel
+            // post has no farm either (P9.1's five tables carry no
+            // `tenantId`), so it belongs on a person-scoped address — but the
+            // person channel's wire payload is `{ id }` and the subscriber
+            // refuses anything else, so adding a discriminator would change
+            // that format on both sides at once. Mid-deploy the two sides are
+            // different versions, and an old subscriber dropping the new field
+            // would deliver a CHANNEL id labelled `dm`: a client would then
+            // try to open a conversation that does not exist. A separate
+            // address is simply not subscribed by an old process, so the event
+            // is undelivered rather than mislabelled — and a REST refetch is
+            // the designed fallback for that.
+            //
+            // `send` directly, not through `emit`, and no `flush()` — the same
+            // choice as the two subscribers above and for the same reason:
+            // only a `notification` frame carries an `id:` line, so a
+            // `channel` frame cannot move `Last-Event-ID` and has nothing to
+            // order against, while a `flush()` here would drain the replay
+            // buffer early and send replayed ids out of order.
+            //
+            // `id` is the CHANNEL id. Never the post id — see `StreamFrame`.
+            const unsubscribeChannelActivity = subscribeToChannelActivity({
+                userId: ctx.userId!,
+                send: (event) => {
+                    send(
+                        serialiseFrame({
+                            kind: 'channel',
+                            id: event.id,
+                            tenantId: PERSON_SCOPE_SENTINEL,
+                        }),
+                    );
+                },
+            });
+
             const unsubscribe = () => {
                 for (const u of unsubscribes) u();
                 unsubscribeListings();
                 unsubscribePerson();
+                unsubscribeChannelActivity();
             };
 
             // Slot refresh rides the same cadence as the heartbeat, one tick

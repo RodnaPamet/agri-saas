@@ -73,9 +73,16 @@
  * field reaches the single `onmessage` handler, where an unrecognised value is
  * visibly ignored and loggable — and the iOS client decodes it into an enum
  * with an `unknown` case. That decision was taken in #2085 for exactly this
- * moment, and `dm` is the first use of it.
+ * moment, and `dm` was the first use of it.
+ *
+ * `channel` (#2987) is the second, and it is the one that shows the design was
+ * worth taking: it ships while agrent-ios is building P9.8 against POLLING,
+ * because #2986 told them no channel notification existed. A phone that
+ * decodes this kind as `unknown` and ignores it keeps working exactly as it
+ * does today; one that handles it stops polling. Neither needed a coordinated
+ * release, which a named `event:` line would have required.
  */
-export type StreamEventKind = 'notification' | 'listing' | 'dm';
+export type StreamEventKind = 'notification' | 'listing' | 'dm' | 'channel';
 
 /** The JSON on one `data:` line. */
 export interface StreamFrame {
@@ -108,6 +115,20 @@ export interface StreamFrame {
      * carrying a farmer's prose would put it through Redis and, via push,
      * through APNs, which is the exposure
      * `push-payload-carries-no-free-text` exists to prevent.
+     *
+     * ## For `channel` it IS a handle — the CHANNEL id
+     *
+     * Not the post id, for `dm`'s reason one domain over: a client given a
+     * post id still has to know which channel to put it in, and the feed read
+     * is keyed by channel. `readPostReplies` is keyed by the PARENT POST, so a
+     * reply notification could have named that instead — and does not, because
+     * then one kind would carry two different sorts of handle depending on
+     * whether the cause was a mention or a reply, and nothing in the frame
+     * says which.
+     *
+     * `ChannelPost.body` is PLAINTEXT (P9.1, so P9.7 can search it), so
+     * "handle, never content" is a deliberate choice here rather than a
+     * consequence of the column being encrypted.
      */
     id: string;
     /**
@@ -125,6 +146,11 @@ export interface StreamFrame {
      *     because this contract requires it on every kind, and a client must
      *     not filter on it — a phone that filtered `dm` frames against its
      *     memberships would drop every one of them.
+     *   - `channel` — **also always the sentinel `'person'`** (#2987). A
+     *     channel post has no farm either: P9.1's five channel tables carry no
+     *     `tenantId`, because a crop channel spans every farm growing that
+     *     crop. Same rule as `dm` — present because the contract requires it,
+     *     and never a filter.
      *
      * ## Why `listing` has no farm, when the ruling says it names the seller
      *

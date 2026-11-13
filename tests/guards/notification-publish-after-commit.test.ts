@@ -41,7 +41,33 @@ import path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { REPO_ROOT, collectSourceFiles } from '../helpers/collect-files';
 
-const PUBLISH = 'publishNotificationEvent(';
+/**
+ * The publishers this guard ranges over.
+ *
+ * `publishChannelActivityEvent` joined on #2987 — the channel-activity
+ * address, a fourth channel on the same bus. Its one call site queues through
+ * `afterCommit`, which it can, because `postToChannel` and `replyToPost` run
+ * through `runInUserContext` and that helper OWNS an after-commit scope.
+ *
+ * ## `publishPersonEvent` is deliberately NOT here
+ *
+ * Not an omission, and worth saying so because it is the obvious third name.
+ * Its two call sites — `direct-messages.ts` and `direct-message-photos.ts` —
+ * publish after a bare `prisma.$transaction`, which opens NO after-commit
+ * scope: `afterCommit` there fires `void runEffect(...)` un-awaited rather
+ * than deferring, which is #1619 verbatim. So the correct shape for them is a
+ * directly-awaited call AFTER the transaction closure, and adding the name
+ * here would fail two files that are already right.
+ *
+ * Their ordering is pinned behaviourally instead, by
+ * `tests/integration/p8-2-direct-messages.test.ts` — which fails if the
+ * publish moves above the early return. Making this guard express "inside
+ * `afterCommit` OR outside every transaction span" would cover all three
+ * uniformly and is the better guard; it is not done here because it would
+ * LOOSEN the rule for `publishNotificationEvent`, whose uniform-wrapping
+ * convention is the thing this file argues for above.
+ */
+const PUBLISHERS = ['publishNotificationEvent(', 'publishChannelActivityEvent('] as const;
 const WRAPPER = 'afterCommit(';
 
 /**
@@ -77,14 +103,20 @@ export function unwrappedPublishes(source: string): number[] {
     const code = blankNonCode(source);
     const spans = wrapperSpans(code);
     const out: number[] = [];
-    let from = 0;
-    for (;;) {
-        const at = code.indexOf(PUBLISH, from);
-        if (at === -1) break;
-        if (!spans.some(([s, e]) => at > s && at < e)) out.push(at);
-        from = at + PUBLISH.length;
+    for (const publish of PUBLISHERS) {
+        let from = 0;
+        for (;;) {
+            const at = code.indexOf(publish, from);
+            if (at === -1) break;
+            if (!spans.some(([s, e]) => at > s && at < e)) out.push(at);
+            from = at + publish.length;
+        }
     }
-    return out;
+    // Sorted, so an offset list reads in source order however many publisher
+    // names the loop above walks. The assertions compare against `[]` and so
+    // do not depend on it; a diagnostic that jumped backwards would send the
+    // next reader to the wrong line.
+    return out.sort((a, b) => a - b);
 }
 
 const publishers = collectSourceFiles({
@@ -95,7 +127,10 @@ const publishers = collectSourceFiles({
     // population.
     floor: 500,
     exclude: (rel) => rel.endsWith('lib/notifications/notification-bus.ts'),
-}).filter((f) => fs.readFileSync(f, 'utf8').includes(PUBLISH));
+}).filter((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    return PUBLISHERS.some((p) => src.includes(p));
+});
 
 describe('every notification publish is after-commit', () => {
     it('found the publishers it is asserting about', () => {
@@ -118,7 +153,12 @@ describe('every notification publish is after-commit', () => {
         // the gap is that the property now has ONE home, and
         // `frame-id-is-a-row-id` separately forbids the value that made the
         // consolidation necessary.
-        expect(publishers.length).toBeGreaterThanOrEqual(4);
+        //
+        // 4 → 5, 2026-11-13 (#2987): `usecases/channels.ts` joined when
+        // `publishChannelActivityEvent` entered `PUBLISHERS`. Raised to my own
+        // contribution rather than left at 4 — a floor that admits the state
+        // before the change is a floor the change could have skipped.
+        expect(publishers.length).toBeGreaterThanOrEqual(5);
     });
 
     it.each(publishers.map((f) => [path.relative(REPO_ROOT, f), f]))(

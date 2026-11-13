@@ -33,6 +33,7 @@ const subscribeMock = jest.fn();
 // assertions are both type errors — which CI's Typecheck found and my own cold
 // run did not, because that run predated these cases.
 const subscribePersonMock = jest.fn<() => void, [unknown]>(() => () => {});
+const subscribeChannelActivityMock = jest.fn<() => void, [unknown]>(() => () => {});
 const acquireMock = jest.fn();
 const replayMock = jest.fn();
 const verifySessionMock = jest.fn();
@@ -74,6 +75,7 @@ jest.mock('@/lib/notifications/notification-bus', () => ({
     // spread of `unknown[]` into it is not assignable — `unknown[]` has no
     // length known to the compiler.
     subscribeToPersonEvents: (sub: unknown) => subscribePersonMock(sub),
+    subscribeToChannelActivity: (sub: unknown) => subscribeChannelActivityMock(sub),
     PERSON_SCOPE_SENTINEL: 'person',
 }));
 jest.mock('@/lib/realtime/stream-slots', () => ({
@@ -580,6 +582,85 @@ describe('GET /api/me/stream', () => {
             // The leak P7.10's "10k connect/abort cycles leave 0 subscribers"
             // criterion exists to catch. A third subscription that nothing
             // released would reintroduce it on the one channel per person.
+            expect(release).toHaveBeenCalled();
+        });
+    });
+
+    describe('the CHANNEL-ACTIVITY channel — a fourth address (#2987)', () => {
+        it('subscribes ONCE, with no tenant term', async () => {
+            await GET(request());
+
+            // A channel post has no farm either — P9.1's five tables carry no
+            // `tenantId`, because a crop channel spans every farm growing that
+            // crop — so this is keyed on the person alone, exactly like the DM
+            // address above.
+            expect(subscribeChannelActivityMock).toHaveBeenCalledTimes(1);
+            const arg = subscribeChannelActivityMock.mock.calls[0][0] as Record<string, unknown>;
+            expect(arg.userId).toBe('u-1');
+            expect(arg).not.toHaveProperty('tenantId');
+        });
+
+        it('is a SEPARATE subscription from the DM address', async () => {
+            // The assertion that would fail if somebody "simplified" the two
+            // into one: they become DIFFERENT SSE frame kinds, so sharing a
+            // subscription would deliver a channel id labelled `dm` and a
+            // client would try to open a conversation that does not exist.
+            await GET(request());
+
+            expect(subscribePersonMock).toHaveBeenCalledTimes(1);
+            expect(subscribeChannelActivityMock).toHaveBeenCalledTimes(1);
+            expect(subscribeChannelActivityMock.mock.calls[0][0])
+                .not.toBe(subscribePersonMock.mock.calls[0][0]);
+        });
+
+        it('emits a frame of kind `channel`, with the channel id', async () => {
+            // THE client contract, and nothing asserted it on the first draft:
+            // labelling this frame `dm` left all 52 cases green (measured), and
+            // a phone receiving a CHANNEL id on a `dm` frame would try to open
+            // a conversation that does not exist.
+            const res = await GET(request());
+            const sub = subscribeChannelActivityMock.mock.calls[0][0] as {
+                send: (e: { id: string }) => void;
+            };
+
+            sub.send({ id: 'chan-7' });
+            const body = await readFrames(res);
+
+            expect(body).toMatch(/"kind":"channel"/);
+            expect(body).toMatch(/"id":"chan-7"/);
+            // The sentinel, because the contract requires `tenantId` on every
+            // kind and a channel has no farm. Never a filter.
+            expect(body).toMatch(/"tenantId":"person"/);
+            // And it is NOT a dm frame — the half that fails on a copy-paste.
+            expect(body).not.toMatch(/"kind":"dm"/);
+        });
+
+        it('carries NO id: line, so the replay cursor does not move', async () => {
+            // Same reason as the listing frame: `id:` is the replay cursor and
+            // replay reads the `Notification` table, so a channel event that
+            // advanced it would point `Last-Event-ID` at a row that does not
+            // exist and the next reconnect would replay nothing.
+            const res = await GET(request());
+            const sub = subscribeChannelActivityMock.mock.calls[0][0] as {
+                send: (e: { id: string }) => void;
+            };
+
+            sub.send({ id: 'chan-7' });
+            const body = await readFrames(res);
+
+            expect(body).toMatch(/"kind":"channel"/);
+            expect(body).not.toMatch(/^id: chan-7$/m);
+        });
+
+        it('releases it on disconnect, alongside the other subscriptions', async () => {
+            const release = jest.fn();
+            subscribeChannelActivityMock.mockReturnValueOnce(release);
+
+            const res = await GET(request());
+            await res.body?.cancel();
+
+            // A FOURTH subscription that nothing released would reintroduce
+            // P7.10's leak on one channel per person.
             expect(release).toHaveBeenCalled();
         });
     });
