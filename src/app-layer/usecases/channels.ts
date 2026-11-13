@@ -62,7 +62,7 @@
  * being flooded can be slowed without a deploy.
  */
 import { prisma } from '@/lib/prisma';
-import { runInUserContext } from '@/lib/db-context';
+import { runInUserContext, type PrismaTx } from '@/lib/db-context';
 import { afterCommit } from '@/lib/db/after-commit';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { publishChannelActivityEvent } from '@/lib/notifications/notification-bus';
@@ -113,6 +113,14 @@ export interface ChannelListItem {
     readonly joined: boolean;
     /** Whether the caller is banned. Shown so a ban is not a silent refusal. */
     readonly banned: boolean;
+    /**
+     * Top-level posts since the caller's read cursor — #2990.
+     *
+     * **NULL for a channel the caller has not joined**, never 0. A count for a
+     * channel you are not in is meaningless, and 0 would read as "joined and
+     * caught up" — the two states a badge most needs to tell apart.
+     */
+    readonly unreadCount: number | null;
 }
 
 /**
@@ -146,6 +154,7 @@ export async function listChannels(ctx: UserContext): Promise<ChannelListItem[]>
             }),
         ]);
         const byChannel = new Map(mine.map((m) => [m.channelId, m]));
+        const unread = await unreadByChannel(tx, mine.length);
         return channels.map((c) => {
             const m = byChannel.get(c.id);
             return {
@@ -153,8 +162,178 @@ export async function listChannels(ctx: UserContext): Promise<ChannelListItem[]>
                 kind: String(c.kind),
                 joined: m !== undefined,
                 banned: m?.bannedAt != null,
+                // NULL, not 0, for a channel the caller has not joined — see
+                // `ChannelListItem`.
+                unreadCount: m === undefined ? null : (unread.get(c.id) ?? 0),
             };
         });
+    });
+}
+
+/**
+ * Unread top-level posts per JOINED channel, in ONE query — #2990.
+ *
+ * ## Why this is raw SQL, and why that is the smaller evil
+ *
+ * The threshold is PER ROW: each membership carries its own `lastReadAt`, so
+ * there is no `groupBy` that expresses it — a grouped count can filter on one
+ * `createdAt` boundary, not on a different one per channel. The alternatives
+ * were a count per channel, which is the N+1 the D1 guardrail refuses, or
+ * fetching every post newer than the EARLIEST cursor and counting in memory,
+ * which is an unbounded read to answer a bounded question.
+ *
+ * So the database does it, joined against the caller's own membership rows.
+ * P5.5b's anti-join is the precedent, and the thing that made it careful does
+ * not apply here: it had to hand rows back to PRISMA because
+ * `ContentReport.detail` is encrypted and raw SQL would have scored
+ * ciphertext. `ChannelPost.body` is PLAINTEXT (P9.1, so P9.7 can search it)
+ * and nothing here reads a body at all — this returns counts.
+ *
+ * ## RLS still applies, and it is what scopes the join
+ *
+ * Running inside `runInUserContext`, so `channel_membership_select` admits the
+ * caller's OWN rows only — which is why the join needs no `userId` predicate
+ * of its own and could not be widened by forgetting one. `app.user_id` is set
+ * by that runner; a tenant context would set `app.actor_user_id` instead and
+ * this would silently count zero (#1664).
+ *
+ * ## The four rules the count obeys
+ *
+ * **Top-level only.** `parentPostId IS NULL`, because the badge means "N new
+ * posts in the feed you are about to open" and the feed filters exactly that.
+ * Counting replies would badge activity opening the channel does not show —
+ * and because the cursor is a TIME, the badge would then clear anyway, which
+ * is a lie that covers its own tracks. A reply you should know about reaches
+ * you through the mention/reply push instead (#2987): the badge is feed
+ * activity, the notification is about you.
+ *
+ * **Not the caller's own posts.** Posting must not badge the channel you
+ * posted in.
+ *
+ * **A never-read channel counts from `joinedAt`, not from the beginning.**
+ * `COALESCE(m."lastReadAt", m."joinedAt")`. Reading NULL as "-infinity" hands
+ * a brand-new member of a 2,000-post channel a badge of 2,000; you are not
+ * unread on posts from before you joined. This gives `joinedAt` its first
+ * reader. CLAUDE.md's P9.5 section called it "the one field nothing reads,
+ * which is what made 'lossless' sound plausible" — corrected in this change,
+ * because all three columns on the row are load-bearing now and leaving costs
+ * the boundary the first unread count is measured from as well as the cursor.
+ *
+ * **A hidden post is not unread, it is gone.** The same three removal columns
+ * `toPostView` collapses. Counting one produces a badge that reading can never
+ * clear, because the post it counts will never appear in the feed.
+ *
+ * ## The count is deliberately blind to `body`
+ *
+ * It filters on the removal columns, the parent, the author and the time, and
+ * on nothing about content. That is a decision rather than an omission, and
+ * P9.6 is what makes it worth stating: a post whose content is a photograph or
+ * a voice note has an EMPTY body and is perfectly good new activity, so an
+ * `AND body <> ''` would silently stop badging exactly the posts a farmer is
+ * most likely to care about.
+ *
+ * It also sidesteps the trap that filter would carry once `body` is nullable:
+ * a comparison with NULL yields NULL rather than true, so `body <> ''` drops
+ * NULL rows without saying so. The discriminator for "no text" against
+ * "removed" is the pair (`body`, `deleted`) at the VIEW boundary, which is
+ * `toPostView`'s business — not a count's.
+ */
+async function unreadByChannel(
+    tx: PrismaTx,
+    memberships: number,
+): Promise<Map<string, number>> {
+    // No memberships, no query. Not an optimisation: the SQL below would
+    // return an empty set anyway, and skipping it keeps the directory read at
+    // two queries for the common case of a person who has joined nothing.
+    if (memberships === 0) return new Map();
+
+    const rows = await tx.$queryRaw<{ channelId: string; unread: bigint }[]>`
+        SELECT m."channelId" AS "channelId", COUNT(p.id) AS unread
+        FROM "ChannelMembership" m
+        JOIN "ChannelPost" p
+          ON p."channelId" = m."channelId"
+         AND p."parentPostId" IS NULL
+         AND p."deletedAt" IS NULL
+         AND p."removedByModerationAt" IS NULL
+         AND p."autoHiddenAt" IS NULL
+         AND p."authorUserId" <> m."userId"
+         AND p."createdAt" > COALESCE(m."lastReadAt", m."joinedAt")
+        GROUP BY m."channelId"
+    `;
+    // `COUNT` comes back as a bigint and JSON cannot carry one — an unconverted
+    // value serialises as `TypeError: Do not know how to serialize a BigInt`,
+    // which surfaces as a 500 on a directory read rather than as a bad count.
+    return new Map(rows.map((r) => [r.channelId, Number(r.unread)]));
+}
+
+/**
+ * Move the caller's read cursor on their own membership row — #2990.
+ *
+ * ## The cursor only moves FORWARD, and that is the whole guard
+ *
+ * `lastReadAt: { lt: at }` in the `where`, which is `markReadFor`'s precedent
+ * in `exchange-messaging.ts` verbatim. A stale client — a tab left open, a
+ * phone replaying a queued call — must not move the cursor backwards, because
+ * that resurrects read posts as unread and the operator cannot tell a real new
+ * post from a reappearing old one.
+ *
+ * Unlike the exchange, there is no create branch: `ChannelMembership` exists
+ * because the person joined, and a non-member has nothing to mark. A missing
+ * row is therefore a REFUSAL rather than an insert — `channel_membership_update`
+ * would not admit the write anyway, and an insert here would be a second
+ * membership writer, which `channels-are-never-auto-joined` refuses by name.
+ *
+ * ## `updateMany`, and the count is the answer
+ *
+ * `update` on a composite unique would throw when the row is absent OR when
+ * the guard excludes it, and those are different outcomes: not a member
+ * (refuse) against already at or ahead of `at` (nothing to do, and fine).
+ * `updateMany` returns a count, so the two are distinguishable without
+ * catching an error to tell them apart — and a zero count is checked against a
+ * separate membership read rather than assumed to mean one of them.
+ */
+export async function markChannelRead(
+    ctx: UserContext,
+    channelId: string,
+    now: Date = new Date(),
+): Promise<{ lastReadAt: string }> {
+    return runInUserContext(ctx, async (tx) => {
+        const moved = await tx.channelMembership.updateMany({
+            where: {
+                channelId,
+                // A NULL cursor must match, and `{ lt: now }` does NOT match
+                // NULL — this is where `markReadFor`'s precedent stops
+                // transferring. In the exchange the whole ROW is absent until
+                // the first read, so its create branch covers the case; here
+                // the row exists from the moment somebody joins, with
+                // `lastReadAt` NULL. Without this arm the FIRST mark-read on
+                // every channel wrote nothing and reported the caller's own
+                // timestamp back as though it had — a badge that never
+                // cleared, and a function that lied about why.
+                //
+                // Measured: three cases in `p9-unread-counts` failed on it,
+                // and the tell was the returned value being the timestamp
+                // sent rather than the one stored.
+                OR: [{ lastReadAt: null }, { lastReadAt: { lt: now } }],
+            },
+            data: { lastReadAt: now },
+        });
+
+        if (moved.count === 0) {
+            // Either not a member, or the stored cursor is already at or ahead
+            // of `now`. Only the first is an error, so ask which.
+            const mine = await tx.channelMembership.findFirst({
+                where: { channelId },
+                select: { lastReadAt: true },
+            });
+            if (mine === null) throw codedNotFound('CHANNEL_NOT_JOINED', 'Not a member');
+            // Already ahead: report the STORED value, so a client that sent a
+            // stale `now` learns the real cursor instead of being told its own
+            // number back.
+            return { lastReadAt: (mine.lastReadAt ?? now).toISOString() };
+        }
+
+        return { lastReadAt: now.toISOString() };
     });
 }
 
