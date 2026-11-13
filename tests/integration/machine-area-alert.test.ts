@@ -26,6 +26,8 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
+import { existsSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 
 const mockEnqueue = jest.fn();
 jest.mock('@/app-layer/jobs/queue', () => ({
@@ -45,6 +47,9 @@ import { runMachineAreaAlert, AREA_BUFFER_M } from '@/app-layer/jobs/machine-are
 import { hashForLookup } from '@/lib/security/encryption';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+
+/** `src/app/t/[tenantSlug]/(app)` — where a tenant-scoped page lives. */
+const APP_ROOT = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -304,6 +309,39 @@ describeFn('#2948 stage 5 — the leaving-the-area alert', () => {
         // In Bulgarian, because both recipients carry `uiLanguage: 'bg'`.
         expect(String(sent[0].body)).toContain('излезе');
         expect(String(sent[0].title)).toBe('Машина извън стопанството');
+    }, 60_000);
+
+    it('the push link RESOLVES to a page that exists — not merely root-relative', async () => {
+        await fix(assetId, TENANT, minutesBefore(2), FAR);
+        await runMachineAreaAlert({ tenantId: TENANT, now: NOW });
+        const link = String(pushes()[0].link);
+
+        /*
+         * `/t/{slug}/machines/{assetId}` is the PHONE's shape — agrent-ios #577
+         * resolves it, and it is shipped — but one `push-send` reaches BOTH
+         * transports, so a web-push recipient clicks this URL in a browser.
+         * It was a 404 from the moment stage 5 merged: the web has no machine
+         * surface at all, because the live map and the day history are iOS
+         * screens.
+         *
+         * Root-relative was the property the existing assertion checked, and
+         * both this and #2932 satisfied it. The question that catches them is
+         * whether the path names a `page.tsx` that EXISTS — asked here against
+         * the filesystem, so the next person to change the link finds out at
+         * once rather than from a farmer.
+         */
+        const m = /^\/t\/[^/]+\/(.+)$/.exec(link);
+        expect(m).not.toBeNull();
+        const segments = m![1].split('/');
+        // A dynamic segment in the URL is a `[param]` directory on disk; the
+        // asset id is the only one here, and it is the last segment.
+        // Everything before the id is a literal directory; the id itself is a
+        // `[param]` child whose NAME this test deliberately does not guess.
+        const dir = path.join(APP_ROOT, ...segments.slice(0, -1));
+        expect(existsSync(dir)).toBe(true);
+        const dynamic = readdirSync(dir).filter((e) => e.startsWith('[') && e.endsWith(']'));
+        expect(dynamic).toHaveLength(1);
+        expect(existsSync(path.join(dir, dynamic[0], 'page.tsx'))).toBe(true);
     }, 60_000);
 
     it('a machine with NO key pushes its title and an EMPTY body — never the name', async () => {
