@@ -388,6 +388,28 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         fields: ['tenantId', 'seasonId'],
         justification: 'listYieldRecords season filter',
     },
+    // ── The PERSON-scoped push (#2987) ──────────────────────────────
+    //
+    // The one entry on this list whose leading column is NOT `tenantId`, and
+    // that is the whole reason it is here. `sendApnsToPerson`,
+    // `sendWebPushToPerson` and `resolvePersonDelivery` read this table by
+    // `userId` ACROSS farms, because a channel mention and a direct message
+    // have no farm to narrow by — and both pre-existing indexes
+    // (`@@unique([tenantId, userId, endpoint])`, `@@index([tenantId, userId,
+    // platform])`) lead with `tenantId`, so none of the three was served by
+    // anything. A sequential scan on the response path of a channel post, on
+    // a table that grows with every device of every user.
+    //
+    // Found by THIS layer rather than by me: the new `findMany` forced a
+    // triage, and the triage is what surfaced that the leading column was
+    // wrong for the new reader.
+    {
+        model: 'PushSubscription',
+        fields: ['userId', 'platform'],
+        justification:
+            'the person-scoped push reads by userId across farms; both other '
+            + 'indexes lead with tenantId, so nothing served it',
+    },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -406,6 +428,22 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // ─── The person-scoped delivery decision (#2987) ───
+    UserNotificationPreference:
+        "This entry does NOT make the usual claim, and saying so is the point: `resolvePersonDelivery` "
+        + "does not filter by tenantId at all. It reads `WHERE userId = ?` ACROSS farms, because a "
+        + "channel mention and a direct message have no farm — the per-farm rows are then unioned to "
+        + "the STRICTEST preference, which is the policy that needs all of them. That read is served "
+        + "exactly by the index behind @@unique([userId, tenantId]): `userId` LEADS it, so it is an "
+        + "index scan however many farms a person belongs to. It is in THIS map rather than "
+        + "LIST_QUERY_INDEXES for `ParcelIndexReading`'s reason — that layer calls hasExactBlockIndex, "
+        + "which reads @@index blocks only, so an entry there would force a second @@index on columns a "
+        + "unique already covers: the same B-tree twice, widening every write for nothing. The unique "
+        + "is not an index added for this read; it is the correctness constraint that makes one "
+        + "preference per person per farm, and the read shape happening to lead with the same column "
+        + "is why no further index is wanted. Unbounded by `take` deliberately: the row count is the "
+        + "number of farms one person belongs to, which the JWT membership cap already bounds at 50.",
+
     // ─── Satellite history (#2837) — stored per-pass index readings ───
     ParcelIndexReading:
         "storedIndexReadings is the ONLY findMany on this model: `WHERE tenantId = ? AND parcelId = ? AND acquiredOn >= ? ORDER BY acquiredOn ASC`, take:400. Served exactly by the index behind @@unique([tenantId, parcelId, acquiredOn]) — equality, equality, then the range and the sort key, in query order — so it is an index scan however many years of passes accumulate. It is in THIS map rather than LIST_QUERY_INDEXES because that layer calls hasExactBlockIndex, which reads @@index blocks only (blockUniques are parsed separately and not consulted), so an entry there would force a second @@index on the same three columns: the same B-tree twice, widening every write for nothing. The unique is not an index added for the read — it is the correctness constraint that makes the write an idempotent upsert, one row per parcel per acquisition day, and the read shape happening to match it exactly is why no further index is wanted. take:400 bounds it against a corrupt coverage watermark rather than against the window, which is already capped at HISTORY_MAX_DAYS (120 days, ~24-48 passes).",

@@ -648,6 +648,20 @@
                 "pushBody": "An agronomy explanation is ready. Open for details."
             }
         }
+        ,"social": {
+            "channelMention": {
+                "title": "You were mentioned",
+                "pushBody": "Someone mentioned you in {channel}."
+            },
+            "channelReply": {
+                "title": "New reply",
+                "pushBody": "Someone replied to your post in {channel}."
+            },
+            "directMessage": {
+                "title": "New message",
+                "pushBody": "You have a new direct message. Open to read it."
+            }
+        }
     },
     "admin": {
         "usage": {

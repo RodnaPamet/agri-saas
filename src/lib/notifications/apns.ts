@@ -52,6 +52,7 @@ import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { TransportOutcome, noSend } from './transport-outcome';
 import { runInTenantContext } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 import type { RequestContext } from '@/app-layer/types';
 
 /**
@@ -197,8 +198,113 @@ export async function sendApnsToUser(
         // for another attempt — nothing about the request was wrong.
         return { sent: 0, retryable: 1 };
     }
+    return deliverToDevices(rows, payload, (dead) => pruneDeadTokens(ctx, dead));
+}
+
+/**
+ * Send to every iPhone ONE PERSON has registered, in every farm — #2987.
+ *
+ * ## Why a sibling rather than a tenant argument
+ *
+ * A channel post and a direct message have NO FARM: P9.1's five channel tables
+ * and P8.1's four DM tables carry no `tenantId`, deliberately, because a crop
+ * channel spans every farm growing that crop and two people in a conversation
+ * may share none. So there is no tenant to pass, and inventing one is the
+ * mistake P5.4a names for `NotificationOutbox` — "resolving one would invent a
+ * tenant for a person-scoped obligation".
+ *
+ * Here it would also pick WRONG rather than merely being untidy.
+ * `PushSubscription` is one row per (tenant, user, endpoint) and the
+ * registration route is tenant-scoped, so a person in three farms may hold a
+ * row under only the farm they happened to be in when the device registered.
+ * A resolved-tenant push would find no device about half the time, silently.
+ *
+ * ## The DEDUPE is a correctness property, not tidiness
+ *
+ * The same physical iPhone registered in two farms is TWO rows with the SAME
+ * `deviceToken`. Without the dedupe below, one mention would buzz that phone
+ * twice — and the count returned to the caller would say two deliveries, so
+ * nothing would look wrong.
+ *
+ * ## It reads privileged, and that is the only way
+ *
+ * `sendApnsToUser`'s own `where` already carries no tenant term — the tenant
+ * coupling is entirely `runInTenantContext` binding RLS. A person-scoped read
+ * therefore needs the bypass, declared as `person-push-devices` so it is a
+ * named decision rather than a global-client import. The bound is the
+ * `userId`: no row of anybody else's is readable through it, and nothing but
+ * the token and environment crosses the boundary.
+ */
+export async function sendApnsToPerson(
+    recipientUserId: string,
+    payload: ApnsPayload,
+): Promise<TransportOutcome> {
+    if (!isApnsConfigured()) return noSend();
+
+    let rows: DeviceRow[] = [];
+    try {
+        const raw = await runWithoutRls({ reason: 'person-push-devices' }, (db) =>
+            db.pushSubscription.findMany({
+                // `platform: 'IOS'` is load-bearing for the same reason as in
+                // the tenant-scoped sibling: this table holds Web Push rows
+                // too, and they have no device token.
+                where: { userId: recipientUserId, platform: 'IOS', deviceToken: { not: null } },
+                select: { id: true, deviceToken: true, apnsEnvironment: true },
+                // A bound, because this read is no longer narrowed by a tenant.
+                // 25 matches the Web Push sibling's `take`.
+                take: 25,
+            }),
+        );
+        rows = dedupeByToken(raw as DeviceRow[]);
+    } catch (err) {
+        logger.warn('apns.device_read_failed', {
+            component: 'apns',
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return { sent: 0, retryable: 1 };
+    }
     if (rows.length === 0) return noSend();
 
+    // Pruned privileged too, and it has to be: a token that APNs reported gone
+    // may be stored under a farm this person is no longer a member of, and a
+    // tenant-scoped delete would remove zero rows SILENTLY — the
+    // `rls-delete-is-silent` shape.
+    return deliverToDevices(rows, payload, (dead) => pruneDeadTokensForPerson(dead));
+}
+
+/**
+ * One row per physical device.
+ *
+ * Keyed on `deviceToken`, which is what APNs addresses — NOT on `id`, which is
+ * per (tenant, user, endpoint) and therefore distinct for the two rows this
+ * exists to collapse. Keeping the FIRST row is arbitrary and safe: the two
+ * differ only in `tenantId`, which this transport does not read.
+ */
+function dedupeByToken(rows: readonly DeviceRow[]): DeviceRow[] {
+    const seen = new Set<string>();
+    const out: DeviceRow[] = [];
+    for (const r of rows) {
+        if (seen.has(r.deviceToken)) continue;
+        seen.add(r.deviceToken);
+        out.push(r);
+    }
+    return out;
+}
+
+/**
+ * The send loop, shared by both entry points.
+ *
+ * Extracted rather than copied: the two differ ONLY in how they read devices
+ * and how they prune, and a second copy of the environment check, the
+ * gone/retryable accounting and the ordering of the prune is how one of them
+ * comes to count a dead token as a retry. `prune` is passed in because that is
+ * the one step whose RLS context differs.
+ */
+async function deliverToDevices(
+    rows: readonly DeviceRow[],
+    payload: ApnsPayload,
+    prune: (dead: string[]) => Promise<void>,
+): Promise<TransportOutcome> {
     const token = apnsProviderToken();
     // Null here is a MINT failure, not an unconfigured transport — that
     // returned above — and `apns.provider_token_mint_failed` has already been
@@ -233,7 +339,7 @@ export async function sendApnsToUser(
         else retryable += 1;
     }
 
-    if (dead.length > 0) await pruneDeadTokens(ctx, dead);
+    if (dead.length > 0) await prune(dead);
 
     // `gone` is in neither count, and nor is a row with no environment. See
     // `transport-outcome.ts`: a retry is worth nothing for a dead token, and
@@ -499,6 +605,44 @@ async function deliver(row: DeviceRow, providerToken: string, payload: ApnsPaylo
  * tenants. The other farm's row is removed when a send for that farm gets its
  * own 410, which is the next notification rather than never.
  */
+/**
+ * Prune dead tokens for a PERSON, across every farm — #2987.
+ *
+ * Privileged, and it must be. A token APNs reported gone may be stored under a
+ * farm this person has since left, and a tenant-scoped `deleteMany` would then
+ * remove ZERO rows and return normally — the `rls-delete-is-silent` shape, so
+ * the device would keep being pushed to for ever and every send would keep
+ * reporting `gone`.
+ *
+ * The COUNT is logged for the same reason its sibling logs one: "it ran" and
+ * "it deleted" are different facts and only the second is useful.
+ */
+async function pruneDeadTokensForPerson(tokens: string[]): Promise<void> {
+    const unique = [...new Set(tokens)];
+    try {
+        const removed = await runWithoutRls({ reason: 'person-push-devices' }, (db) =>
+            db.pushSubscription.deleteMany({
+                where: { platform: 'IOS', deviceToken: { in: unique } },
+            }),
+        );
+        logger.info('apns.pruned_dead_tokens', {
+            component: 'apns',
+            scope: 'person',
+            tokens: unique.length,
+            rowsRemoved: removed.count,
+        });
+    } catch (err) {
+        // Best-effort, exactly like the tenant-scoped sibling: a failed prune
+        // costs a repeated `gone` next time, and throwing here would fail a
+        // send that already delivered to the person's other devices.
+        logger.warn('apns.prune_failed', {
+            component: 'apns',
+            scope: 'person',
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 async function pruneDeadTokens(ctx: RequestContext, tokens: string[]): Promise<void> {
     try {
         const removed = await runInTenantContext(ctx, (db) =>

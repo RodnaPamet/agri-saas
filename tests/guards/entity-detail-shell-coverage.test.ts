@@ -178,6 +178,12 @@ describe("EntityDetailLayout adoption — PR-4", () => {
     // the ratchet doesn't flag them.
     const KNOWN_NON_PRIMARY_DETAIL = new Set<string>([
       "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /farm-tasks/[id]
+      // #2948 stage 5 pushes `/t/{slug}/machines/{assetId}`, a shape the
+      // phone already resolves; the web has no machine surface, so this
+      // redirects to the asset. Same kind of page as the line above and
+      // for the same reason — a URL in the wild must land somewhere real,
+      // and there is no entity detail to lay out.
+      "src/app/t/[tenantSlug]/(app)/machines/[assetId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",
       // Offline operator PWA — phones-with-gloves field-execution surface

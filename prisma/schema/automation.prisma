@@ -131,6 +131,20 @@ model PushSubscription {
   // A `prisma migrate diff` will read that as missing — it is not.
   @@unique([tenantId, userId, endpoint])
   @@index([tenantId, userId, platform])
+  /// The PERSON-scoped read, added by #2987 and found by Layer C rather than
+  /// by me: `sendApnsToPerson`, `sendWebPushToPerson` and
+  /// `resolvePersonDelivery` all filter on `userId` ACROSS tenants, because a
+  /// channel mention and a direct message have no farm to narrow by. Both
+  /// indexes above LEAD with `tenantId`, so none of those three reads was
+  /// served by anything — a sequential scan on a table that grows with every
+  /// device of every user.
+  ///
+  /// `[userId, platform]` rather than `[userId]`: the two transports filter on
+  /// both (each one's `platform` clause is load-bearing, because this table
+  /// holds Web Push rows with no device token and APNs rows with no endpoint),
+  /// and `userId` leading means the resolver's `userId`-only read is served by
+  /// the same B-tree. One index for three reads instead of two.
+  @@index([userId, platform])
 }
 
 model ReminderHistory {
