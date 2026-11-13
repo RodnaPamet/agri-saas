@@ -61,8 +61,13 @@
  *
  * #3012 proposed refusing to delete such days. That is the safer-sounding
  * option and it quietly converts a privacy commitment into "we keep it until
- * the job catches up", which is not what anybody was told. The owner can
- * overrule; it is one condition in the `where`.
+ * the job catches up", which is not what anybody was told.
+ *
+ * **Owner ruling, 2026-11-13: delete anyway, report the loss.** Put to them
+ * with the three options — delete and report, hold until derived, or hold for
+ * a grace period past the window — and this is the one they chose. So the
+ * behaviour here is a decision rather than a default awaiting one, and
+ * changing it is a decision too.
  */
 import { randomUUID } from 'node:crypto';
 

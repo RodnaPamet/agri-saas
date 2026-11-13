@@ -22,6 +22,7 @@ a promise about deletion is invisible when unkept.
 | schedule | 03:10 UTC nightly, **after** the derivation at 02:20 |
 | window | `RAW_POSITION_RETENTION_DAYS`, imported — never restated |
 | default | **dry run**; `MACHINE_POSITION_SWEEP=delete` arms it |
+| armed in production | **yes, by owner decision 2026-11-13** — set after this merges |
 | bound | 50,000 rows per run, oldest first |
 | attempts | 1 |
 
@@ -60,8 +61,9 @@ a promise about deletion is invisible when unkept.
   to protect a farm's convenience. #3012 proposed refusing; that is the
   safer-sounding option and it quietly converts a privacy commitment into "we
   keep it until the job catches up", which is not what anybody was told. The
-  loss is surfaced as `daysWithoutMarker` rather than absorbed. **Put to the
-  owner with the arming question** — it is one condition in the `where`.
+  loss is surfaced as `daysWithoutMarker` rather than absorbed. **Owner
+  ruling, 2026-11-13: delete anyway and report the loss**, chosen over holding
+  such days and over holding them for a grace period past the window.
 
 - **Oldest first, bounded.** A first armed run over a long backlog must make
   progress at the far end rather than nibbling wherever the planner looked,
