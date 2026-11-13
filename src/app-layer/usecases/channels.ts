@@ -744,6 +744,7 @@ export async function postToChannel(
         // reachable by anybody who joined it.
         queueChannelActivityNotify({
             channelId,
+            postId: post.id,
             authorUserId: ctx.userId,
             mentionedUserIds: recordable,
             parentAuthorUserId: null,
@@ -900,6 +901,10 @@ export async function replyToPost(
         // the mentions: one act, one notification.
         queueChannelActivityNotify({
             channelId: channel.id,
+            // The REPLY, not the parent — a mention in a reply should open the
+            // reply. `alsoToChannel`'s channel copy is deliberately not
+            // notified about at all, so there is no second id to choose from.
+            postId: reply.id,
             authorUserId: ctx.userId,
             mentionedUserIds: recordable,
             parentAuthorUserId: parent.authorUserId,
@@ -1153,6 +1158,17 @@ interface ChannelTarget {
 
 interface ChannelActivityTargets {
     channelId: string;
+    /**
+     * The post this event is ABOUT — the reply, never its parent.
+     *
+     * Not used by the SSE half, which deliberately carries the CHANNEL id
+     * (`StreamFrame`: a client with a message id still has to work out where
+     * to put it, and `readConversation`'s sibling here is keyed by channel).
+     * It is the push DESTINATION: agrent-ios honours `?post={postId}` on
+     * builds that are already shipped, so the push can open the post itself
+     * rather than the channel — see the link literal below and #3030.
+     */
+    postId: string;
     authorUserId: string;
     mentionedUserIds: readonly string[];
     /** The author of the post being replied to, or null for a top-level post. */
@@ -1300,16 +1316,30 @@ async function reachableTargets(args: ChannelActivityTargets): Promise<ChannelTa
  * it is one indexed membership query on the response path, which is the price
  * of the event being observable at all.
  *
- * ## What is NOT delivered yet, stated here because the issue is still open
+ * ## BOTH halves are delivered, and this paragraph used to say otherwise
  *
- * This is the SSE half. A person with the app open learns about a mention or a
- * reply at once; a person with it closed learns nothing until they open it,
- * because every push transport in this repo is tenant-scoped end to end —
- * `PushSubscription.tenantId` is NOT NULL, `sendApnsToUser` binds RLS through
- * `runInTenantContext`, and `UserNotificationPreference` is per (user, farm).
- * A channel has no farm, so there is no tenant to resolve without inventing
- * one, which is the mistake P5.4a names for `NotificationOutbox`. A DM is in
- * exactly the same position today and equally silent.
+ * It read "This is the SSE half… a person with it closed learns nothing until
+ * they open it", which was true of the first PR and is the exact defect
+ * #2987 was filed about — a docblock describing the state of a push. The
+ * person-scoped transport exists now: `sendApnsToPerson` and
+ * `sendWebPushToPerson` read devices through `runWithoutRls` rather than
+ * binding a tenant, `resolvePersonDelivery` takes the STRICTEST of a person's
+ * per-farm preferences because a tenantless event belongs to none of those
+ * farms, and `person-push-send` delivers one person per job.
+ *
+ * What was true and stays true is WHY none of that could reuse the existing
+ * path: `PushSubscription.tenantId` is NOT NULL, `sendApnsToUser` binds RLS
+ * through `runInTenantContext`, and `UserNotificationPreference` is per
+ * (user, farm). Resolving a tenant from the recipient would both invent a farm
+ * for a person-scoped obligation — P5.4a's objection for
+ * `NotificationOutbox` — and pick WRONG, since registration is tenant-scoped
+ * and a person in three farms may hold a row under only one of them.
+ *
+ * Two things are still owed and are issues rather than sentences here. Quiet
+ * hours SUPPRESS instead of deferring, because a tenantless event writes no
+ * `Notification` row for a 06:00 summary to count (#3020). And `mutedAt` is
+ * honoured in `reachableTargets` while still having no WRITER, so the mute it
+ * respects cannot yet be set by anybody (#2990).
  */
 function queueChannelActivityNotify(args: ChannelActivityTargets): void {
     afterCommit('channel-activity-notify', async () => {
@@ -1377,11 +1407,18 @@ function queueChannelActivityNotify(args: ChannelActivityTargets): void {
                 // The path WITHOUT `/t/{slug}`: a channel has no farm, so
                 // `person-push-send` resolves one for the RECIPIENT and
                 // composes the link. A bare path is what #2932 cost.
-                // The channel, not the post: `channels/{id}/posts/{postId}`
-                // is the shape agrent-ios will parse and the page does not
-                // exist yet — #3030. A push that lands on the channel beats
-                // one that 404s.
-                farmRelativePath: `/channels/${args.channelId}`,
+                //
+                // The post rides in the QUERY, which is the one of three
+                // agreed shapes that works today. agrent-ios honours all
+                // three: this one (agreed with the other backend session
+                // 2026-11-12), the four-segment `/channels/{id}`, and
+                // `/channels/{id}/posts/{postId}` from agrent-ios #591. The
+                // last needs a page this repo does not have — emitting it
+                // would be #2932 again — and the four-segment form loses the
+                // post. So: a path that resolves, carrying an identifier the
+                // phone can act on and the web currently ignores. #3030
+                // settles which shape wins once the permalink page exists.
+                farmRelativePath: `/channels/${args.channelId}?post=${args.postId}`,
                 // Per CHANNEL rather than per post, deliberately: a busy
                 // channel should supersede its own banner rather than stack a
                 // column of them. The reason is in the key so a mention does

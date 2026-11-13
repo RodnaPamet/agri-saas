@@ -267,6 +267,65 @@ carrying its own `/t/` prefix reddens two assertions, and gutting the page
 walker to `return []` reddens three — including the control, which is the half
 that stops the matcher passing everything.
 
+### The guard was too narrow, and a peer's defect is what showed it
+
+The first version's population was `farmRelativePath:` literals — my two sites
+and nothing else. I told the other backend session it would cover their
+producers; that was a claim broader than the code, and the same fault I had
+just written up about somebody else's guard.
+
+Their correction: destinations in `src/app-layer` come in several field shapes,
+and theirs was none of mine. Measured rather than taken on trust — four fields
+carry a destination, `url:` is a fifth that must stay out:
+
+```
+linkUrl:            notifications/*.ts, several usecases and jobs   ← the sibling guard's ENTIRE population
+linkPath:           notifications/assignment.ts, a (slug, id) lambda
+link:               the push payloads — push-send, person-push-send
+farmRelativePath:   person-push-send's payload
+url:                email payloads — point at src/app/invite, OUTSIDE the tenant shell
+```
+
+16 assignments carry a quoted path. Graded against the 82 `(app)` page routes:
+**14 resolve, 1 dead, 1 ungradable.** The dead one is theirs —
+`machine-area-alert` pushing `/t/{slug}/machines/{assetId}`, where `(app)` has
+no `machines` segment because the live map and day history are iOS screens, so
+a web recipient got a 404 from the moment it merged (#3032). It is carried as
+one named exemption whose own test FAILS once the page exists, so it cannot
+outlive the defect.
+
+Three findings in my first probe were the probe's own faults, and they are the
+reason the parser has three outcomes rather than two:
+
+- `lease-expiry-sweep.ts` reported DEAD and is correct. Its destination is
+  `` `/t/${slug}/rent${cond ? `?locationId=${id}` : ''}` `` — a NESTED
+  template, and a literal scan stops at the inner backtick, so the expression
+  is cut mid-way. **A guard that mis-parses toward DEAD blocks correct work,
+  which is worse than one that misses.** Such a value is now `ungradable`:
+  counted, printed, and CAPPED at one, so a second producer of that shape is a
+  visible line in a diff.
+- the two `/invite/{token}` values are email `url:` fields and point at real
+  pages outside `(app)`. Excluded by field, with the reason written down.
+
+One quirk is pinned rather than left to be rediscovered: the query cut runs
+before segmenting and cannot tell a `?` that separates a query from a `?` that
+opens a ternary, so the ungradable reason string for the lease case has the
+ternary's `?` missing. It does not change the verdict.
+
+The PREFIX axis is deliberately NOT duplicated here. `farmRelativePath` checks
+the inverse rule (a value carrying its own `/t/` would compose
+`/t/{slug}/t/{slug}/…`), and for the other three a leading `/t/{…}` is stripped
+before resolution while its ABSENCE belongs to
+`notification-link-is-tenant-scoped` — whose population is `linkUrl:` alone,
+which is **#3033**. One property in two spellings is the #1664 class, and both
+guards exist to avoid it.
+
+Mutation-proved five ways, restored green after each: deleting the #3032
+exemption reddens it, restoring `/messages/{id}` reddens it, gutting the site
+selector reddens two, gutting the page walker reddens three, and making
+`collapseInterpolations` a no-op reddens three (every interpolated destination
+becomes ungradable, which the floor refuses).
+
 ### What is deliberately not built
 
 The channel push lands on the CHANNEL, not the post. agrent-ios settled

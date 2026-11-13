@@ -392,7 +392,11 @@ executorRegistry.register('person-push-send', async (payload) => {
         recipientUserId: payload.recipientUserId,
         title: payload.title,
         body: payload.body,
-        link: payload.link,
+        // The PATH, renamed from `link` when the field turned out to
+        // collide: `notifications/assignment.ts` has a `linkPath` meaning the
+        // opposite. Its sibling `push-send` above keeps `link` and keeps it
+        // tenant-prefixed, because that payload carries a `tenantId`.
+        farmRelativePath: payload.farmRelativePath,
         collapseKey: payload.collapseKey,
     });
     // Same arithmetic as `push-send`: scanned = transports attempted,

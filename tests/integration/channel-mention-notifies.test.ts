@@ -456,7 +456,7 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
 
     describe('the background push — #2987 PR B', () => {
         it('a MENTION enqueues one job naming the CHANNEL, in the recipient\u2019s language', async () => {
-            await postToChannel(ctxFor(AUTHOR), channelId, {
+            const { postId } = await postToChannel(ctxFor(AUTHOR), channelId, {
                 body: 'Иване, какво мислиш?',
                 mentionUserIds: [MENTIONED],
             });
@@ -477,7 +477,14 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
             // The PATH, not the link: a channel has no farm, so
             // `person-push-send` resolves the recipient's and prefixes
             // `/t/{slug}`. #2932 is what a bare path cost.
-            expect(push.farmRelativePath).toBe(`/channels/${channelId}`);
+            //
+            // The post rides in the QUERY — the one of three agreed shapes
+            // that works on shipped phones AND resolves to a page this repo
+            // has. The id is asserted because it is the whole point of the
+            // query: a mention should open the post, not the channel.
+            expect(push.farmRelativePath).toBe(
+                `/channels/${channelId}?post=${postId}`,
+            );
             expect(push.collapseKey).toBe(`channel-${channelId}-mention`);
         }, 60_000);
 
