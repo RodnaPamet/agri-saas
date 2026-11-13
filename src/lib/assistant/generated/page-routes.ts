@@ -131,6 +131,7 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/t/[tenantSlug]/knowledge/satellite",
     "/t/[tenantSlug]/locations",
     "/t/[tenantSlug]/locations/[locationId]",
+    "/t/[tenantSlug]/machines/[assetId]",
     "/t/[tenantSlug]/my-work",
     "/t/[tenantSlug]/news",
     "/t/[tenantSlug]/notifications",
