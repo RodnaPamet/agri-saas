@@ -1013,6 +1013,51 @@ describeFn(DB_SUITE_NAME, () => {
             'KnowledgeArticleVersion',
         ]);
 
+        /*
+         * READ-ONLY TO `app_user` — a direct-tenantId table whose ONLY
+         * `app_user` arm is a SELECT, because every write belongs to a
+         * privileged job.
+         *
+         * This is a third shape, and neither list next door can express it.
+         * `SINGLE_POLICY_EXCEPTIONS` means "one policy carrying both USING and
+         * WITH CHECK, because a split pair would leak through permissive-OR" —
+         * a statement about a NULLABLE tenant column, which these tables do not
+         * have; filing a table here under that name would be a false reason
+         * rather than a documented one. And the rule above cannot simply be
+         * relaxed, because for most tables the missing INSERT arm IS the
+         * defect it names.
+         *
+         * What makes the absence SAFE here is the direction of the failure.
+         * `ALTER DEFAULT PRIVILEGES` (migration 20260323180000) grants
+         * `app_user` full DML on every new table in `public`, so a policy is
+         * the only control — and with NO permissive INSERT policy an insert is
+         * REFUSED outright (42501) rather than admitted unchecked. So the
+         * table is strictly TIGHTER than the canonical split pair, not looser:
+         * the pair would let a farm's own member write rows for their own
+         * tenant, and that is what these tables must not allow.
+         *
+         * `MachineAreaState` is the measured case. It stores one verdict per
+         * machine — `outside`, and the fix it was computed from — and
+         * `machine-area-alert` pushes only on a false → true crossing. A
+         * tenant member able to INSERT or UPDATE their own farm's row could
+         * therefore write `outside: true` ahead of a real departure and
+         * SILENCE the alert for that machine, with nothing failing and no
+         * trace: the job would read a prior verdict that says the machine is
+         * already away and conclude there is nothing new to report. Its five
+         * siblings in #2948 (`MachineTracker`, `MachinePosition`,
+         * `WorkedParcel`, `MachineWorkedDay`, `MachineGeofenceState`) carry
+         * the canonical pair, and the asymmetry is deliberate rather than an
+         * oversight: those hold OBSERVATIONS, where a forged row is visible
+         * in the data a farmer reads, while this one holds the state an ALERT
+         * is suppressed by.
+         *
+         * The exemption is self-enforcing — the block below asserts each
+         * member has no non-SELECT arm at all, so adding `tenant_isolation_insert`
+         * to one of these tables fails HERE instead of quietly passing the
+         * rule it was exempted from.
+         */
+        const READ_ONLY_FOR_APP_USER = new Set<string>(['MachineAreaState']);
+
         const { Prisma } = require('@prisma/client');
         const directScoped = new Set<string>(
             Prisma.dmmf.datamodel.models
@@ -1025,6 +1070,7 @@ describeFn(DB_SUITE_NAME, () => {
         const missing: string[] = [];
         for (const model of directScoped) {
             if (SINGLE_POLICY_EXCEPTIONS.has(model)) continue;
+            if (READ_ONLY_FOR_APP_USER.has(model)) continue;
             const names = policiesFor(model);
             if (!names.includes('tenant_isolation_insert')) {
                 missing.push(model);
@@ -1040,7 +1086,52 @@ describeFn(DB_SUITE_NAME, () => {
                     missing.join('\n  ') +
                     `\n\nIf this model legitimately uses the single-policy form ` +
                     `(USING + WITH CHECK on one policy, for asymmetric semantics), ` +
-                    `add it to SINGLE_POLICY_EXCEPTIONS in this test.`
+                    `add it to SINGLE_POLICY_EXCEPTIONS in this test. If every ` +
+                    `write is a privileged job's and \`app_user\` may only READ, ` +
+                    `add it to READ_ONLY_FOR_APP_USER instead — and read that ` +
+                    `comment first, because the two reasons are not ` +
+                    `interchangeable.`
+            );
+        }
+
+        /*
+         * The READ_ONLY_FOR_APP_USER half, asserted rather than trusted.
+         *
+         * Every policy on such a table is either `superuser_bypass` or a
+         * SELECT arm. `pg_policies.cmd` is `ALL` for a policy declared without
+         * `FOR`, so this also refuses a `tenant_isolation` that was widened
+         * from `FOR SELECT` to a bare `USING (...)` — which is the likelier
+         * regression than a new `_insert` policy, since it is one deleted
+         * keyword and it reads as a simplification.
+         *
+         * The denominator is printed because this set is small and the
+         * assertion passes vacuously over an empty one.
+         */
+        const readOnlyOffenders: string[] = [];
+        for (const model of READ_ONLY_FOR_APP_USER) {
+            const table = TABLE_OF.get(model) ?? model;
+            const own = policies.filter((p) => p.tablename === table);
+            expect(own.length).toBeGreaterThan(0);
+            for (const p of own) {
+                if (p.policyname === 'superuser_bypass') continue;
+                if (p.cmd !== 'SELECT') {
+                    readOnlyOffenders.push(`${model}.${p.policyname} (cmd=${p.cmd})`);
+                }
+            }
+        }
+        console.log(
+            `[rls-read-only-arm] ${READ_ONLY_FOR_APP_USER.size} table(s) asserted ` +
+                `to carry no app_user write arm`
+        );
+        if (readOnlyOffenders.length > 0) {
+            throw new Error(
+                `READ_ONLY_FOR_APP_USER violated — ${readOnlyOffenders.length} ` +
+                    `policy(ies) on a table listed as read-only to \`app_user\` ` +
+                    `admit something other than SELECT:\n  ` +
+                    readOnlyOffenders.join('\n  ') +
+                    `\n\nEither drop the arm, or remove the table from ` +
+                    `READ_ONLY_FOR_APP_USER and give it the canonical ` +
+                    `tenant_isolation + tenant_isolation_insert pair.`
             );
         }
 

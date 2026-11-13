@@ -965,6 +965,17 @@ executorRegistry.register('usage-event-retention', async (payload) => {
     return result;
 });
 
+// ── machine-area-alert ───────────────────────────────────────────────
+
+executorRegistry.register('machine-area-alert', async (payload) => {
+    const { runMachineAreaAlert } = await import('./machine-area-alert');
+    const { result } = await runMachineAreaAlert({
+        tenantId: payload.tenantId,
+        now: payload.now,
+    });
+    return result;
+});
+
 // ── machine-position-sweep ───────────────────────────────────────────
 
 executorRegistry.register('machine-position-sweep', async (payload) => {
