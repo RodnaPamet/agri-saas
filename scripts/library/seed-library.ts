@@ -90,7 +90,17 @@ export const BookFileSchema = z
         sourceNote: z.string().min(1),
         licenseNote: z.string().min(1),
         version: z.number().int().positive(),
-        useCases: z.array(z.enum(['STRATEGY'])).min(1),
+        // Kept in step with `BookUseCase` BY HAND, and the duplication is
+        // deliberate: this validates a FILE the operator supplies, so it must
+        // refuse an unknown code with a sentence rather than letting Postgres
+        // answer `22P02 invalid input value for enum`. `.strict()` above means
+        // the refusal happens before the database is consulted at all.
+        //
+        // The cost is that adding a member to the enum and not here produces a
+        // zod refusal naming `useCases`, which reads as a bad staged file
+        // rather than a missing code — measured on #2980's second book, where
+        // a peer would have hit exactly that.
+        useCases: z.array(z.enum(['STRATEGY', 'MANAGEMENT'])).min(1),
         chapters: z.array(ChapterSchema).min(1),
     })
     .strict()

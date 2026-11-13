@@ -282,6 +282,22 @@ describeFn('#2980 — the library reads, and a book nobody published', () => {
             expect(() => readBookFile(p)).toThrow(/useCases/);
         });
 
+        it('ACCEPTS `MANAGEMENT`, the second member — the control for the refusal above', () => {
+            // Without this, the refusal is satisfied by a schema that admits
+            // NOTHING but `STRATEGY` for ever, and the #2980 second-book
+            // change would have been invisible to this suite. Measured on that
+            // change: a peer hit the zod refusal with the DB value already
+            // added, because this FILE schema is the fourth place the
+            // vocabulary lives and the easiest to forget.
+            const p = fileFor({ ...bookFixture(), useCases: ['MANAGEMENT'] });
+            expect(readBookFile(p).useCases).toEqual(['MANAGEMENT']);
+        });
+
+        it('accepts BOTH codes on one book', () => {
+            const p = fileFor({ ...bookFixture(), useCases: ['STRATEGY', 'MANAGEMENT'] });
+            expect(readBookFile(p).useCases).toEqual(['STRATEGY', 'MANAGEMENT']);
+        });
+
         it('accepts the valid fixture — the positive control', () => {
             expect(readBookFile(fileFor(bookFixture())).slug).toBe(SLUG);
         });

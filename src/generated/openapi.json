@@ -10593,9 +10593,10 @@
             "items": {
               "type": "string",
               "enum": [
-                "STRATEGY"
+                "STRATEGY",
+                "MANAGEMENT"
               ],
-              "description": "What the book is FOR, as a CODE the client localises — never display text. An enum rather than a free-text list so the DATABASE refuses an unknown value and a seed cannot introduce one; a client renders an unknown code as a missing string, which is what keeps the two in step. PROVISIONAL: the vocabulary grows as books are added, and a client should tolerate a value it does not know."
+              "description": "What the book is FOR, as a CODE the client localises — never display text. An enum rather than a free-text list so the DATABASE refuses an unknown value and a seed cannot introduce one; a client renders an unknown code as a missing string, which is what keeps the two in step. PROVISIONAL: the vocabulary grows as books are added, and a client should tolerate a value it does not know — `MANAGEMENT` («Управление») joined on 2026-11-13 with the second book, which is the note being cashed rather than a change of design. Widening an enum is additive, so a client pinned to the older spec keeps working on every book it already knew."
             }
           }
         },
