@@ -244,6 +244,45 @@ export interface PushSendPayload {
 }
 
 /**
+ * One PERSON-SCOPED notification for one person — #2987.
+ *
+ * `PushSendPayload` without the `tenantId`, and the absence is the whole
+ * point rather than an omission: a channel mention, a channel reply and a
+ * direct message carry no farm (P9.1's five tables, P8.1's four), so there is
+ * no tenant to put here. Resolving one from the recipient is P5.4a's
+ * invent-a-tenant mistake, and it would also pick WRONG — the push
+ * registration route is tenant-scoped, so a person in three farms may hold a
+ * `PushSubscription` row under only one of them.
+ *
+ * A SEPARATE type rather than `tenantId?: string`, because an optional tenant
+ * would make every reader of `PushSendPayload` ask whether this one has it,
+ * and `job-scope-audit` looks for the tenant axis AT the executor — an
+ * optional field there reads exactly like an executor that forgot to scope.
+ */
+export interface PersonPushSendPayload {
+    /** The person being notified — never the actor. */
+    recipientUserId: string;
+    title: string;
+    body: string;
+    /**
+     * The target page WITHOUT its `/t/{slug}` prefix — `/channels/{id}`,
+     * `/exchange/threads/dm/{id}` — or null for a notification that
+     * navigates nowhere.
+     *
+     * It is a PATH and not a link because the farm is not knowable here. A
+     * channel post and a direct message are tenantless, so the enqueuing
+     * usecase has no slug to write; `runPersonPushSend` resolves one for the
+     * RECIPIENT and composes the link, and sends no link at all when it
+     * cannot. #2932 is what a bare path costs: `push-summary` sent
+     * `/notifications`, which is not a page — 404 on the web, and on iOS a
+     * push that merely opened the app.
+     */
+    farmRelativePath: string | null;
+    /** The Web Push `tag` and the APNs `apns-collapse-id`, as one field. */
+    collapseKey: string;
+}
+
+/**
  * The 06:00 summary for one person's quiet-hours window — P7.5 (#1994).
  *
  * Carries the night rather than a list of notifications, and that is the
@@ -994,6 +1033,7 @@ export interface JobPayloadMap {
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'process-outbox': ProcessOutboxPayload;
     'push-send': PushSendPayload;
+    'person-push-send': PersonPushSendPayload;
     'push-summary': PushSummaryPayload;
     'zero-success-route-check': ZeroSuccessRouteCheckPayload;
     'data-lifecycle': DataLifecyclePayload;
@@ -1155,6 +1195,26 @@ export const JOB_DEFAULTS: Record<JobName, {
         // individually uninteresting once delivered. Failures are kept longer
         // than successes, because a failed push is the only record that
         // somebody was not told something.
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'person-push-send': {
+        // IDENTICAL to `push-send` above, deliberately, and restated rather
+        // than shared: a push is worth retrying SOON or not at all, and both
+        // transports are idempotent against a duplicate because `collapseKey`
+        // is the Web Push `tag` and the APNs `apns-collapse-id`, so a retry
+        // REPLACES the banner rather than stacking a second one.
+        //
+        // The one thing that differs is what a failure costs. A farm
+        // notification that never pushes still sits in the bell, which
+        // `push-send`'s own comment calls "the fallback the whole design rests
+        // on". A tenantless event writes NO `Notification` row — the column is
+        // NOT NULL — so there is no bell to fall back to and the only other
+        // signal is the live SSE frame, which a closed app never received.
+        // That argues for retrying, not for retrying differently, which is why
+        // the numbers match.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 500,
     },
@@ -1716,4 +1776,13 @@ export const SOIL_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['soil-fetch']);
 export const PUSH_QUEUE_NAME = 'agrent-push';
 
 /** Job names that run on the dedicated push queue. */
-export const PUSH_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['push-send', 'push-summary']);
+export const PUSH_QUEUE_JOBS: ReadonlySet<JobName> = new Set([
+    'push-send',
+    'push-summary',
+    // #2987. On the dedicated queue for `push-send`'s reason and not as a
+    // courtesy: a channel post may mention five people, so one post is five
+    // jobs, and on the main worker that fan-out would eat its 50/min limiter
+    // budget and starve every other job type for the rest of the minute —
+    // including the outbox sweep, which is how notifications reach email.
+    'person-push-send',
+]);
