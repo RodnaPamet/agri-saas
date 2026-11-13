@@ -24,6 +24,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
+import { RAW_POSITION_RETENTION_DAYS } from '@/lib/machines/fleet-view';
 import { exportPersonalData } from '@/app-layer/usecases/personal-data-export';
 import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { EXPORTED_MODELS } from '@/lib/privacy/personal-data-registry';
@@ -243,6 +244,28 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
         expect(out.notIncluded.join(' ')).toMatch(/farm records/i);
         expect(out.notIncluded.join(' ')).toMatch(/credential/i);
         expect(out.notIncluded.join(' ')).toMatch(/blocks that other people/i);
+        /*
+         * #2969 — the machinery position trace, which none of the four above
+         * reaches: a trace is not something the person AUTHORED, so the
+         * farm-records entry does not cover it, and the export would otherwise
+         * hold position data about a person and neither return it nor declare
+         * it.
+         *
+         * The NUMBER comes from the constant the sweep deletes by, so this
+         * fails if the two ever disagree. It cannot see HOW the number got
+         * into the sentence — a literal `30` produces a byte-identical
+         * response — which is why
+         * `tests/guards/export-declares-machinery-positions.test.ts` reads the
+         * source for the interpolation.
+         */
+        expect(out.notIncluded.join(' ')).toMatch(/tracker fitted to a farm vehicle/i);
+        expect(out.notIncluded.join(' ')).toContain(
+            `deleted ${RAW_POSITION_RETENTION_DAYS} days`,
+        );
+        // And the trace itself is NOT exported — the ruling was to declare the
+        // omission, not to widen the registry. A collection named for it would
+        // mean somebody chose option 1 without moving this line.
+        expect(Object.keys(out)).not.toContain('machinePositions');
     });
 
     it('represents every EXPORTED model from the registry', async () => {

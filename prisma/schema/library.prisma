@@ -108,6 +108,19 @@
 /// surface name, so it is deliberately NOT governed by `nav-vocabulary.md`.
 enum BookUseCase {
   STRATEGY
+  /// «Управление» — Franklin, *The Way to Wealth* (#2980, owner 2026-11-13).
+  ///
+  /// The second member, and the first evidence that the PROVISIONAL note above
+  /// meant it: a second book arrived and the vocabulary grew by one migration,
+  /// which is what an enum buys over free text.
+  ///
+  /// FOUR places carry this value and the one easiest to miss is not a schema
+  /// file: `scripts/library/seed-library.ts` validates the SEED FILE with its
+  /// own `z.enum`, and that schema is `.strict()` — so a book file naming an
+  /// unlisted code is refused before the database is consulted at all, with a
+  /// readable error rather than a 22P02. Adding the value here and not there
+  /// produces a refusal that looks like a bad staged file.
+  MANAGEMENT
 }
 
 /// One book in «Вдъхновение». A GLOBAL CATALOGUE row — see the header.
