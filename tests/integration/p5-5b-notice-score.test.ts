@@ -40,6 +40,46 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const reports: string[] = [];
 
 /**
+ * A limit that CANNOT exclude this test's own notice — #3025.
+ *
+ * `notice-score`'s queue is every `ContentReport` with no `NoticeScore` row,
+ * bounded by a raw `LIMIT take` so the database does the bounding. The queue is
+ * therefore GLOBAL, and `resetDatabase` clears neither table (the omission
+ * #2930 records for the exchange tables), so the backlog is whatever every
+ * other suite in this run has left behind.
+ *
+ * A literal `limit: 50` passed with a margin of TWO rows: 48 unscored
+ * candidates in this checkout's base database plus the one seeded here. Two
+ * more notices from a concurrent suite — `p5-2a-trust-safety` and the
+ * moderation and console suites all create them — and the row being asserted
+ * on falls outside the batch, the job does exactly what it should, and the
+ * failure names a feature that is working.
+ *
+ * So the bound is DERIVED from the live backlog rather than guessed: count the
+ * candidates, then ask for all of them plus headroom. A bigger literal would be
+ * the same defect at a larger number.
+ *
+ * It is `limit` rather than a filter on purpose. The job takes no id argument,
+ * and adding one to production code so a test can scope itself would put a
+ * parameter in the queue's shape that nothing in production would ever pass.
+ *
+ * Proved by the failure it prevents: with `limit: 1` — a batch already full
+ * before this row — the first case fails exactly as #3025 reported.
+ */
+async function limitCoveringBacklog(): Promise<number> {
+    const [{ unscored }] = await globalPrisma.$queryRaw<Array<{ unscored: bigint }>>`
+        SELECT count(*) AS unscored
+        FROM "ContentReport" r
+        WHERE NOT EXISTS (SELECT 1 FROM "NoticeScore" s WHERE s."reportId" = r.id)
+    `;
+    // Headroom for rows a concurrent suite creates between this count and the
+    // run itself — a window this cannot close, only make wide enough to stop
+    // mattering.
+    return Number(unscored) + 50;
+}
+
+
+/**
  * `ContentReport` is tenantless and denies `app_user`, so this writes through
  * the privileged connection — the same path the real intake uses.
  */
@@ -91,7 +131,7 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
     it('scores an unscored notice and stores the model with it', async () => {
         const id = await makeNotice('The grade claimed is not what was delivered.');
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
 
         const rows = await scoreRowsFor([id]);
         expect(rows).toHaveLength(1);
@@ -105,7 +145,7 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
         const plaintext = `unique-plaintext-${randomUUID()}`;
         await makeNotice(plaintext);
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
 
         const seen = scoreNotice.mock.calls.map((c) => c[0]?.detail).filter(Boolean);
         // The load-bearing assertion for the two-query split. If the row read
@@ -119,7 +159,7 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
     it('derives anonymity from the ABSENCE of a reporter, and sends no id', async () => {
         await makeNotice('filed with no account', { anonymous: true });
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
 
         const anonCalls = scoreNotice.mock.calls.filter((c) => c[0]?.anonymous === true);
         expect(anonCalls.length).toBeGreaterThan(0);
@@ -134,10 +174,10 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
     it('does NOT re-score on a second run', async () => {
         const id = await makeNotice('score me once');
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
         const callsAfterFirst = scoreNotice.mock.calls.length;
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
 
         // Idempotence by QUERY: the second run does not select the row at all,
         // so no second model call and no second charge against the budget.
@@ -180,13 +220,13 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
                     : { score: 42, rationale: 'a stated reason', model: 'claude-haiku-4-5' },
             ));
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
         expect(await scoreRowsFor([id])).toHaveLength(0);
 
         // The retry granularity: the queue is "no score row", so a declined
         // notice is simply still in it.
         decline = false;
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
         expect(await scoreRowsFor([id])).toHaveLength(1);
     });
 
@@ -217,7 +257,7 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
         const a = await makeNotice('batch member A');
         const b = await makeNotice('batch member B');
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
 
         // A loop that stored the first and returned would pass every other
         // test in this file.
@@ -238,7 +278,7 @@ describeFn('P5.5b — the notice-score job (#1596)', () => {
                     : { score: 5, rationale: 'fine', model: 'claude-haiku-4-5' },
             ));
 
-        await runNoticeScore({ limit: 50 });
+        await runNoticeScore({ limit: await limitCoveringBacklog() });
 
         expect(await scoreRowsFor([declined])).toHaveLength(0);
         expect(await scoreRowsFor([ok])).toHaveLength(1);
