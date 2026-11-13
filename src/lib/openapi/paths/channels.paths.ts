@@ -539,6 +539,13 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             + 'deliberately absent — its EBML magic is shared with video/webm and the '
             + 'two cannot be separated without parsing the track list, so accepting it '
             + 'would let a video through a cap written for speech.\n'
+            + '- `VOICE_NOTE_HAS_LOCATION` — the recording carries where it was made '
+            + '(`©xyz`, `loci` or an Ogg `LOCATION=` comment). Refused rather than '
+            + 'stripped: stripping audio means parsing a container on an upload path, '
+            + 'and the recorder this product uses writes no metadata at all (measured). '
+            + 'LOCATION only — an encoder tag names a device model and a future recorder '
+            + 'may write one legitimately, so refusing it would reject honest recordings '
+            + 'for no privacy gain.\n'
             + '- `VOICE_NOTE_DURATION_REQUIRED`, `VOICE_NOTE_TOO_LONG` — a missing or '
             + 'nonsensical length, and one over two minutes. Distinct from '
             + '`FILE_TOO_LARGE` because the remedies differ: record less, versus the '
@@ -558,7 +565,7 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             body: z.string().optional().openapi({ description: 'Optional caption.' }),
         }),
         extraResponses: codedErrorResponses({
-            400: 'INVALID_BODY, FILE_TOO_LARGE, FILE_EMPTY, FILE_TYPE_NOT_ALLOWED, VOICE_NOTE_DURATION_REQUIRED, VOICE_NOTE_TOO_LONG or CHANNEL_ARCHIVED.',
+            400: 'INVALID_BODY, FILE_TOO_LARGE, FILE_EMPTY, FILE_TYPE_NOT_ALLOWED, VOICE_NOTE_DURATION_REQUIRED, VOICE_NOTE_TOO_LONG, VOICE_NOTE_HAS_LOCATION or CHANNEL_ARCHIVED.',
             403: 'CHANNEL_NOT_A_MEMBER, CHANNEL_BANNED or CHANNEL_SLOW_MODE.',
             404: 'CHANNEL_NOT_FOUND, or the flag is off.',
         }),
