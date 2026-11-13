@@ -46,6 +46,21 @@
  * unrelated `url:` in the tree — 46 assignments, measured 2026-11-14, against
  * the 2 that are destinations.
  */
+/**
+ * ## The client confirms both postures, which is what makes them checkable
+ *
+ * These were decided from the SERVER side — reasoning, not measurement. The
+ * iOS client's behaviour is the other half, confirmed by agrent-ios
+ * 2026-11-14: `PushLink.parse` accepts ONLY `/t/{slug}/…` for a push link, and
+ * farm-relative paths are read only where the caller supplies the open farm
+ * (the assistant's `/farm-tasks/{id}` routes being the live case).
+ *
+ * So the prefix rule grades exactly the fields the client requires prefixed,
+ * and skips exactly the ones it resolves against an open farm. Recorded here
+ * because the risk with a structural exclusion is the next reader taking it
+ * for an oversight and "fixing" it — which would report three non-defects and
+ * break the assistant's links.
+ */
 export const DESTINATION_FIELDS = {
     farmRelativePath: 'farm-relative',
     link: 'tenant-prefixed',
