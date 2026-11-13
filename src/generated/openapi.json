@@ -1887,6 +1887,18 @@
         },
         "description": "Partial update for an agricultural asset. Every field is optional; only provided fields are persisted."
       },
+      "AttachTaskAssetBody": {
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "description": "The machine to put on the task."
+          }
+        },
+        "required": [
+          "assetId"
+        ]
+      },
       "AttachTaskAssetResult": {
         "type": "object",
         "properties": {
@@ -77930,21 +77942,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "assetId": {
-                        "def": {
-                          "type": "string"
-                        },
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "type": "object"
-                },
-                "description": "The machine to attach."
+                "$ref": "#/components/schemas/AttachTaskAssetBody"
               }
             }
           }

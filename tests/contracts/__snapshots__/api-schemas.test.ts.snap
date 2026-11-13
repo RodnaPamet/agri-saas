@@ -1950,6 +1950,21 @@ exports[`API contract — per-schema snapshots schema: AssetUpdateRequest 1`] = 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AttachTaskAssetBody 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "assetId": {
+      "type": "string",
+      "description": "The machine to put on the task."
+    }
+  },
+  "required": [
+    "assetId"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AttachTaskAssetResult 1`] = `
 "{
   "type": "object",

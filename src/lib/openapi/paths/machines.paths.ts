@@ -389,7 +389,12 @@ export function registerMachinePaths(registry: OpenAPIRegistry): void {
             'NARROWER than the GET on the same path: `machines.manage`, so OWNER and ADMIN only. The read is deliberately wider — it carries configuration and no coordinates, and the machine operator needs it for their own open task. IDEMPOTENT: a second call for the same pair answers 200 with `alreadyAttached: true` and writes nothing, because the unique index on (taskId, assetId) arbitrates rather than a read-then-write. The phone retries on a flaky link, so a repeated request is the normal case.',
         tags: ['Machines'],
         params: TaskParams,
-        body: { schema: AttachTaskAssetBodySchema, description: 'The machine to attach.' },
+        // `body` takes the SCHEMA directly — not `{ schema, description }`,
+        // which every other caller in this directory would have shown me and
+        // which `tsc` names precisely ("'schema' does not exist in type
+        // 'ZodType'"). The description belongs on the field, where it already
+        // is.
+        body: AttachTaskAssetBodySchema,
         success: {
             status: 200,
             description: 'Attached, with whether it was already there.',
