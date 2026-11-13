@@ -48,6 +48,12 @@
     // disappears SILENTLY the day somebody moves the import. It writes
     // (43 channel upserts), which is this section's criterion.
     "scripts/channels/seed-channels.ts",
+    // #2980. Same reasoning as `seed-channels.ts` one line up: `seed.ts`
+    // imports it so `tsc` would reach it transitively, and it is LISTED
+    // because this include list is the auditable record of what is covered
+    // and transitive coverage disappears SILENTLY the day somebody moves the
+    // import. It writes — one book plus its chapters, in a transaction.
+    "scripts/library/seed-library.ts",
 
     // ── Scripts that WRITE to a database (#1485) ─────────────────────────
     //

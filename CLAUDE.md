@@ -1243,8 +1243,14 @@ scripts — the production runtime image ships no `tsx` and no source
 `scripts/` tree (devDependencies are pruned before the runner stage),
 so none of the three can run there directly. **Production seeding goes
 through `dist/seed.mjs`** — `scripts/seed.ts`, one CLI with
-`knowledge`/`satellite`/`corpus`/`all` subcommands, calling the exact
-same idempotent exported functions as the three scripts above. It is
+`knowledge`/`satellite`/`corpus`/`channels`/`library`/`all` subcommands,
+calling the exact same idempotent exported functions as the three scripts
+above. (`channels` arrived with P9.2 and `library` with #2980; this list named
+four until the second of them, which is why `seed-deployment` now asserts the
+COUNT from the declaration rather than only the names it remembers.)
+**`library` is the one subcommand `all` does NOT run** — it needs a `--file`
+the operator supplies, because the book text is deliberately not in this
+public repository, so there is nothing for `all` to default to. It is
 esbuild-bundled by `npm run build:seed` (mirroring `build:worker`
 exactly — same mechanism, same esbuild config shape), wired into the
 Dockerfile right after `build:worker`, before the dev-dependency
@@ -3872,9 +3878,33 @@ stops a second row being minted to escape through.
 
 **Mentions are a TABLE and are READ-ONLY to a session.** A cap of five is only
 enforceable if mentions are constrained rather than derived from body text, and
-there is no `app_user` INSERT arm because a mention is a PUSH TRIGGER: a caller
-able to insert one could push to any person on the platform without posting
-anything they would read.
+there is no `app_user` INSERT arm because a mention is a NOTIFICATION TRIGGER:
+a caller able to insert one could reach any person on the platform without
+posting anything they would read.
+
+**That clause was a security argument resting on a mechanism nobody had built,
+from P9.1 until #2987.** `recordMentions` was the table's only writer and the
+GDPR export its only reader, so a mention's sole observable effect was that it
+appeared in the mentioned person's Art 15 download, possibly months later. The
+same was true of `ChannelMembership.mutedAt`, whose docblock said "no push" for
+a push that did not exist — a mute control on the phone would have done nothing
+and looked exactly like a working one. Nothing failed: a missing notification is
+not a route, no copy was absent because none is composed, and the behavioural
+suites asserted that the ROW was written, which was true.
+
+**It is wired now, and the LIMIT is worth reading before relying on it.**
+`queueChannelActivityNotify` publishes on a fourth bus address,
+`channel-activity:<userId>`, for every mention and every reply — honouring
+`mutedAt` in `reachableTargets`, which is also what makes that column mean
+something. That is an SSE event: a person with the app OPEN is told at once, a
+person with it closed learns nothing until they open it. Every push transport
+in this repo is tenant-scoped end to end (`PushSubscription.tenantId` is NOT
+NULL, `sendApnsToUser` binds RLS through `runInTenantContext`,
+`UserNotificationPreference` is per (user, farm)) and a channel has no farm, so
+a background push needs a person-scoped transport that does not exist yet. A
+direct message is in exactly the same position and equally silent; #2987 carries
+the remainder. **`mutedAt` also still has no WRITER** — #2990 owns the mute
+control and the read cursor together.
 
 **Three removal columns, not one.** `removedByModerationAt` (a human decision,
 reversed by #2867's restore route), `autoHiddenAt` (P9.3's threshold, reversed by

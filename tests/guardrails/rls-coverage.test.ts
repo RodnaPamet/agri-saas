@@ -290,14 +290,14 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
     // `conversation_select` admits participants only; `channel_select` admits
     // any authenticated caller, because P9.2 cannot suggest a channel nobody
     // can read and nobody joins one they cannot look into. The gate is on
-    // POSTING, not on reading — which is why `Channel` and `ChannelPost` have
-    // a SELECT arm that is a session-presence check rather than a membership
-    // test, and why that is not an oversight.
+    // POSTING, not on reading — which is why `ChannelPost` has a SELECT arm
+    // that is a session-presence check rather than a membership test, and why
+    // that is not an oversight.
     //
-    // `Channel` has no `app_user` write arm: channels are seeded and
-    // administered, and a caller able to insert one could mint a channel
-    // impersonating a crop or an oblast.
-    ['Channel', ['channel_select']],
+    // `Channel` itself is NOT here any more: it has no `app_user` write arm at
+    // all, so it is a global catalogue with a public read and belongs in the
+    // EQUALITY bucket where an added arm is visible (#3014). The four tables
+    // below stay, because each of their write arms is genuinely per-person.
     // The caller's OWN row only, and the narrowness is load-bearing for the
     // same reason as `ConversationParticipant`: a policy admitting "every
     // member of a channel I am in" must ask this table whether I am in it,
@@ -414,12 +414,22 @@ const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map
 // every new table in `public`, so the ABSENCE of a policy is the mechanism and
 // an EXTRA policy is the failure to look for.
 //
-// `Channel` and `ChannelPost` are the near neighbours and are NOT moved here:
-// they are filed under `PARTY_SCOPED_MODELS`, whose comment there already
-// apologises for the fit ("a SELECT arm that is a session-presence check
-// rather than a membership test, and why that is not an oversight"). They do
-// have `app_user` write arms, so the equality list would be a different one —
-// a measurement, not a re-filing, and #3014 carries it.
+// #3014 did that measurement, and it SPLITS the channel family rather than
+// moving it. The claim this comment used to make — that `Channel` and
+// `ChannelPost` both have `app_user` write arms, so neither could move — is
+// true of exactly one of them. Measured against `pg_policy` on the migrated
+// database:
+//
+//   Channel              channel_select, superuser_bypass          → no write arm
+//   ChannelMembership    _select, _update, _delete                 → per-person
+//   ChannelPost          _select, _insert, _update                 → per-person
+//   ChannelPostReaction  _select, _insert, _delete                 → per-person
+//   ChannelPostMention   _select, _insert, _delete                 → per-person
+//
+// So `Channel` moves here and the other four stay party-scoped. It is the
+// table that benefits most: nothing could write it and nothing checked that
+// it stays that way, while the four below have arms a containment check is
+// the right shape for.
 const GLOBAL_CATALOGUE_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
     // #2980 «Вдъхновение». The SELECT arm admits EITHER session variable,
     // which is #1664 avoided rather than rediscovered: a book belongs to
@@ -437,6 +447,28 @@ const GLOBAL_CATALOGUE_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new 
     // while serving its text is the whole of the leak rather than half a fix,
     // and that is the one assertion a book-only test would pass over.
     ['BookChapter', ['book_chapter_select', 'superuser_bypass']],
+    // #3014 — P9.1's channel directory. A public read and NO write arm:
+    // channels are seeded by `dist/seed.mjs channels` and administered, and a
+    // caller able to insert one could mint a channel impersonating a crop or
+    // an oblast — a «Пшеница» nobody official created.
+    //
+    // Here rather than party-scoped because the ABSENCE of a write arm is the
+    // control, and containment cannot see it being removed: adding a
+    // permissive `channel_insert` leaves `channel_select` in place and
+    // passes. Equality fails. Mutation-proved by creating exactly that arm on
+    // the migrated database, where this bucket's test reported
+    // `Channel → policies [channel_insert_probe, channel_select,
+    // superuser_bypass], allowed [channel_select, superuser_bypass]`.
+    //
+    // Worth knowing for the next reader: that proof only has teeth with a
+    // database. Without one the suite's checks pass in about a millisecond
+    // and `RLS_GUARDRAIL_REQUIRE_DB=1` is what turns a skip into a failure —
+    // the 70ms run is the one that means something.
+    //
+    // `memberCount` is maintained by `joinChannel`/`leaveChannel` through the
+    // PRIVILEGED client, which is why no `app_user` arm is needed for the one
+    // write a member does perform — see `ChannelMembership` above.
+    ['Channel', ['channel_select', 'superuser_bypass']],
 ]);
 
 // Models that are GLOBAL BY DESIGN — deliberately readable across every

@@ -184,6 +184,51 @@ function channelForPerson(userId: string): string {
 export const PERSON_CHANNEL_PREFIX = 'person:';
 
 /**
+ * The CHANNEL-ACTIVITY address — `channel-activity:<userId>` (#2987).
+ *
+ * ## Why a fourth address and not a field on the person event
+ *
+ * A channel mention and a direct message are both "something happened to you
+ * personally", so the natural instinct is to reuse `person:<userId>` and add a
+ * discriminator to the payload. That was the first design and it is worse.
+ *
+ * The person channel's wire payload is `{ id }` and nothing else — the
+ * publisher writes `JSON.stringify({ id: event.id })` and the subscriber
+ * REFUSES anything whose `id` is not a string, dropping the rest. Adding a
+ * field means changing that format on both sides at once, and during a rolling
+ * deploy the two sides are different versions: a new publisher's discriminator
+ * reaches an old subscriber that drops it, and the event arrives labelled as a
+ * DIRECT MESSAGE. A client would then try to open a conversation whose id is a
+ * channel's.
+ *
+ * A separate address has no such window. An old process simply never
+ * subscribes to it, so the event is not delivered rather than mislabelled —
+ * and the client's REST refetch is the designed fallback for exactly that.
+ *
+ * It is also this file's own rule, stated for `subscribeToPersonEvents`: two
+ * distinct functions rather than one with a parameter, because
+ * `subscribeToChannelActivity` cannot be confused at a call site where a
+ * `scope: 'channel'` argument could.
+ *
+ * ## The prefix is disjoint from both others, which is what makes it testable
+ *
+ * `notif:` for a farm, `person:` for a person, `channel-activity:` for channel
+ * activity — and no value of `tenantId` or `userId` can produce one from
+ * another, so the assertion is "the impostor receives NOTHING" rather than the
+ * vacuous "zero or one". #2809 shipped `notif:person:<userId>` first and
+ * corrected it for this reason.
+ *
+ * Spelled `channel-activity:` and not `channel:` because "channel" means three
+ * things in this codebase — a Redis pub/sub channel, an SSE delivery channel,
+ * and the product's «Канал» — and the one place they meet is this file.
+ */
+export const CHANNEL_ACTIVITY_PREFIX = 'channel-activity:';
+
+function channelForChannelActivity(userId: string): string {
+    return `${CHANNEL_ACTIVITY_PREFIX}${userId}`;
+}
+
+/**
  * Which backing the bus is using right now.
  *
  * Resolved per call rather than captured once: `REDIS_URL` is read through
@@ -293,6 +338,26 @@ export function subscribeToPersonEvents(sub: PersonSubscriber): () => void {
     });
 }
 
+/**
+ * Register a subscriber for the caller's CHANNEL-ACTIVITY address (#2987).
+ *
+ * Same contract as its two siblings — the returned function MUST be invoked on
+ * disconnect — and the same per-channel bookkeeping, because all three go
+ * through `subscribeToChannel`. One implementation, three addresses: a second
+ * copy is how a leak gets fixed on one path and not the others, which is what
+ * P7.10's "10k connect/abort cycles leave 0 subscribers" criterion measures.
+ */
+export function subscribeToChannelActivity(sub: PersonSubscriber): () => void {
+    // The sentinel again, for the reason `subscribeToPersonEvents` gives: the
+    // wire contract requires `tenantId` on every frame and a channel has no
+    // farm. It never reaches `channelFor` — routing is by channel name.
+    return subscribeToChannel(channelForChannelActivity(sub.userId), {
+        tenantId: PERSON_SCOPE_SENTINEL,
+        userId: sub.userId,
+        send: sub.send,
+    });
+}
+
 function subscribeToChannel(channel: string, sub: Subscriber): () => void {
     const mode = getNotificationBusMode();
     logModeOnce(mode);
@@ -380,6 +445,31 @@ export function publishNotificationEvent(
  */
 export function publishPersonEvent(userId: string, event: NotificationEvent): void {
     publishToChannel(channelForPerson(userId), event);
+}
+
+/**
+ * Tell one person that a channel they are in has activity FOR THEM (#2987).
+ *
+ * `void` for its siblings' reason: the post is committed by the time this
+ * runs, so a caller has nothing useful to do with a failure, and a lost event
+ * degrades to the client's REST refetch.
+ *
+ * **Call it AFTER the write commits.** `postToChannel` and `replyToPost` run
+ * through `runInUserContext`, which DOES own an after-commit scope — unlike
+ * `sendDirectMessage`'s bare `prisma.$transaction`, where `afterCommit` fires
+ * un-awaited (#1619) — so the call sites queue this with `afterCommit` and it
+ * drains after COMMIT.
+ *
+ * The event's `id` is the CHANNEL id, never the post id and never the body.
+ * A client receiving a post id would still have to work out which channel to
+ * put it in, and the feed read is keyed by channel — the same reasoning that
+ * makes a `dm` frame carry its conversation. `ChannelPost.body` is plaintext
+ * (P9.1, for search), which makes the "handle, never content" rule a choice
+ * here rather than a consequence: a channel carrying prose would put it
+ * through Redis and, via push, through APNs.
+ */
+export function publishChannelActivityEvent(userId: string, event: NotificationEvent): void {
+    publishToChannel(channelForChannelActivity(userId), event);
 }
 
 function publishToChannel(channel: string, event: NotificationEvent): void {
