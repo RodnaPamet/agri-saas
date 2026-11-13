@@ -104,10 +104,26 @@ function startListener(): Promise<number> {
          * than as a hang, because the rejection below fires on exit too.
          */
         const chosen = 23_000 + Math.floor(Math.random() * 9_000);
+        /*
+         * `node --import tsx`, NOT `npx tsx`, and `detached` on top of it.
+         * Both halves are about not leaking a process.
+         *
+         * `npx` is a wrapper that spawns tsx, which spawns node: killing the
+         * pid we hold ends the wrapper and ORPHANS the listener. Measured the
+         * hard way — thirteen runs of this file left **54 live processes**,
+         * each holding a Postgres connection, and the machine's load average
+         * at 14. That starvation is also what made the suite look flaky before
+         * the serialisation bug was found, so the leak was actively misleading.
+         *
+         * `--import tsx` removes the wrapper (one child, the real process),
+         * and `detached: true` puts it in its own process group so the
+         * teardown can kill the GROUP and take anything it spawned with it.
+         */
         child = spawn(
-            'npx',
-            ['tsx', 'scripts/machine-listener.ts'],
+            process.execPath,
+            ['--import', 'tsx', 'scripts/machine-listener.ts'],
             {
+                detached: true,
                 env: {
                     ...process.env,
                     MACHINE_LISTENER_PORT: String(chosen),
@@ -251,9 +267,30 @@ describeFn('#2948 stage 6 — the listener process', () => {
     }, 120_000);
 
     afterAll(async () => {
-        child?.kill('SIGTERM');
-        await wait(300);
-        child?.kill('SIGKILL');
+        /*
+         * Kill the GROUP (`-pid`), not the pid: a child spawned `detached`
+         * leads its own process group, so this reaches anything it started.
+         * SIGTERM first, because the listener's own handler stops accepting
+         * before letting in-flight writes finish — the other order drops a
+         * frame that was already acked, which is the one loss that cannot be
+         * replayed. Then SIGKILL for whatever ignored it.
+         *
+         * Both are wrapped: the group is gone if the process already exited,
+         * and an ESRCH here would fail the suite for a successful teardown.
+         */
+        if (child?.pid) {
+            try {
+                process.kill(-child.pid, 'SIGTERM');
+            } catch {
+                /* already gone */
+            }
+            await wait(400);
+            try {
+                process.kill(-child.pid, 'SIGKILL');
+            } catch {
+                /* already gone */
+            }
+        }
         await prisma.machinePosition.deleteMany({ where: { tenantId: { in: [FARM_A, FARM_B] } } });
         await prisma.machineTracker.deleteMany({ where: { tenantId: { in: [FARM_A, FARM_B] } } });
         await prisma.asset.deleteMany({ where: { tenantId: { in: [FARM_A, FARM_B] } } });
