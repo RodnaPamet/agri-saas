@@ -375,6 +375,36 @@ executorRegistry.register('push-send', async (payload) => {
     );
 });
 
+// ── person-push-send ─────────────────────────────────────────────────
+//
+// The tenantless sibling of `push-send`: a channel mention, a channel reply or
+// a direct message, none of which has a farm. Same queue, same retry shape.
+
+executorRegistry.register('person-push-send', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runPersonPushSend } = await import('../jobs/person-push-send');
+    // Destructured like its sibling, and the ABSENCE of a `tenantId` here is
+    // the deliberate part — `tests/unit/job-scope-audit.test.ts` looks for the
+    // tenant axis at the executor, so this job is recorded there as
+    // person-scoped rather than appearing to have forgotten one.
+    const r = await runPersonPushSend({
+        recipientUserId: payload.recipientUserId,
+        title: payload.title,
+        body: payload.body,
+        link: payload.link,
+        collapseKey: payload.collapseKey,
+    });
+    // Same arithmetic as `push-send`: scanned = transports attempted,
+    // actioned = transports that reached at least one device, skipped = the
+    // difference. #2171's correction is inherited rather than re-derived.
+    return makeResult(
+        'person-push-send', startedAt, startMs,
+        r.attempted, r.delivered, r.attempted - r.delivered,
+        { attempted: r.attempted, delivered: r.delivered },
+    );
+});
+
 // ── push-summary ─────────────────────────────────────────────────────
 //
 // The 06:00 delivery for a quiet-hours window. One per (person, night),

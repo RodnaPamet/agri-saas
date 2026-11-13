@@ -22,6 +22,7 @@
  */
 import webpush from 'web-push';
 import { runInTenantContext } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { logger } from '@/lib/observability/logger';
 import { TransportOutcome, noSend } from './transport-outcome';
 import { checkPushEndpoint, assertPublicAddress } from '@/app-layer/automation/webhook-safety';
@@ -108,6 +109,94 @@ export async function sendWebPushToUser(
     }
     if (subs.length === 0) return noSend();
 
+    return deliverToSubscriptions(subs, payload, {
+        tenantId: ctx.tenantId,
+        prune: (dead) =>
+            runInTenantContext(ctx, (db) =>
+                db.pushSubscription.deleteMany({ where: { id: { in: dead } } }),
+            ).then(() => undefined),
+    });
+}
+
+/** One Web Push subscription, reduced to what a send needs. */
+interface WebSub {
+    id: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+}
+
+/**
+ * Send to every browser ONE PERSON has registered, in every farm — #2987.
+ *
+ * The sibling of `sendApnsToPerson`, and the reasoning is identical: a channel
+ * post and a direct message carry no `tenantId`, `PushSubscription` is one row
+ * per (tenant, user, endpoint), and a resolved-tenant read would miss a device
+ * registered under a different farm. See that function's docblock and the
+ * `person-push-devices` entry in `rls-middleware.ts`.
+ *
+ * ## The dedupe key is the ENDPOINT, not the device token
+ *
+ * A browser's identity here is its push endpoint — the capability URL the push
+ * service issued — so two rows for one browser in two farms share it. Keyed on
+ * `id` the dedupe would collapse nothing, because `id` is exactly what differs.
+ */
+export async function sendWebPushToPerson(
+    recipientUserId: string,
+    payload: WebPushPayload,
+): Promise<TransportOutcome> {
+    if (!isWebPushConfigured()) return noSend();
+
+    let subs: WebSub[] = [];
+    try {
+        const rows = await runWithoutRls({ reason: 'person-push-devices' }, (db) =>
+            db.pushSubscription.findMany({
+                where: { userId: recipientUserId, platform: 'WEB' },
+                select: { id: true, endpoint: true, p256dh: true, auth: true },
+                take: 25,
+            }),
+        );
+        const seen = new Set<string>();
+        subs = rows.flatMap((r) => {
+            if (r.endpoint === null || r.p256dh === null || r.auth === null) return [];
+            if (seen.has(r.endpoint)) return [];
+            seen.add(r.endpoint);
+            return [{ id: r.id, endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth }];
+        });
+    } catch {
+        return { sent: 0, retryable: 1 };
+    }
+    if (subs.length === 0) return noSend();
+
+    // Pruned privileged for `pruneDeadTokensForPerson`'s reason: a subscription
+    // the push service reported gone may sit under a farm this person has left,
+    // and a tenant-scoped delete would remove ZERO rows and return normally.
+    return deliverToSubscriptions(subs, payload, {
+        tenantId: 'person',
+        prune: (dead) =>
+            runWithoutRls({ reason: 'person-push-devices' }, (db) =>
+                db.pushSubscription.deleteMany({ where: { id: { in: dead } } }),
+            ).then(() => undefined),
+    });
+}
+
+/**
+ * The gate-and-send half, shared by both entry points.
+ *
+ * Extracted rather than copied, because the copy that matters is the SSRF
+ * GATE: `web-push@3.6.7` validates nothing (its only check is "non-empty
+ * string", the scheme is discarded and the port is attacker-chosen), so a
+ * second entry point that read endpoints and skipped this would be a working
+ * SSRF against the one seam built to stop it. `tenantId` is for the LOG only —
+ * the person path passes the sentinel, because a channel post has no farm.
+ */
+async function deliverToSubscriptions(
+    subs: readonly WebSub[],
+    payload: WebPushPayload,
+    opts: { tenantId: string; prune: (dead: string[]) => Promise<void> },
+): Promise<TransportOutcome> {
+    const ctx = { tenantId: opts.tenantId } as const;
+
     // ── SSRF gate, at the only seam that sees a STORED endpoint (#696) ──
     //
     // `endpoint` is client-supplied and `web-push@3.6.7` validates nothing —
@@ -183,9 +272,7 @@ export async function sendWebPushToUser(
 
     if (dead.length > 0) {
         try {
-            await runInTenantContext(ctx, (db) =>
-                db.pushSubscription.deleteMany({ where: { id: { in: dead } } }),
-            );
+            await opts.prune(dead);
         } catch {
             /* prune is best-effort */
         }
