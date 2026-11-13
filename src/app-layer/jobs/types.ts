@@ -444,6 +444,13 @@ export interface NoticeScorePayload {
     limit?: number;
 }
 
+export interface MachinePositionSweepPayload {
+    /** Cap for this run. Defaults to 50,000 rows. */
+    limit?: number;
+    /** Override "today" — tests only. */
+    today?: string;
+}
+
 export interface WorkedParcelDerivationPayload {
     /** Limit to one tenant. Default: every tenant that reported that day. */
     tenantId?: string;
@@ -992,6 +999,7 @@ export interface JobPayloadMap {
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
     'worked-parcel-derivation': WorkedParcelDerivationPayload;
+    'machine-position-sweep': MachinePositionSweepPayload;
     'channel-auto-hide': ChannelAutoHidePayload;
     'memory-extract': MemoryExtractPayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
@@ -1451,6 +1459,21 @@ export const JOB_DEFAULTS: Record<JobName, {
         // delay. Values copied from the neighbours rather than chosen.
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'machine-position-sweep': {
+        /*
+         * `attempts: 1`, which #2948 §2 specifies in the `statement-dispatch`
+         * shape. A retry would in fact be harmless — deleting rows already
+         * gone is a no-op, unlike a re-SEND or a re-SPEND — but a destructive
+         * job is the one place to prefer the operator's next scheduled run
+         * over an automatic repeat: whatever made one attempt fail is worth a
+         * human reading the log before it runs again.
+         */
+        attempts: 1,
+        // INERT at one attempt — copied from the neighbours, not chosen.
+        backoff: { type: 'exponential', delay: 30000 },
+        removeOnComplete: 100,
         removeOnFail: 500,
     },
     'worked-parcel-derivation': {

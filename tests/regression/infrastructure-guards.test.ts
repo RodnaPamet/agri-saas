@@ -209,7 +209,7 @@ describe('Infrastructure Regression Guards', () => {
             // rule has existed. What actually happened is that I hand-picked
             // suites instead of running the derived population, which
             // CLAUDE.md names as the mistake that costs three CI cycles.
-            expect(SCHEDULED_JOBS).toHaveLength(35);
+            expect(SCHEDULED_JOBS).toHaveLength(36);
         });
 
         test('scheduled job names match expected set', () => {
@@ -281,6 +281,10 @@ describe('Infrastructure Regression Guards', () => {
                 // reads an inbox, so an accepted-then-bounced message looks
                 // like success. Calling it a delivery check would be the
                 // dangerous reading.
+                // #3012 — nightly deletion of raw positions past the 30-day
+                // retention window the product tells farmers about. DRY RUN
+                // until armed by an operator.
+                'machine-position-sweep',
                 'mail-canary',
                 // Trends → News — daily aggregation of free agri RSS/Atom feeds
                 // into the global market-news cache.

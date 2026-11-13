@@ -251,6 +251,26 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * nightly derivation and is NOT acceptable for the day boundary, which
          * is computed in Europe/Sofia inside the job.
          */
+        /*
+         * #3012 — delete raw positions past the 30-day window.
+         *
+         * 03:10 UTC, fifty minutes AFTER the derivation, and the order is the
+         * point: a day must be derived before its raw rows can go, or that
+         * day's work becomes unknowable. Fifty minutes is not the guarantee —
+         * the guarantee is the 30-day window, which leaves a 29-day margin —
+         * but running the sweep first would make that margin the only thing
+         * between a slow derivation and a permanent loss, for no reason.
+         *
+         * DRY RUN until `MACHINE_POSITION_SWEEP=delete` is set. Every dry run
+         * logs at WARN with the backlog it would remove, because an
+         * unconfigured destructive control looks exactly like a working one.
+         */
+        name: 'machine-position-sweep',
+        pattern: '10 3 * * *',  // 03:10 UTC, nightly, after the derivation
+        description: 'Delete raw machine positions past the 30-day window (#3012)',
+        defaultPayload: {},
+    },
+    {
         name: 'worked-parcel-derivation',
         pattern: '20 2 * * *',  // 02:20 UTC, nightly
         description: "Derive yesterday's worked parcels from raw positions (#2948, #2984)",

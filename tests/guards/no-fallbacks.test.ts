@@ -146,6 +146,17 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // exactly what is unaffordable mid-incident here.) Exact-string
             // `=== '0'` only, so a typo cannot disarm an audit control.
             if (file.endsWith('audit/fail-closed-entities.ts')) continue;
+            // #3012 — the raw-position sweep reads MACHINE_POSITION_SWEEP at
+            // call time, and the reason is DISARMING rather than arming.
+            // Arming is a deliberate one-time act that can wait for a
+            // restart; stopping a job that is deleting employee location data
+            // cannot. The env.ts snapshot freezes at import, so routing it
+            // there would make the stop button need the restart it exists to
+            // avoid — the same argument as the audit kill switch above, with
+            // the polarity reversed: that one must not be DISARMED by a typo,
+            // this one must not be ARMED by one, so it compares against an
+            // exact string and anything else is a dry run.
+            if (file.endsWith('jobs/machine-position-sweep.ts')) continue;
             // GAP-17 read-tier rate limiter follows the same convention
             // as rate-limit-middleware.ts above — NEXT_TEST_MODE must be
             // read at request time so the Playwright suite can flip the

@@ -184,7 +184,14 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // tenant-scoped loop would need a tenant list, take a connection per
     // tenant, and silently skip any farm the loop forgot. The queue is
     // `receivedAt < cutoff`, which names no tenant by construction.
-    const EXEMPT_JOBS = ['usage-event-retention', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
+    // #3012 — `machine-position-sweep` deletes raw positions past the 30-day
+    // window, across every farm, for `usage-event-retention`'s reason exactly:
+    // the deadline is a per-row `recordedAt` and the queue is
+    // `recordedAt < cutoff`, which names no tenant by construction. Retention
+    // is also a PLATFORM duty rather than a per-farm setting, so iterating
+    // tenants would silently omit any farm the loop forgot — the one failure
+    // mode a promise about deleting employee location data cannot afford.
+    const EXEMPT_JOBS = ['usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
         'unverified-account-sweep',
         // mail-canary (P3.10) sends ONE message to an operator address to
         // prove the mail send path works. There is no farm it belongs to — it
@@ -339,7 +346,10 @@ describe('Payload Type Contract — tenantId field audit', () => {
     // #493 — see EXEMPT_JOBS above: a cross-tenant retention sweep has no
     // tenant to carry, and a `tenantId` on its payload would be a field that
     // could only ever be wrong.
-    const EXEMPT_PAYLOADS = ['UsageEventRetentionPayload', 'MailCanaryPayload', 'UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
+    // #3012 — see `EXEMPT_JOBS` above. A `tenantId` on this payload would be a
+    // narrower claim than the job makes; its only fields bound the batch and
+    // override "today" for tests.
+    const EXEMPT_PAYLOADS = ['UsageEventRetentionPayload', 'MachinePositionSweepPayload', 'MailCanaryPayload', 'UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
         'PromotionLeadRetentionPayload',
         // Drains the whole outbox; each ROW carries the tenantId, so a
