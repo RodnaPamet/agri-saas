@@ -162,6 +162,30 @@ export type RlsBypassReason =
      */
     | 'dm-recipient-resolution'
     /**
+     * Reading (and pruning) ONE PERSON's push devices across every farm —
+     * #2987.
+     *
+     * A channel post and a direct message have no `tenantId` at all, so there
+     * is no tenant to run the read under. `PushSubscription` is one row per
+     * (tenant, user, endpoint) and the registration route is tenant-scoped, so
+     * a person in three farms may hold a row under only the farm they happened
+     * to be in when the device registered — which means a resolved-tenant read
+     * would find nothing about half the time, silently.
+     *
+     * The bound is the `userId`, and the function returns only the device
+     * token and its APNs environment (or the Web Push keys). No tenant id,
+     * slug, membership or farm identity crosses the boundary, and nothing of
+     * anybody else's is reachable: every query under this reason filters
+     * `userId` to the one recipient.
+     *
+     * It also covers the PRUNE, and that half needs the bypass more than the
+     * read does: a token APNs reported gone may be stored under a farm the
+     * person has since left, and a tenant-scoped `deleteMany` would remove
+     * ZERO rows and return normally — so the dead device would be pushed to
+     * for ever. `[[rls-delete-is-silent-and-select-governs-it]]`.
+     */
+    | 'person-push-devices'
+    /**
      * Request-time read across the tenants of ONE organization, for the
      * Epic O-3 portfolio summary. Reads aggregate `ComplianceSnapshot` rows
      * and tenant metadata (id/slug/name) only — never per-tenant business
@@ -379,6 +403,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'module-availability': true,
     'org-tenant-bootstrap': true,
     'dm-recipient-resolution': true,
+    'person-push-devices': true,
 };
 
 const KNOWN_REASONS: ReadonlySet<string> = new Set(Object.keys(REASON_REGISTRY));

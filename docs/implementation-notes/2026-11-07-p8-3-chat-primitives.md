@@ -6,7 +6,7 @@
 
 Five presentational components under `src/components/chat/`, plus one hook,
 plus a dynamic-height extension to the Epic 68 primitive. Nothing here fetches,
-mutates or knows a route: P8.4 mounts them on `/messages`.
+mutates or knows a route. (This said "P8.4 mounts them on `/messages`" — written before that phase ruled a `/messages` route OUT. They are mounted under `/t/{slug}/exchange/threads/dm/{id}`, and the stale sentence is where #2987's DM push took its dead link from.)
 
 ```
 MessageTimeline  ── flattens messages into a ROW LIST ──┬─ DayPill
