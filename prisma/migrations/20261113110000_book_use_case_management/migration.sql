@@ -1,0 +1,42 @@
+-- ═══════════════════════════════════════════════════════════════════
+--  #2980 — «Управление» joins `BookUseCase`.
+-- ═══════════════════════════════════════════════════════════════════
+--
+--  Owner decision 2026-11-13: publish a second book, Franklin's *The Way to
+--  Wealth*, whose `useCases` is `["MANAGEMENT"]`. The enum shipped with one
+--  member and its own docblock called the vocabulary PROVISIONAL — "adding a
+--  value is a trivial migration" — so this is that note being cashed rather
+--  than a design change.
+--
+--  ── `IF NOT EXISTS`, and it is not defensive padding ──
+--
+--  It is this repo's existing form for the operation (see
+--  `20260308233200_traceability_enhancements`, which adds four `AssetType`
+--  members the same way). It also makes the statement re-runnable, which
+--  matters more than usual here: `prisma migrate deploy` runs from
+--  `scripts/entrypoint.sh` on every container start, and a half-applied
+--  migration row from an interrupted deploy would otherwise leave the next
+--  start failing on a duplicate value rather than converging.
+--
+--  ── Why there is no backfill and no default ──
+--
+--  `Book.useCases` is an ARRAY with `DEFAULT ARRAY[]::"BookUseCase"[]`, so an
+--  existing row neither gains nor needs this value. Production holds exactly
+--  one book at this point — Sun Tzu, `{STRATEGY}` — and it keeps it.
+--
+--  ── ADDITIVE, so no rollback inverse is owed ──
+--
+--  `deploy/rollback/` exists for a migration that would break the PREVIOUS
+--  image: a rename, a drop, a rewrite of persisted data. An enum value the
+--  previous image does not know about costs it nothing — it reads and writes
+--  `STRATEGY` exactly as before. Rolling the value back out would be the
+--  dangerous direction (`ALTER TYPE ... DROP VALUE` does not exist in
+--  PostgreSQL at all), which is the honest reason this is one-way rather than
+--  an omission.
+--
+--  NOTE ON READING THE RESULT BY HAND: the production database is
+--  `agrent_production`. `psql -d agrent` fails with "database does not exist",
+--  which is a confusing first error when all you wanted was
+--      SELECT unnest(enum_range(NULL::"BookUseCase"));
+
+ALTER TYPE "BookUseCase" ADD VALUE IF NOT EXISTS 'MANAGEMENT';

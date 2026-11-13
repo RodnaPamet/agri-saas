@@ -46,6 +46,7 @@
 import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-content';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import { RAW_POSITION_RETENTION_DAYS } from '@/lib/machines/fleet-view';
 import { EXPORTED_MODELS } from '@/lib/privacy/personal-data-registry';
 
 /** How many rows per collection. Bounded — see `takeNote` below. */
@@ -170,6 +171,34 @@ const NOT_INCLUDED: readonly string[] = [
     + 'photograph\'s type, size and digest, and the photographs themselves stay '
     + 'in the conversation they were sent to rather than being copied into this '
     + 'file. Open the conversation to save one.',
+    /*
+     * #2969, owner ruling 2026-11-13 — "positions: rely on the 30-day sweep;
+     * WorkedParcel: retain". The issue offered three options and this is
+     * option 2: DECLARE the omission rather than widening the registry to a
+     * tenant-scoped SURVEILLANCE class, and rather than exporting the trace
+     * outside the registry — which was rejected on sight, because one
+     * registry with two consumers is the whole design and the first thing to
+     * drift would be a column exported but never erased.
+     *
+     * Without this line the export would hold position data about a person and
+     * neither return it nor declare it, which is the silent absence this list
+     * exists to prevent. None of the five entries above reaches it: a trace is
+     * not something the person AUTHORED, so the farm-records entry does not
+     * cover it, and that was a property of the code rather than an opinion.
+     *
+     * THE RETENTION IS INTERPOLATED, never written out. `{graceDays}` in the
+     * deletion paragraph and `USAGE_EVENT_RETENTION_DAYS` in the telemetry
+     * disclosure are the same rule, and the drift direction is always the bad
+     * one — a disclosure promising a shorter life than the data actually gets.
+     * `machine-position-sweep` (#3012) is what makes this promise true, and it
+     * derives its cutoff from the same constant.
+     */
+    'Positions recorded by a tracker fitted to a farm vehicle. A raw trace is '
+    + `deleted ${RAW_POSITION_RETENTION_DAYS} days after it is recorded; what `
+    + 'survives is the derived record of which parcels were worked on which '
+    + 'day, which is the farm\'s own operational record and is available from '
+    + 'the farm rather than from your own account. The farm is also required to '
+    + 'tell you which of its machines are tracked.',
 ];
 
 export async function exportPersonalData(userId: string): Promise<PersonalDataExport> {

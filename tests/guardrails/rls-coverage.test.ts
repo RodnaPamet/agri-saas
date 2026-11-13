@@ -247,6 +247,39 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
         ['message_reaction_select', 'message_reaction_insert',
          'message_reaction_delete'],
     ],
+    // ── #3007 — PersonProfile, now that a reader exists ──
+    //
+    // P6.1 shipped this table with NO policy and said why: "no reader of any
+    // kind yet". It also named the condition for revisiting, and this file's
+    // own NO_RLS entry repeated it — "The policy belongs to the FIRST PR that
+    // routes a person-scoped read through app_user". #2989 was that PR (the
+    // channel author line reads this table on every feed) and shipped without
+    // it; #3007 is the correction.
+    //
+    // FIVE per-command policies, because the read and the write admit
+    // DIFFERENT rows. A published profile is readable by any authenticated
+    // caller — that cross-farm read IS the author line the owner approved —
+    // while writes are own-row only. One `ALL` policy whose USING said
+    // `published = true OR own` would govern UPDATE too and let every caller
+    // rename anybody; `person-profile-rls` asserts exactly that case.
+    //
+    // KNOWN LIMIT, written down rather than left to be found: this bucket is
+    // CONTAINMENT, so the ABSENCE of a delete arm is not guarded. Adding
+    // `person_profile_delete_own` would leave every policy below in place and
+    // pass. That absence is deliberate — erasure runs privileged, and
+    // clearing a name is an unpublish rather than a row deletion, so a person
+    // cannot take their own channel authorship out from under a thread —
+    // and making it ENFORCED means moving this to the equality bucket, which
+    // is the #3014 treatment and a different measurement.
+    [
+        'PersonProfile',
+        [
+            'person_profile_select_published',
+            'person_profile_select_own',
+            'person_profile_insert_own',
+            'person_profile_update_own',
+        ],
+    ],
     // ── P9.1 (#2935) — channels ──
     //
     // Party-scoped, keyed on `app.user_id` like the DM family above, and for
@@ -542,7 +575,6 @@ const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
     ['OutboundMessage', '#1769 \u2014 one row per outbound email, keyed by the provider\u2019s message id, so a delivery webhook can undo what the send caused. Written by `sendEmail` and read by `/api/webhooks/resend`, both on the GLOBAL client: tenant context binds `app_user` with `SET LOCAL ROLE` inside a `$transaction` and hands the callback that `tx`, so the global client is a different connection and never carries the role. Verified for the hardest case rather than assumed \u2014 the invite routes call `sendInviteEmail` at route scope, AFTER `createInviteToken` has committed its own context, which is also why the recorder works there at all. The webhook has no tenant to scope by: it self-authenticates by signature and its caller is Resend. Deliberately not tenant-scoped \u2014 password resets and the canary have no tenant, and a nullable `tenantId` on a lookup-by-message-id table invites a query that silently misses them. Holds the recipient DOMAIN only, never the address.'],
     ['User', 'The person. Read via the global client on auth paths; pii-middleware handles the encrypted columns.'],
     ['Account', 'NextAuth OAuth link rows, owned by the adapter. No src/ call site runs under app_user.'],
-    ['PersonProfile', 'P6.1 \u2014 a person\u2019s own public identity, keyed by userId with no tenantId, following User above: a person exists once across every farm they belong to, which is what TenantMembership is for. Measured 2026-10-14: NO reader of any kind yet \u2014 the P6.1 migration ships the table and the writer comes a release later, per the phase rule that tables precede the code that writes them. I first wrote a user-scoped fail-closed policy citing P1.4, and that was the wrong precedent: P1.4 narrowed tables that ALREADY HAD an over-permissive policy (UserSession\u2019s unconditional null-tenant arm), where there was a live over-permission to close. This has no policy and no reader, which is the User / Tenant / FeatureFlag situation. The policy belongs to the FIRST PR that routes a person-scoped read through app_user \u2014 P6.6\u2019s editor or P6.9\u2019s iOS profile view \u2014 which is also the only PR that can write an integration test with real negative controls for it, and a control that cannot express failure is green for ever.'],
     ['AuthSession', 'NextAuth adapter session table (@@map "Session"). ZERO src/ references — the adapter owns it.'],
     ['PasswordResetToken', 'Single-purpose reset tokens, claimed by a conditional updateMany on the auth path.'],
     ['VerificationToken', 'Single-purpose verify-email tokens, keyed by identifier rather than by user.'],
@@ -981,6 +1013,51 @@ describeFn(DB_SUITE_NAME, () => {
             'KnowledgeArticleVersion',
         ]);
 
+        /*
+         * READ-ONLY TO `app_user` — a direct-tenantId table whose ONLY
+         * `app_user` arm is a SELECT, because every write belongs to a
+         * privileged job.
+         *
+         * This is a third shape, and neither list next door can express it.
+         * `SINGLE_POLICY_EXCEPTIONS` means "one policy carrying both USING and
+         * WITH CHECK, because a split pair would leak through permissive-OR" —
+         * a statement about a NULLABLE tenant column, which these tables do not
+         * have; filing a table here under that name would be a false reason
+         * rather than a documented one. And the rule above cannot simply be
+         * relaxed, because for most tables the missing INSERT arm IS the
+         * defect it names.
+         *
+         * What makes the absence SAFE here is the direction of the failure.
+         * `ALTER DEFAULT PRIVILEGES` (migration 20260323180000) grants
+         * `app_user` full DML on every new table in `public`, so a policy is
+         * the only control — and with NO permissive INSERT policy an insert is
+         * REFUSED outright (42501) rather than admitted unchecked. So the
+         * table is strictly TIGHTER than the canonical split pair, not looser:
+         * the pair would let a farm's own member write rows for their own
+         * tenant, and that is what these tables must not allow.
+         *
+         * `MachineAreaState` is the measured case. It stores one verdict per
+         * machine — `outside`, and the fix it was computed from — and
+         * `machine-area-alert` pushes only on a false → true crossing. A
+         * tenant member able to INSERT or UPDATE their own farm's row could
+         * therefore write `outside: true` ahead of a real departure and
+         * SILENCE the alert for that machine, with nothing failing and no
+         * trace: the job would read a prior verdict that says the machine is
+         * already away and conclude there is nothing new to report. Its five
+         * siblings in #2948 (`MachineTracker`, `MachinePosition`,
+         * `WorkedParcel`, `MachineWorkedDay`, `MachineGeofenceState`) carry
+         * the canonical pair, and the asymmetry is deliberate rather than an
+         * oversight: those hold OBSERVATIONS, where a forged row is visible
+         * in the data a farmer reads, while this one holds the state an ALERT
+         * is suppressed by.
+         *
+         * The exemption is self-enforcing — the block below asserts each
+         * member has no non-SELECT arm at all, so adding `tenant_isolation_insert`
+         * to one of these tables fails HERE instead of quietly passing the
+         * rule it was exempted from.
+         */
+        const READ_ONLY_FOR_APP_USER = new Set<string>(['MachineAreaState']);
+
         const { Prisma } = require('@prisma/client');
         const directScoped = new Set<string>(
             Prisma.dmmf.datamodel.models
@@ -993,6 +1070,7 @@ describeFn(DB_SUITE_NAME, () => {
         const missing: string[] = [];
         for (const model of directScoped) {
             if (SINGLE_POLICY_EXCEPTIONS.has(model)) continue;
+            if (READ_ONLY_FOR_APP_USER.has(model)) continue;
             const names = policiesFor(model);
             if (!names.includes('tenant_isolation_insert')) {
                 missing.push(model);
@@ -1008,7 +1086,52 @@ describeFn(DB_SUITE_NAME, () => {
                     missing.join('\n  ') +
                     `\n\nIf this model legitimately uses the single-policy form ` +
                     `(USING + WITH CHECK on one policy, for asymmetric semantics), ` +
-                    `add it to SINGLE_POLICY_EXCEPTIONS in this test.`
+                    `add it to SINGLE_POLICY_EXCEPTIONS in this test. If every ` +
+                    `write is a privileged job's and \`app_user\` may only READ, ` +
+                    `add it to READ_ONLY_FOR_APP_USER instead — and read that ` +
+                    `comment first, because the two reasons are not ` +
+                    `interchangeable.`
+            );
+        }
+
+        /*
+         * The READ_ONLY_FOR_APP_USER half, asserted rather than trusted.
+         *
+         * Every policy on such a table is either `superuser_bypass` or a
+         * SELECT arm. `pg_policies.cmd` is `ALL` for a policy declared without
+         * `FOR`, so this also refuses a `tenant_isolation` that was widened
+         * from `FOR SELECT` to a bare `USING (...)` — which is the likelier
+         * regression than a new `_insert` policy, since it is one deleted
+         * keyword and it reads as a simplification.
+         *
+         * The denominator is printed because this set is small and the
+         * assertion passes vacuously over an empty one.
+         */
+        const readOnlyOffenders: string[] = [];
+        for (const model of READ_ONLY_FOR_APP_USER) {
+            const table = TABLE_OF.get(model) ?? model;
+            const own = policies.filter((p) => p.tablename === table);
+            expect(own.length).toBeGreaterThan(0);
+            for (const p of own) {
+                if (p.policyname === 'superuser_bypass') continue;
+                if (p.cmd !== 'SELECT') {
+                    readOnlyOffenders.push(`${model}.${p.policyname} (cmd=${p.cmd})`);
+                }
+            }
+        }
+        console.log(
+            `[rls-read-only-arm] ${READ_ONLY_FOR_APP_USER.size} table(s) asserted ` +
+                `to carry no app_user write arm`
+        );
+        if (readOnlyOffenders.length > 0) {
+            throw new Error(
+                `READ_ONLY_FOR_APP_USER violated — ${readOnlyOffenders.length} ` +
+                    `policy(ies) on a table listed as read-only to \`app_user\` ` +
+                    `admit something other than SELECT:\n  ` +
+                    readOnlyOffenders.join('\n  ') +
+                    `\n\nEither drop the arm, or remove the table from ` +
+                    `READ_ONLY_FOR_APP_USER and give it the canonical ` +
+                    `tenant_isolation + tenant_isolation_insert pair.`
             );
         }
 

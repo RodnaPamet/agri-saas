@@ -7381,5 +7381,11 @@
             "NOT_FOUND": "That notice no longer exists.",
             "FAILED": "The decision was not recorded. Try again."
         }
+    },
+    "machines": {
+        "areaAlert": {
+            "title": "Machine outside the farm",
+            "pushBody": "Machine {key} has left the farm’s area."
+        }
     }
 }
