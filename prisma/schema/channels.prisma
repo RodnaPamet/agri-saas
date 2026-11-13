@@ -257,7 +257,14 @@ model ChannelPost {
   /// write path in a schema-only PR, so `RICH_TEXT_COVERAGE` gains its entry in
   /// the PR that adds the writer — exactly as P8.6's link-card columns had to
   /// (#2800).
-  body String
+  /// NULLABLE since P9.6 (#2940): a voice note alone is a complete post, and so
+  /// is a photograph — the DM ruling (owner, 2026-11-07) one domain over.
+  ///
+  /// Read NULL as "no text", NEVER as "removed": the three removal columns
+  /// below are what say a post was taken down, and `toPostView` collapses all
+  /// three to an empty body so a reader cannot tell a moderator's act from the
+  /// author's.
+  body String?
 
   kind ChannelPostKind @default(POST)
 
@@ -292,6 +299,27 @@ model ChannelPost {
   /// author's doing and must not read as theirs.
   deletedAt DateTime?
 
+  /// P9.6 (#2940) — ONE attachment per post, the MIME deciding its kind.
+  ///
+  /// The RECORD-LESS upload class: no `FileRecord`, because its `tenantId` is
+  /// NOT NULL and a channel has no tenant. So `scanOrRefuse` runs BEFORE the
+  /// write — there is no download gate to defer to — and the egress route
+  /// authorises by MEMBERSHIP.
+  ///
+  /// `attachmentKey` is an opaque storage key and deliberately NOT encrypted:
+  /// it is not content, it authenticates nothing, and `FileRecord.pathKey` is
+  /// plaintext for the same reason.
+  attachmentKey String?
+  attachmentMime String?
+  attachmentBytes Int?
+  attachmentSha256 String?
+
+  /// The DECLARED duration in milliseconds, audio only, and METADATA rather
+  /// than a control. The enforceable cap on «max 2:00» is the byte ceiling in
+  /// `channel-media.ts`; this exists so the UI can size a scrubber without
+  /// downloading the file. Validated, never trusted as evidence.
+  attachmentDurationMs Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -305,6 +333,13 @@ model ChannelPost {
   @@index([parentPostId])
   /// "my posts", and the FK index layer B requires.
   @@index([authorUserId])
+
+  /// P9.6 — serving an attachment resolves it by key, after the route has
+  /// authorised by membership. The migration makes it PARTIAL; Prisma has no
+  /// syntax for that, so this declaration is the index's EXISTENCE and the
+  /// migration is its shape. `migrate-diff-is-never-clean-here` is why that
+  /// divergence is acceptable rather than a drift to chase.
+  @@index([attachmentKey])
 }
 
 /// One reaction by one person to one post.
