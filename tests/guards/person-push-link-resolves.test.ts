@@ -76,16 +76,19 @@ import { join, relative } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { DESTINATION_FIELDS } from '../helpers/notification-destination-fields';
 
 const APP_ROOT = join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)');
 
 /** Which prefix rule each destination field obeys. See the docblock. */
-const DESTINATION_FIELDS = {
-    farmRelativePath: 'farm-relative',
-    link: 'tenant-prefixed',
-    linkUrl: 'tenant-prefixed',
-    linkPath: 'tenant-prefixed',
-} as const;
+/**
+ * The field list moved to `tests/helpers/notification-destination-fields.ts`
+ * in #3033, because the sibling prefix guard needs the SAME list and had a
+ * copy with one entry. Two copies of "which fields carry a destination" is how
+ * one of them goes stale when a producer picks a different name — which is
+ * exactly what happened. The postures and the reason `url:` is absent are
+ * documented there; the extraction below stays here, on its own axis.
+ */
 
 /**
  * Floors, not equalities. A fifth producer is welcome; a population that
