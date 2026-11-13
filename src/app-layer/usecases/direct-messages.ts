@@ -87,6 +87,9 @@ import prisma from '@/lib/prisma';
 import { getStorageProvider } from '@/lib/storage';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { publishPersonEvent } from '@/lib/notifications/notification-bus';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
@@ -630,8 +633,83 @@ export async function sendDirectMessage(
     // though this line no longer claims it: it fails if somebody moves this
     // publish above the early return, or adds a second dedup path inside the
     // transaction.
-    for (const userId of await otherParticipantIds(input.conversationId, ctx.userId)) {
+    const recipients = await otherParticipantIds(input.conversationId, ctx.userId);
+    for (const userId of recipients) {
         publishPersonEvent(userId, { id: input.conversationId });
+    }
+
+    // ── the BACKGROUND PUSH — #2987 PR B, owner ruling 2026-11-13 ──
+    //
+    // DMs were silent not by decision but because every push transport here is
+    // tenant-scoped and a conversation has no farm (P8.1's four tables carry
+    // no `tenantId`, because two people may share none). `person-push-send`
+    // is the tenantless path, so this is the ruling applied rather than a new
+    // product choice: "a direct message is the most push-worthy event in the
+    // product — one person wrote to you."
+    //
+    // AFTER the publish and after the transaction, like the publish itself:
+    // `sendDirectMessage` uses a bare `prisma.$transaction`, which opens no
+    // `db-context` scope, so `afterCommit` here would fire `void
+    // runEffect(...)` un-awaited (#1619). A directly-awaited call is what
+    // orders it.
+    //
+    // Wrapped, because a push is a courtesy on top of a message that is
+    // already stored. A failed enqueue must not fail the send — the message is
+    // committed, the SSE event is out, and the recipient sees it on their next
+    // read either way.
+    try {
+        // ONE query for the recipients' languages. A conversation is 1:1
+        // today (`p8-9-hardening` pins exactly two participant rows per
+        // conversation), so this is one row — but it is written as a set read
+        // so a group conversation would not silently become a read per person.
+        const users = await prisma.user.findMany({
+            where: { id: { in: recipients } },
+            select: { id: true, uiLanguage: true },
+        });
+        const languageOf = new Map(users.map((u) => [u.id, u.uiLanguage]));
+
+        for (const userId of recipients) {
+            // The RECIPIENT's language. `translateFor` with an explicit locale,
+            // never `getTranslations()`, which would resolve the SENDER's
+            // request cookie.
+            const locale = resolveRecipientLocale(languageOf.get(userId));
+            // NO NAME AND NO PROSE, and that is a narrower choice than the
+            // channel push makes. A channel's name is platform-seeded
+            // reference data, so naming it is the 2026-11-01 ruling's "keep
+            // the KEY". The analogue here would be the SENDER's display name
+            // — which is personal data about a third party, and an APNs alert
+            // body is read by Apple. `DirectMessage.body` is encrypted at
+            // rest precisely because a two-party row is nobody else's to
+            // read, so putting either in a push payload would undo that at
+            // the last hop.
+            const pushBody = await translateFor(
+                locale,
+                'notifications.social.directMessage.pushBody',
+            );
+            await enqueue('person-push-send', {
+                recipientUserId: userId,
+                title: await translateFor(
+                    locale,
+                    'notifications.social.directMessage.title',
+                ),
+                body: pushBody,
+                // Root-relative and NOT tenant-prefixed: P8.4 put the DM
+                // screen under `/t/{slug}/exchange/threads/dm/{id}`, and a
+                // conversation has no farm to name — so the client resolves
+                // its own current farm rather than the server guessing one.
+                link: `/messages/${input.conversationId}`,
+                // Per CONVERSATION: a second message supersedes the first
+                // banner rather than stacking one per message, which is what
+                // makes a short exchange one notification instead of six.
+                collapseKey: `dm-${input.conversationId}`,
+            });
+        }
+    } catch (err) {
+        logger.warn('dm.push_enqueue_failed', {
+            component: 'direct-messages',
+            conversationId: input.conversationId,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 
     return sent;

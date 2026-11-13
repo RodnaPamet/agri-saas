@@ -66,6 +66,9 @@ import { runInUserContext } from '@/lib/db-context';
 import { afterCommit } from '@/lib/db/after-commit';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { publishChannelActivityEvent } from '@/lib/notifications/notification-bus';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { UserContext } from '@/app-layer/types';
@@ -1140,6 +1143,14 @@ async function recordMentions(
     return recordable.length;
 }
 
+/** Why a person is being told. Decides the push copy and nothing else. */
+type ChannelNotifyReason = 'mention' | 'reply';
+
+interface ChannelTarget {
+    userId: string;
+    reason: ChannelNotifyReason;
+}
+
 interface ChannelActivityTargets {
     channelId: string;
     authorUserId: string;
@@ -1204,11 +1215,21 @@ interface ChannelActivityTargets {
  * this runs after the commit: a privileged read taken while a user-context
  * transaction is still open is #1191's P0.8 deadlock at `PG_POOL_MAX`.
  */
-async function reachableTargets(args: ChannelActivityTargets): Promise<string[]> {
-    const candidates = [...new Set([
-        ...args.mentionedUserIds,
-        ...(args.parentAuthorUserId ? [args.parentAuthorUserId] : []),
-    ])].filter((id) => id !== args.authorUserId);
+async function reachableTargets(args: ChannelActivityTargets): Promise<ChannelTarget[]> {
+    // The REASON per person, because the push copy differs — «Споменаха Ви»
+    // is not «Нов отговор». A `Map` rather than two lists so the union and the
+    // precedence happen in one place: a reply that also MENTIONS its parent's
+    // author is one act, and the MENTION wins because it is the more specific
+    // description of what happened. Built mention-first so the later
+    // `parentAuthorUserId` write cannot overwrite it.
+    const reasons = new Map<string, ChannelNotifyReason>();
+    for (const id of args.mentionedUserIds) reasons.set(id, 'mention');
+    if (args.parentAuthorUserId && !reasons.has(args.parentAuthorUserId)) {
+        reasons.set(args.parentAuthorUserId, 'reply');
+    }
+    reasons.delete(args.authorUserId);
+
+    const candidates = [...reasons.keys()];
     if (candidates.length === 0) return [];
 
     const rows = await prisma.channelMembership.findMany({
@@ -1232,7 +1253,7 @@ async function reachableTargets(args: ChannelActivityTargets): Promise<string[]>
         reachable: rows.length,
         suppressed: candidates.length - rows.length,
     });
-    return rows.map((r) => r.userId);
+    return rows.map((r) => ({ userId: r.userId, reason: reasons.get(r.userId)! }));
 }
 
 /**
@@ -1292,12 +1313,74 @@ async function reachableTargets(args: ChannelActivityTargets): Promise<string[]>
  */
 function queueChannelActivityNotify(args: ChannelActivityTargets): void {
     afterCommit('channel-activity-notify', async () => {
-        for (const userId of await reachableTargets(args)) {
+        const targets = await reachableTargets(args);
+        if (targets.length === 0) return;
+
+        // ── the SSE half, unchanged ──
+        for (const t of targets) {
             // The CHANNEL id, never the post id — see `StreamFrame`. The
             // publisher returns void by design: the post is committed by the
             // time this runs, a lost event degrades to the client's REST
             // refetch, and this cannot become a new unhandled-rejection path.
-            publishChannelActivityEvent(userId, { id: args.channelId });
+            publishChannelActivityEvent(t.userId, { id: args.channelId });
+        }
+
+        // ── the BACKGROUND PUSH half — #2987 PR B ──
+        //
+        // ONE query for every recipient's language and one for the channel's
+        // names, then a job per person. Not a read per recipient: five
+        // mentions would be five queries inside a post's response path, which
+        // is the D1 N+1 the query-shape guardrail refuses.
+        const [channel, users] = await Promise.all([
+            prisma.channel.findUnique({
+                where: { id: args.channelId },
+                select: { nameBg: true, nameEn: true },
+            }),
+            prisma.user.findMany({
+                where: { id: { in: targets.map((t) => t.userId) } },
+                select: { id: true, uiLanguage: true },
+            }),
+        ]);
+        // A channel that vanished between the post and this drain has no name
+        // to put in the copy. Skipped rather than pushed with a blank, because
+        // «Някой Ви спомена в .» is worse than no notification.
+        if (!channel) return;
+        const languageOf = new Map(users.map((u) => [u.id, u.uiLanguage]));
+
+        for (const t of targets) {
+            // The RECIPIENT's language, never the author's. `translateFor`
+            // with an explicit locale is the rule for anything addressed to
+            // somebody else; `getTranslations()` would resolve the request
+            // cookie, which here belongs to the person who posted.
+            const locale = resolveRecipientLocale(languageOf.get(t.userId));
+            const key = t.reason === 'mention'
+                ? 'notifications.social.channelMention'
+                : 'notifications.social.channelReply';
+            // The channel NAME is the entity, and naming it is the 2026-11-01
+            // ruling ("keep the KEY, drop the free text") applied here: it is
+            // platform-seeded reference data carried in both locales by
+            // `Channel.nameBg`/`nameEn`, not a farmer's prose. The POST's body
+            // is what must never travel — and `ChannelPost.body` is plaintext
+            // at rest (P9.1, so P9.7 can search it), so nothing but this rule
+            // stops it.
+            const channelName = locale === 'bg' ? channel.nameBg : channel.nameEn;
+            const pushBody = await translateFor(locale, `${key}.pushBody`, {
+                channel: channelName,
+            });
+            await enqueue('person-push-send', {
+                recipientUserId: t.userId,
+                title: await translateFor(locale, `${key}.title`),
+                body: pushBody,
+                // Root-relative, which is the shape agrent-ios asked for: the
+                // server owns it, so correcting it never needs a client
+                // release. NOT tenant-prefixed — a channel has no farm.
+                link: `/channels/${args.channelId}`,
+                // Per CHANNEL rather than per post, deliberately: a busy
+                // channel should supersede its own banner rather than stack a
+                // column of them. The reason is in the key so a mention does
+                // not silently replace a reply notification and vice versa.
+                collapseKey: `channel-${args.channelId}-${t.reason}`,
+            });
         }
     });
 }
