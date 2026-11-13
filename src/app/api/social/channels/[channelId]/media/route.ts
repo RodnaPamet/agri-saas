@@ -69,24 +69,19 @@ export const POST = withApiErrorHandling(
 
         const photo = form.get('photo');
         const voice = form.get('voice');
-        const hasPhoto = photo instanceof File;
-        const hasVoice = voice instanceof File;
 
-        if (hasPhoto === hasVoice) {
-            // Covers both "neither" and "both", which is deliberate: the two
-            // mistakes have the same fix — send exactly one — and splitting
-            // them into two codes would add a Bulgarian entry that says the
-            // same thing twice.
-            throw codedBadRequest(
-                'INVALID_BODY',
-                'Expected exactly one of a `photo` or a `voice` file.',
-            );
-        }
-
+        /*
+         * Narrowed with the real type guards rather than two booleans, because
+         * `hasPhoto === hasVoice` tells TypeScript nothing about either value —
+         * it reported `'voice' is possibly null` through an early return that a
+         * reader finds obvious. A cast would have silenced that and removed the
+         * target a later mistake fails against, so the shape below narrows
+         * instead: each branch re-states the guard it depends on.
+         */
         const caption = form.get('body');
         const body = typeof caption === 'string' ? caption : null;
 
-        if (hasPhoto) {
+        if (photo instanceof File && !(voice instanceof File)) {
             // Checked BEFORE the bytes are read into memory: `file.size` is
             // what the multipart parser already knows, so refusing here avoids
             // buffering four megabytes to then refuse them. The usecase checks
@@ -101,31 +96,46 @@ export const POST = withApiErrorHandling(
             return jsonResponse(posted, { status: 201, headers: { 'Cache-Control': 'no-store' } });
         }
 
-        if (voice.size > VOICE_NOTE_MAX_BYTES) {
-            throw codedBadRequest('FILE_TOO_LARGE', 'That recording is too large.');
-        }
-        /*
-         * The duration is a FORM FIELD, not a header and not a query
-         * parameter. A query parameter would put it in the URL, which iOS
-         * writes to the device log unsuppressably — harmless for a number, and
-         * the habit is worth keeping where it costs nothing.
-         *
-         * Parsed here and validated in the usecase: this layer only decides
-         * whether a number arrived at all, so the refusal for a 40-minute claim
-         * lives with the cap it is measured against rather than being spelled
-         * twice.
-         */
-        const declared = form.get('durationMs');
-        const durationMs = typeof declared === 'string' ? Number(declared) : NaN;
-        if (!Number.isFinite(durationMs)) {
-            throw codedBadRequest('VOICE_NOTE_DURATION_REQUIRED', 'Expected `durationMs`.');
+        if (voice instanceof File && !(photo instanceof File)) {
+            if (voice.size > VOICE_NOTE_MAX_BYTES) {
+                throw codedBadRequest('FILE_TOO_LARGE', 'That recording is too large.');
+            }
+            /*
+             * The duration is a FORM FIELD, not a header and not a query
+             * parameter. A query parameter would put it in the URL, which iOS
+             * writes to the device log unsuppressably — harmless for a number,
+             * and the habit is worth keeping where it costs nothing.
+             *
+             * Parsed here and validated in the usecase: this layer only decides
+             * whether a number arrived at all, so the refusal for a 40-minute
+             * claim lives with the cap it is measured against rather than being
+             * spelled twice.
+             */
+            const declared = form.get('durationMs');
+            const durationMs = typeof declared === 'string' ? Number(declared) : NaN;
+            if (!Number.isFinite(durationMs)) {
+                throw codedBadRequest('VOICE_NOTE_DURATION_REQUIRED', 'Expected `durationMs`.');
+            }
+
+            const posted = await postChannelVoiceNote(ctx, channelId, {
+                bytes: Buffer.from(await voice.arrayBuffer()),
+                durationMs,
+                body,
+            });
+            return jsonResponse(posted, { status: 201, headers: { 'Cache-Control': 'no-store' } });
         }
 
-        const posted = await postChannelVoiceNote(ctx, channelId, {
-            bytes: Buffer.from(await voice.arrayBuffer()),
-            durationMs,
-            body,
-        });
-        return jsonResponse(posted, { status: 201, headers: { 'Cache-Control': 'no-store' } });
+        /*
+         * Covers both "neither" and "both", which is deliberate: the two
+         * mistakes have the same fix — send exactly one — and splitting them
+         * into two codes would add a Bulgarian entry that says the same thing
+         * twice. A post carries ONE attachment (the schema has a single key
+         * column), so silently preferring one would make the other vanish
+         * without telling the caller.
+         */
+        throw codedBadRequest(
+            'INVALID_BODY',
+            'Expected exactly one of a `photo` or a `voice` file.',
+        );
     },
 );
