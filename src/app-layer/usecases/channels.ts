@@ -1374,7 +1374,14 @@ function queueChannelActivityNotify(args: ChannelActivityTargets): void {
                 // Root-relative, which is the shape agrent-ios asked for: the
                 // server owns it, so correcting it never needs a client
                 // release. NOT tenant-prefixed — a channel has no farm.
-                link: `/channels/${args.channelId}`,
+                // The path WITHOUT `/t/{slug}`: a channel has no farm, so
+                // `person-push-send` resolves one for the RECIPIENT and
+                // composes the link. A bare path is what #2932 cost.
+                // The channel, not the post: `channels/{id}/posts/{postId}`
+                // is the shape agrent-ios will parse and the page does not
+                // exist yet — #3030. A push that lands on the channel beats
+                // one that 404s.
+                farmRelativePath: `/channels/${args.channelId}`,
                 // Per CHANNEL rather than per post, deliberately: a busy
                 // channel should supersede its own banner rather than stack a
                 // column of them. The reason is in the key so a mention does

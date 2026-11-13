@@ -264,8 +264,20 @@ export interface PersonPushSendPayload {
     recipientUserId: string;
     title: string;
     body: string;
-    /** Root-relative, or null for a notification with no target. */
-    link: string | null;
+    /**
+     * The target page WITHOUT its `/t/{slug}` prefix — `/channels/{id}`,
+     * `/exchange/threads/dm/{id}` — or null for a notification that
+     * navigates nowhere.
+     *
+     * It is a PATH and not a link because the farm is not knowable here. A
+     * channel post and a direct message are tenantless, so the enqueuing
+     * usecase has no slug to write; `runPersonPushSend` resolves one for the
+     * RECIPIENT and composes the link, and sends no link at all when it
+     * cannot. #2932 is what a bare path costs: `push-summary` sent
+     * `/notifications`, which is not a page — 404 on the web, and on iOS a
+     * push that merely opened the app.
+     */
+    farmRelativePath: string | null;
     /** The Web Push `tag` and the APNs `apns-collapse-id`, as one field. */
     collapseKey: string;
 }

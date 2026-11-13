@@ -693,11 +693,13 @@ export async function sendDirectMessage(
                     'notifications.social.directMessage.title',
                 ),
                 body: pushBody,
-                // Root-relative and NOT tenant-prefixed: P8.4 put the DM
-                // screen under `/t/{slug}/exchange/threads/dm/{id}`, and a
-                // conversation has no farm to name — so the client resolves
-                // its own current farm rather than the server guessing one.
-                link: `/messages/${input.conversationId}`,
+                // P8.4 put the DM screen under
+                // `/t/{slug}/exchange/threads/dm/{id}` and ruled out a
+                // `/messages` route outright, so the path below is the real
+                // one. The `/t/{slug}` half is resolved for the RECIPIENT in
+                // `person-push-send` — the client does NOT resolve a bare
+                // path, which is exactly what #2932 established.
+                farmRelativePath: `/exchange/threads/dm/${input.conversationId}`,
                 // Per CONVERSATION: a second message supersedes the first
                 // banner rather than stacking one per message, which is what
                 // makes a short exchange one notification instead of six.

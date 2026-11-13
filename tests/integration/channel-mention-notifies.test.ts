@@ -474,7 +474,10 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
             // reaching Apple.
             expect(push.body).toContain('Тест');
             expect(push.body).not.toContain('Иване, какво мислиш?');
-            expect(push.link).toBe(`/channels/${channelId}`);
+            // The PATH, not the link: a channel has no farm, so
+            // `person-push-send` resolves the recipient's and prefixes
+            // `/t/{slug}`. #2932 is what a bare path cost.
+            expect(push.farmRelativePath).toBe(`/channels/${channelId}`);
             expect(push.collapseKey).toBe(`channel-${channelId}-mention`);
         }, 60_000);
 

@@ -54,6 +54,25 @@ jest.mock('@/lib/db/rls-middleware', () => ({
     },
 }));
 
+/**
+ * The farms the recipient belongs to, oldest ACTIVE first.
+ *
+ * Mocked at `listMyFarms` rather than at Prisma on purpose: the three clauses
+ * and the ordering are that usecase's, argued in its own docblock, and a
+ * second spelling here would be the thing the job deliberately does not have.
+ * What this double controls is the ANSWER, not the predicate.
+ */
+let recipientFarms: Array<{ slug: string }> = [{ slug: 'zk-pobeda' }];
+/** Who was asked, so "it never asked" is observable rather than inferred. */
+const farmLookups: string[] = [];
+jest.mock('@/app-layer/usecases/my-farms', () => ({
+    __esModule: true,
+    listMyFarms: async (userId: string) => {
+        farmLookups.push(userId);
+        return recipientFarms;
+    },
+}));
+
 jest.mock('@/lib/notifications/web-push', () => ({
     __esModule: true,
     sendWebPushToPerson: (...a: unknown[]) => webPush(...a),
@@ -74,7 +93,7 @@ const INPUT = {
     recipientUserId: 'u-recipient',
     title: 'Споменаха Ви',
     body: 'Някой Ви спомена в «Пшеница».',
-    link: '/channels/ch-1',
+    farmRelativePath: '/channels/ch-1',
     collapseKey: 'channel-ch-1-mention',
 };
 
@@ -91,6 +110,8 @@ beforeEach(() => {
     jest.clearAllMocks();
     bypassReasons.length = 0;
     preferenceRows = [];
+    recipientFarms = [{ slug: 'zk-pobeda' }];
+    farmLookups.length = 0;
     subscriptionRows = [
         { platform: 'WEB', deviceToken: null, endpoint: 'https://push.example/a' },
         { platform: 'IOS', deviceToken: 'tok-1', endpoint: null },
@@ -171,8 +192,8 @@ describe('the awake path', () => {
         expect(bypassReasons).toEqual(['person-push-devices']);
     });
 
-    it('passes `undefined` for a null link, never the string "null"', async () => {
-        await runPersonPushSend({ ...INPUT, link: null });
+    it('passes `undefined` for a null path, never the string "null"', async () => {
+        await runPersonPushSend({ ...INPUT, farmRelativePath: null });
         expect(apns.mock.calls[0][1].link).toBeUndefined();
         expect(webPush.mock.calls[0][1].url).toBeUndefined();
     });
@@ -201,6 +222,76 @@ describe('the awake path', () => {
         apns.mockResolvedValue({ sent: 0, retryable: 0 });
 
         expect(await runPersonPushSend(INPUT)).toEqual({ attempted: 2, delivered: 0 });
+    });
+});
+
+describe('the deep link names a farm, because every page in this product does', () => {
+    /**
+     * #2932 is the whole of this block. `push-summary` sent `/notifications`,
+     * which is not a page: the web service worker opened a 404 and iOS had no
+     * `PushLink` case, so the push merely opened the app. 19 of 19 production
+     * `Notification.linkUrl` rows start with `/t/`; that job was the only
+     * violator, and it had a test pinning the bare path.
+     *
+     * A channel post and a direct message are tenantless, so the slug cannot
+     * come from the enqueuing usecase — it is resolved HERE, for the
+     * recipient.
+     */
+    it('composes `/t/{slug}` + the path, on BOTH transports', async () => {
+        await runPersonPushSend(INPUT);
+
+        expect(webPush.mock.calls[0][1].url).toBe('/t/zk-pobeda/channels/ch-1');
+        expect(apns.mock.calls[0][1].link).toBe('/t/zk-pobeda/channels/ch-1');
+        expect(farmLookups).toEqual(['u-recipient']);
+    });
+
+    it('takes the FIRST farm, which is `listMyFarms` oldest-active ordering', async () => {
+        // Two assertions and not one: "it picks farms[0]" is satisfied by any
+        // implementation that picks A when A is the only candidate, so the
+        // second half reorders the same set and requires the answer to move.
+        recipientFarms = [{ slug: 'first' }, { slug: 'second' }, { slug: 'third' }];
+        await runPersonPushSend(INPUT);
+        expect(apns.mock.calls[0][1].link).toBe('/t/first/channels/ch-1');
+
+        jest.clearAllMocks();
+        webPush.mockResolvedValue({ sent: 1, retryable: 0 });
+        apns.mockResolvedValue({ sent: 1, retryable: 0 });
+        recipientFarms = [{ slug: 'third' }, { slug: 'first' }, { slug: 'second' }];
+        await runPersonPushSend(INPUT);
+        expect(apns.mock.calls[0][1].link).toBe('/t/third/channels/ch-1');
+    });
+
+    it('sends NO link rather than a bare path when the person has no farm', async () => {
+        // The direction matters. A bare `/channels/ch-1` is the defect, not
+        // the fallback: agrent-ios keeps bare paths deliberately unhandled, so
+        // nothing on the client would resolve one. An absent key means the
+        // push still arrives and simply does not navigate.
+        recipientFarms = [];
+
+        const r = await runPersonPushSend(INPUT);
+
+        expect(apns.mock.calls[0][1].link).toBeUndefined();
+        expect(webPush.mock.calls[0][1].url).toBeUndefined();
+        // Reach preserved — this is the half a "refuse to send" fix loses.
+        expect(r).toEqual({ attempted: 2, delivered: 2 });
+        expect(warn).toHaveBeenCalledWith(
+            'person-push.link_unresolved',
+            expect.objectContaining({ collapseKey: 'channel-ch-1-mention', farms: 0 }),
+        );
+    });
+
+    it('never looks a farm up for a notification that navigates nowhere', async () => {
+        await runPersonPushSend({ ...INPUT, farmRelativePath: null });
+        expect(farmLookups).toEqual([]);
+    });
+
+    it('does not look a farm up for a push it is not going to send', async () => {
+        // The resolution sits after both delivery gates, so a suppressed push
+        // costs no query. Asserted because the obvious placement — beside the
+        // other destructuring at the top — is one line earlier and wrong.
+        at(ASLEEP);
+        await runPersonPushSend(INPUT);
+        expect(farmLookups).toEqual([]);
     });
 });
 

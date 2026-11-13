@@ -816,7 +816,13 @@ describeFn('P8.2 — direct messages (#2796)', () => {
             // Per CONVERSATION, so a short exchange is one banner rather than
             // one per message.
             expect(push.collapseKey).toBe(`dm-${convId}`);
-            expect(push.link).toBe(`/messages/${convId}`);
+            // This assertion used to read `/messages/${convId}`, and it was
+            // PINNING A DEAD LINK: P8.4 ruled out a `/messages` route
+            // outright and put the DM screen under
+            // `/t/{slug}/exchange/threads/dm/{id}`. Same shape as #2932,
+            // whose bare `/notifications` also had a test holding it in
+            // place. The `/t/{slug}` half is added in `person-push-send`.
+            expect(push.farmRelativePath).toBe(`/exchange/threads/dm/${convId}`);
         }, 60_000);
 
         it('a DEDUPLICATED send enqueues nothing', async () => {

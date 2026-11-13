@@ -181,3 +181,97 @@ the channel push wiring and the reason-carrying `reachableTargets` change,
 neither committed. `[[mutation-restore-eats-uncommitted-work]]` verbatim. The
 inconsistency between two restore methods in one command is what did it; the
 fix is `cp` for every file in a sweep, and committing before sweeping.
+
+## The deep link, added after the first green run
+
+The branch was fully verified — 1,954 suites, typecheck clean, eight mutations
+— before anybody asked what the push actually opened. It opened nothing.
+
+```
+src/app-layer/usecases/direct-messages.ts     link: `/messages/${conversationId}`
+```
+
+There is no `/messages` route. P8.4 ruled one out explicitly, putting the DM
+screen under `/t/{slug}/exchange/threads/dm/{id}`; `exchange/threads/page.tsx`
+says so in its docblock, the P8.4 note says so, and the comment three lines
+above that literal said so while the line below it said otherwise. The value
+came from `2026-11-07-p8-3-chat-primitives.md`, which still read "P8.4 mounts
+them on `/messages`" — written before the ruling, and now corrected in place.
+
+This is #2932 a second time. There, `push-summary` sent `/notifications`: a
+404 through `clients.openWindow` on the web, and on iOS a push that merely
+opened the app. That issue measured 19 of 19 production `Notification.linkUrl`
+rows starting with `/t/` and found the one violator — and noted that **the
+existing test was holding the defect in place**. So was mine:
+`p8-2-direct-messages.test.ts` asserted `push.link` equalled
+`/messages/${convId}`, which is true of the code and says nothing about
+whether it is a page.
+
+### Three decisions came out of it
+
+**1. The payload carries a FARM-RELATIVE PATH, and the job composes the
+link.** A channel post and a direct message are tenantless, so the enqueuing
+usecase has no slug — and the poster's own farm is the wrong answer, because a
+recipient sent to a farm they do not belong to is bounced by the tenant-access
+gate. `runPersonPushSend` resolves the recipient's oldest active farm and
+builds `/t/{slug}{farmRelativePath}`.
+
+The resolution is NOT the one this job's own docblock refuses. That paragraph
+is about ADDRESSING — which devices, which preference — where resolving a
+tenant both invents a farm for a person-scoped obligation (P5.4a) and picks
+wrong, since `PushSubscription` registration is tenant-scoped. This is a
+NAVIGATION SHELL: the notification stays tenantless and the slug is a URL
+segment deciding whose chrome the page opens inside. P8.4 settled that the
+answer is arbitrary — "a DM list is identical under every farm" — so any
+active membership is as correct as any other.
+
+It goes through `listMyFarms` rather than a second copy of its predicate.
+Three clauses and an ordering, each argued in that usecase: ACTIVE, the tenant
+not soft-deleted, oldest first — which is the membership `/api/auth/me` already
+names. The easy miss is the middle one, which the switcher's own docblock calls
+out, and a second spelling here is the #1664 class.
+
+**2. An unresolvable farm sends NO LINK, never the bare path.** Both transports
+spell "no target" as an absent key, so the push still arrives and simply does
+not navigate. Reach preserved. agrent-ios keeps bare paths deliberately
+unhandled (#2932), so a bare path is not a degraded link — it is a link to
+nowhere on the web and a no-op on the phone.
+
+**3. The field is `farmRelativePath` because `linkPath` was already taken, and
+the new guard is what found that.** `notifications/assignment.ts` has carried a
+`linkPath` since #2490 meaning the opposite — `(slug, id) =>
+/t/${slug}/assets/${id}`, a builder producing the full prefixed link. One name,
+two opposite meanings: «Борса» against «Пазар», `app.user_id` against
+`app.actor_user_id`. Renaming was the fix; narrowing the guard's population to
+exclude those two sites would have left the name ambiguous for the next reader.
+
+### Why no existing check could see it
+
+- `notification-link-is-tenant-scoped` derives from `linkUrl:` assignments. A
+  push payload's field is not `linkUrl`, so these sites were outside the
+  denominator rather than passing it. That guard's property is also the wrong
+  one here: it requires a `/t/` prefix, which a tenantless producer cannot
+  write.
+- `route-inventory` and OpenAPI describe API routes. A page is not a route
+  there.
+- `pages-are-reachable` asks whether something LINKS to a page. It cannot ask
+  whether a link names one.
+
+`tests/guards/person-push-link-resolves.test.ts` is the missing direction:
+every `farmRelativePath` literal under `src/app-layer` must resolve to a
+`page.tsx` that exists under `src/app/t/[tenantSlug]/(app)`, matching segment
+by segment with an interpolation permitted only where the route has a
+`[param]`. Denominator printed (2 destinations, 82 page routes), and
+mutation-proved three ways: restoring `/messages/{id}` reddens it, a value
+carrying its own `/t/` prefix reddens two assertions, and gutting the page
+walker to `return []` reddens three — including the control, which is the half
+that stops the matcher passing everything.
+
+### What is deliberately not built
+
+The channel push lands on the CHANNEL, not the post. agrent-ios settled
+`/t/{slug}/channels/{channelId}/posts/{postId}` with us on #2987 and
+`posts/[postId]` does not exist, so emitting it would be the #2932 outcome
+again. **#3030** carries the permalink page and the link upgrade, and the guard
+refuses the longer path until the page is there — which is the ordering that
+keeps it safe.

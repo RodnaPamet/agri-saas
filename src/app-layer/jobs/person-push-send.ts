@@ -59,6 +59,7 @@
  * through Redis and APNs.
  */
 import { resolvePersonDelivery } from '@/app-layer/notifications/person-delivery';
+import { listMyFarms } from '@/app-layer/usecases/my-farms';
 import { sendApnsToPerson } from '@/lib/notifications/apns';
 import { sendWebPushToPerson } from '@/lib/notifications/web-push';
 import { logger } from '@/lib/observability/logger';
@@ -68,8 +69,12 @@ export interface PersonPushSendInput {
     recipientUserId: string;
     title: string;
     body: string;
-    /** Root-relative, or null for a notification with no target. */
-    link: string | null;
+    /**
+     * The target page WITHOUT its `/t/{slug}` prefix, or null for a
+     * notification that navigates nowhere. `resolveLink` below turns it into
+     * a link, or into no link at all.
+     */
+    farmRelativePath: string | null;
     /**
      * One key for both transports: the Web Push `tag` and the APNs
      * `apns-collapse-id`. A second notification about the same subject
@@ -84,10 +89,83 @@ export interface PersonPushSendResult {
     delivered: number;
 }
 
+/**
+ * Turn a farm-relative PATH into a link somebody's phone can open, or into no
+ * link at all.
+ *
+ * ## Why a path arrives here instead of a link
+ *
+ * There is no tenantless web route and agrent-ios has agreed not to ask for
+ * one (#2987), so every destination in this product is `/t/{slug}/…`. A
+ * channel post and a direct message have no farm, so the enqueuing usecase has
+ * no slug to write — `postToChannel` runs person-scoped under `/api/social/`,
+ * and the poster's own farm would be the WRONG answer anyway: a recipient sent
+ * to a farm they do not belong to is bounced by the tenant-access gate.
+ *
+ * ## A bare path is not the fallback, it is the defect
+ *
+ * #2932: `push-summary` sent `/notifications`, which is not a page. The web
+ * service worker opened a 404 and iOS had no `PushLink` case for it, so the
+ * push merely opened the app. Measured there: 19 of 19 production
+ * `Notification.linkUrl` rows start with `/t/`, and that one job was the only
+ * violator. The rule `task.ts` states is the same one — the server owns the
+ * shape, so correcting it never needs a client release.
+ *
+ * So an unresolvable farm sends **no link**, never the path: both transports
+ * spell "no target" as an absent key, the push still arrives, and it simply
+ * does not navigate. Reach preserved, and no client ever receives a
+ * destination that goes nowhere.
+ *
+ * ## This is not the resolution this file's own docblock refuses
+ *
+ * That paragraph is about ADDRESSING — which devices to send to, which
+ * preference applies — and resolving a tenant for it would both invent a farm
+ * for a person-scoped obligation (P5.4a) and pick wrong, because
+ * `PushSubscription` registration is tenant-scoped. This is a NAVIGATION
+ * SHELL: the notification stays tenantless, and the slug is a URL segment
+ * deciding which farm's chrome the page opens inside. P8.4 settled that the
+ * answer is arbitrary — "a DM list is identical under every farm" — so any
+ * active membership is as correct as any other.
+ *
+ * ## `listMyFarms`, rather than a second spelling of its predicate
+ *
+ * Three clauses and an ordering, each load-bearing and each already argued in
+ * `my-farms.ts`: ACTIVE (a deactivated member is not a member), the tenant not
+ * soft-deleted (a removed farm 404s at the tenant resolver), and oldest-first,
+ * which is the membership `/api/auth/me` already names and the switcher
+ * already lists first. Writing the query again here is the #1664 class — two
+ * spellings of one rule, diverging silently — and the divergence that matters
+ * is the middle clause, which the switcher's own docblock calls the easy miss.
+ */
+async function resolveLink(
+    recipientUserId: string,
+    farmRelativePath: string | null,
+    collapseKey: string,
+): Promise<string | null> {
+    if (farmRelativePath === null) return null;
+
+    const farms = await listMyFarms(recipientUserId);
+    const slug = farms[0]?.slug;
+    if (!slug) {
+        // The push still goes out, so a log reader could not otherwise tell
+        // this from a normal send — #2932's reason for the same line.
+        // `collapseKey` and not the path: it already identifies the subject,
+        // and one identifier is enough.
+        logger.warn('person-push.link_unresolved', {
+            component: 'person-push',
+            collapseKey,
+            farms: farms.length,
+        });
+        return null;
+    }
+
+    return `/t/${slug}${farmRelativePath}`;
+}
+
 export async function runPersonPushSend(
     input: PersonPushSendInput,
 ): Promise<PersonPushSendResult> {
-    const { recipientUserId, title, body, link, collapseKey } = input;
+    const { recipientUserId, title, body, farmRelativePath, collapseKey } = input;
 
     const decision = await resolvePersonDelivery(recipientUserId, new Date());
 
@@ -114,6 +192,10 @@ export async function runPersonPushSend(
         });
         return { attempted: 0, delivered: 0 };
     }
+
+    // AFTER the two gates: a suppressed push has no destination to resolve,
+    // and this is a query.
+    const link = await resolveLink(recipientUserId, farmRelativePath, collapseKey);
 
     let attempted = 0;
     let delivered = 0;
