@@ -15,11 +15,16 @@ npm run lint:raw          # Plain `eslint .`, no ceiling
 npm run lint:fix          # Plain `eslint . --fix`
 
 # Database
-# The Prisma schema lives in a folder, not a single file — 21 files:
+# The Prisma schema lives in a folder, not a single file — 28 files:
 #   base (generator + datasource, never redeclared elsewhere), enums, auth,
 #   work, files, assets, automation, audit, schema (transitional, empty),
-#   plus one per agri domain (agriculture, agro, ai, exchange, grain,
-#   insurance, inventory, journal, knowledge, market, planning, promotions).
+#   plus one per domain (agriculture, agro, ai, channels, exchange,
+#   farm-identity, grain, insurance, inventory, journal, knowledge, library,
+#   machines, market, planning, promotions, public-profile, social,
+#   telemetry). This line read "21 files" and named twelve domains until
+#   #2980 — six domain files had landed since without it being revisited, so
+#   do NOT re-derive the count from here; `ls prisma/schema/*.prisma` is the
+#   authority and this is a timestamp.
 #   `compliance.prisma` / `vendor.prisma` / `processes.prisma` were deleted
 #   by GRC teardown phase 3 (#567) — do not recreate them.
 # Prisma concatenates every `.prisma` file in the folder at generate /

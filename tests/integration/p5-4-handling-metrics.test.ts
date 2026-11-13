@@ -144,20 +144,57 @@ describeFn('moderationHandlingStats', () => {
     });
 
     it('measures the median from the notice to the first answer', async () => {
-        const now = new Date();
-        const base = new Date(now.getTime() - 5 * 24 * HOUR);
+        // ISOLATED, like the `FIRST delivered statement` case below — and this
+        // one had to learn it. It first took the median over a 30-day window
+        // ending NOW and asserted the figure was exactly 2h, which is true only
+        // of a database holding no other moderation rows in that window. CI is
+        // that database (a fresh service per run, migrated from empty), so the
+        // case was green there and failed on a developer machine whose base DB
+        // had accumulated other suites' notices — measured 2.85h against an
+        // expected 2h. A test that passes only on a pristine database is not
+        // evidence about the arithmetic.
+        //
+        // `prisma/schema/social.prisma` and P5.4b both already state the rule:
+        // this queue is GLOBAL, so a test asserting on it must scope itself to
+        // its own rows. The window here is one day ending three minutes after
+        // the last fixture arrives, 311 days back.
+        //
+        // 311 and not 200: the `window EXCLUDES older notices` case below
+        // seeds at exactly `now - 200 days`, and although it runs after this
+        // one, a LEFTOVER row from an interrupted previous run would sit a few
+        // hours either side of that same offset — which is inside a one-day
+        // window. An offset no other case uses keeps the isolation a property
+        // of the window rather than of declaration order.
+        //
+        // Consequence worth stating: these three rows are now OUTSIDE every
+        // 30-day reading in this file, so no other case may rely on them. Each
+        // of those asserts a DELTA around its own fixture (`before` / `after`)
+        // or seeds inside its own narrow window, which is why moving these is
+        // safe — and it is the property to re-check before back-dating another
+        // fixture here.
+        const base = new Date(Date.now() - 311 * 24 * HOUR);
         // Lags of 1h, 2h and 30h → median 2h, and one outside the 24h target.
+        // The 30h delivery lands AFTER `asOf`, which is deliberate and
+        // correct: the window bounds the NOTICE's `createdAt`, never the
+        // delivery, so a slow answer still counts against the notice it
+        // belongs to rather than disappearing from the figures.
         await answeredNotice(new Date(base.getTime()), 1 * HOUR);
         await answeredNotice(new Date(base.getTime() + 60_000), 2 * HOUR);
         await answeredNotice(new Date(base.getTime() + 120_000), 30 * HOUR);
 
-        const stats = await moderationHandlingStats(30, now);
+        const asOf = new Date(base.getTime() + 180_000);
+        const stats = await moderationHandlingStats(1, asOf);
 
-        expect(stats.answer.n).toBeGreaterThanOrEqual(3);
-        // Exact on the 3-row set seeded here; `toBeCloseTo` because
-        // `percentile_cont` interpolates in floating point.
+        // EXACTLY three, not "at least" — the exact-median claim below only
+        // means something over a known population, and `n >= 3` would admit a
+        // window the fixtures merely contribute to.
+        expect(stats.answer.n).toBe(3);
+        // `toBeCloseTo` because `percentile_cont` interpolates in floating
+        // point, not because the population is uncertain.
         expect(stats.answer.medianSeconds).toBeCloseTo(2 * 3600, 0);
-        expect(stats.answer.withinTarget).toBeGreaterThanOrEqual(2);
+        // The 1h and 2h notices; the 30h one is the control that the target
+        // counter is not simply `n`.
+        expect(stats.answer.withinTarget).toBe(2);
         expect(stats.targetSeconds).toBe(HANDLING_TARGET_SECONDS);
     });
 

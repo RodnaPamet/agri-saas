@@ -38,6 +38,15 @@ const GLOBAL_CATALOGUE_MODELS: Record<string, string> = {
     SoilSample:
         'Global soil-analysis cache keyed by geography, not by farm — two tenants sampling the ' +
         'same coordinates should hit the same row.',
+    Book:
+        '#2980 «Вдъхновение» — a book is reference data every farm reads the same copy of, like ' +
+        'Unit and AgriEvent. A tenantId would fork one public-domain text per farm. Seeded and ' +
+        'administered: it has an RLS SELECT arm (published rows, any authenticated caller, in ' +
+        'EITHER session context) and deliberately no app_user write arm.',
+    BookChapter:
+        '#2980 — the chapters of a Book, and tenantless for the same reason. Its SELECT arm asks ' +
+        'the PARENT whether it is published, because hiding the book row while serving its text ' +
+        'is the whole of the leak rather than a partial fix.',
 };
 
 describe('global catalogue models — deliberately tenant-less', () => {

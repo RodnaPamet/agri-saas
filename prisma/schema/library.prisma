@@ -1,0 +1,230 @@
+// ═══════════════════════════════════════════════════════════════════
+//  LIBRARY — «Вдъхновение» (#2980)
+// ═══════════════════════════════════════════════════════════════════
+//
+//  GAP-09 multi-file schema: new domain file. Generator + datasource remain
+//  in base.prisma.
+//
+//  ── SCHEMA ONLY, and that ordering was decided rather than inherited ──
+//
+//  P5's, P8's and P9's standing rule ships a NEW TABLE one release before the
+//  code that writes it, so a rollback to the previous image never queries an
+//  object that is gone. P8.6 WEAKENED that rule — for an additive nullable
+//  column on an EXISTING table, which carries neither risk — and this is not
+//  that case: `Book` and `BookChapter` are new tables, so the rule applies at
+//  full strength. The two reads, the seed subcommand and the
+//  `PERSISTABLE_PATHS` entry land in the following release.
+//
+//  ── WHY TENANTLESS: a GLOBAL CATALOGUE, not a social surface ──
+//
+//  A book is reference data. Every farm reads the same text, exactly as every
+//  farm reads the same `Unit`, `AgriEvent` and `SoilSample` rows — so both
+//  models carry a `GLOBAL_CATALOGUE_MODELS` entry in
+//  `tests/guardrails/global-catalogue-models.test.ts`, which is the POSITIVE
+//  counterpart to the subtractive tenant guardrails: without an entry, "no
+//  tenantId" is indistinguishable from "forgot the tenantId".
+//
+//  That is a different argument from `channels.prisma`'s, which is
+//  tenantless because a channel is PERSON-scoped — and the difference decides
+//  the session variable below, so the two are not interchangeable.
+//
+//  ── THE POLICY ADMITS BOTH SESSION VARIABLES, and that is the point ──
+//
+//  #1664 cost a whole feature: `UserBlock`'s SELECT policy keyed on
+//  `app.user_id` while the enforcement ran under `app.actor_user_id`, so the
+//  arm matched nothing, every read returned zero rows, and NOTHING ERRORED.
+//  An unset session variable yields NULL.
+//
+//  Every other tenantless table in this repo picks ONE of the two, because
+//  the row BELONGS to somebody and the policy has to name them. A book
+//  belongs to nobody: there is one population — "is this caller
+//  authenticated" — and both runners answer it. `runInUserContext` sets
+//  `app.user_id`; `runInTenantContext` sets `app.actor_user_id`. So the arm
+//  admits either, and the trap is removed rather than documented.
+//
+//  This widens NOTHING, and the test asserts it: the admitted population is
+//  the same people under both contexts, exactly as #1664's
+//  `user_block_select_actor` admitted the same two people in the other
+//  context. The disclosure boundary here is `publishedAt`, not the caller.
+//
+//  ── `publishedAt` IS ENFORCED IN THE POLICY *AND* IN THE READ ──
+//
+//  This is the one property the library actually has to get right, because
+//  the owner's constraint is that **publishing waits for their review of the
+//  text**. The seed writes an UNPUBLISHED book; the owner reads it; a
+//  deliberate act publishes it. So there is a window — the whole point of the
+//  flag — in which production holds rows that must reach nobody.
+//
+//  #2980 §3(d) names the failure directly: it "works in the seed and leaks
+//  through a read nobody filtered". A `where` clause is one line somebody
+//  deletes while refactoring a list query. So the policy carries it too, and
+//  an `app_user` query CANNOT see an unpublished book however the application
+//  is rewritten. Two layers, one property — P5.5b's arrangement, where the
+//  guard is the source half and the migration is the database half.
+//
+//  ── NO `app_user` WRITE ARM AT ALL ──
+//
+//  `Channel`'s reasoning verbatim: these rows are seeded and administered,
+//  and a caller able to insert one could publish a text under the platform's
+//  own name. Writing is privileged; the READ is policy-governed.
+//
+//  ── SIGNED-IN, NOT PUBLIC ──
+//
+//  Owner ruling, and the mechanism matters: `isPublicPath` opens a prefix for
+//  EVERY METHOD on it, and this repo's rule is that a public surface must
+//  also authenticate itself in the handler. A library is not a legal duty
+//  (unlike the Art 16 notice route), nothing about it wants to be anonymous,
+//  and a signed-in read costs the phone nothing — it already holds a session.
+//  A marketing-page library later is a `/f/`-style surface and its own
+//  decision.
+//
+//  ── NO ENCRYPTED COLUMN, and no classification is owed ──
+//
+//  A published book is intended to be widely read, so encryption would buy
+//  nothing and would make the text unsearchable (`ChannelPost.body`'s
+//  argument). It owes no `DELIBERATELY_PLAINTEXT` entry either, which is a
+//  statement about this schema rather than a general licence: that guard
+//  fires on a field carrying a MANIFEST FIELD NAME, and since #1222 the
+//  manifest is per `(model, field)`. None of these columns collides —
+//  `summary` is deliberately not spelled `description`, and `sourceNote` /
+//  `licenseNote` are deliberately not spelled `notes`. Renaming one of them
+//  to a manifest name is what would owe the entry.
+//
+//  It also holds no person column, so `personal-data-registry-complete` has
+//  nothing to classify — a book is not somebody's data.
+//
+
+/// What a book is FOR, as a CODE the client localises.
+///
+/// An enum rather than a free-text array, on `ReportReasonCode`'s reasoning
+/// (#1553): an unvalidated string list becomes a de facto taxonomy nobody owns,
+/// and the phone renders an unknown code as a missing string. The server
+/// refusing an unknown value at write time is what keeps the two in step — and
+/// here the DATABASE refuses it, so a seed cannot introduce one either.
+///
+/// PROVISIONAL, exactly as `ReportReasonCode` is. `STRATEGY` is the only member
+/// the owner has named; the vocabulary grows as books are added, and adding a
+/// value is a trivial migration. The list is a CONTENT taxonomy and not a
+/// surface name, so it is deliberately NOT governed by `nav-vocabulary.md`.
+enum BookUseCase {
+  STRATEGY
+}
+
+/// One book in «Вдъхновение». A GLOBAL CATALOGUE row — see the header.
+model Book {
+  id String @id @default(cuid())
+
+  /// The stable, URL-safe identifier the detail read is keyed on.
+  ///
+  /// UNIQUE, which is what makes the seed idempotent BY CONSTRUCTION rather
+  /// than by a flag somebody forgets to set — `Channel.key`'s and
+  /// `NoticeScore.reportId`'s precedent. A renamed TITLE therefore keeps the
+  /// book's identity, and a phone's offline copy stays addressable.
+  slug String @unique
+
+  /// ONE title, in the language of the TEXT — never a `titleBg` / `titleEn`
+  /// pair.
+  ///
+  /// `Channel` carries both locales because a channel NAME is reference data
+  /// standing in for UI copy. A book title is not copy: it NAMES AN ARTEFACT.
+  /// «Изкуството на войната» is the name of our own Bulgarian translation
+  /// from the public-domain classical Chinese, and rendering it as "The Art of
+  /// War" in an English UI would name a DIFFERENT artefact — in this exact
+  /// case the Giles 1910 translation, which #2980 avoids deliberately because
+  /// Giles died in 1958 and EU protection runs to the end of 2028.
+  ///
+  /// So `locale` says which language the text is in, and the title is read in
+  /// that language whatever the UI is set to.
+  title String
+
+  /// The author, in the same language as `title`, for the same reason.
+  author String
+
+  /// The language of the TEXT — `bg` for every book the owner has named.
+  ///
+  /// Not an enum: `Locale` in this codebase is the UI's two-language set, and a
+  /// library may one day hold a text in a language the interface does not
+  /// speak. Reusing that enum would make such a book unrepresentable.
+  locale String
+
+  /// A short blurb, in the book's own language, so the directory is choosable.
+  ///
+  /// Spelled `summary` and not `description` ON PURPOSE: `description` is a
+  /// field name the encryption manifest carries for other models, and a
+  /// plaintext column wearing a manifest name owes a `DELIBERATELY_PLAINTEXT`
+  /// entry. The clearer name costs nothing and avoids the classification.
+  summary String?
+
+  /// Where the text came from, and under what licence. Both are displayed on
+  /// the detail read, because a public-domain claim a reader cannot check is
+  /// not a claim.
+  sourceNote  String
+  licenseNote String
+
+  /// Monotonic INTEGER, bumped whenever the text changes.
+  ///
+  /// An integer and NOT a timestamp (#2980 §3(a)): the phone compares versions
+  /// to decide whether to re-download, and a timestamp invites a string
+  /// comparison and a clock question. `updatedAt` sits beside it and is for
+  /// DISPLAY — the two answer different questions and neither substitutes.
+  version Int @default(1)
+
+  /// What this book is for, as codes. See `BookUseCase`.
+  useCases BookUseCase[]
+
+  /// NULL until the owner has read the text and published it.
+  ///
+  /// A nullable TIMESTAMP rather than a `published` boolean, this repo's
+  /// convention for every such state (`archivedAt`, `deletedAt`,
+  /// `removedByModerationAt`) — and here the moment is itself the record of
+  /// the owner's review having happened.
+  ///
+  /// IT IS A DISCLOSURE BOUNDARY, not a display flag: `book_select` refuses an
+  /// unpublished row to every `app_user` query, and the read filters on it
+  /// as well. See the header on why both.
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chapters BookChapter[]
+
+  /// The directory read: published books, newest first.
+  @@index([publishedAt])
+}
+
+/// One chapter of one book.
+model BookChapter {
+  id String @id @default(cuid())
+
+  bookId String
+
+  /// 1-based, and the chapter's identity within the book — so a re-seed
+  /// updates a chapter rather than appending a second copy of it.
+  number Int
+
+  /// The chapter title, in the book's `locale`.
+  title String
+
+  /// The chapter's title in the ORIGINAL language, where there is one — e.g.
+  /// the classical Chinese 始計 beside «Планиране».
+  ///
+  /// Optional because it is a property of a TRANSLATION, and a book written in
+  /// its own language has none. Displayed, never matched on.
+  originalTitle String?
+
+  /// The body, one string per paragraph.
+  ///
+  /// A scalar list rather than one blob with separators, because the client
+  /// renders paragraph by paragraph and splitting display text on a delimiter
+  /// is a decision that silently changes with the text. The `null` / `[]`
+  /// distinction a Prisma scalar list cannot express (see `User.bottomTabs`) is
+  /// not wanted here: a chapter with no paragraphs is broken either way, and
+  /// the migration's CHECK refuses one.
+  paragraphs String[]
+
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  /// The identity — and the FK index Layer B requires, since `bookId` leads it.
+  @@unique([bookId, number])
+}

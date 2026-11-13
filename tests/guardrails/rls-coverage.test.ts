@@ -360,6 +360,52 @@ const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map
     ['NoticeScore', ['superuser_bypass']],
 ]);
 
+// Models that are GLOBAL REFERENCE DATA and still carry RLS: readable by any
+// AUTHENTICATED caller, writable by nobody holding `app_user`.
+//
+// ── why this is a bucket of its own, and not one of the two next to it ──
+//
+// The taxonomy above had a hole on this exact axis. `GLOBAL_BY_DESIGN_MODELS`
+// is "global, and therefore NO RLS at all" — the `Unit` / `AgriEvent` /
+// `SoilSample` shape. `PLATFORM_ONLY_RLS_MODELS` is "RLS, and no `app_user`
+// arm for anything" — the P5.1 moderation tables. A published book is
+// neither: every farm may READ it, and nobody may write it.
+//
+// Filing it under `PARTY_SCOPED_MODELS` was the available option and is the
+// wrong one twice over. There is no party — a book belongs to nobody — and
+// that check is CONTAINMENT, which cannot see the regression this bucket
+// exists for: an added permissive `book_insert` leaves every expected policy
+// in place and passes. The check below is set EQUALITY, for
+// `PLATFORM_ONLY_RLS_MODELS`'s stated reason — `ALTER DEFAULT PRIVILEGES`
+// (migration 20260323180000) grants `app_user` SELECT/INSERT/UPDATE/DELETE on
+// every new table in `public`, so the ABSENCE of a policy is the mechanism and
+// an EXTRA policy is the failure to look for.
+//
+// `Channel` and `ChannelPost` are the near neighbours and are NOT moved here:
+// they are filed under `PARTY_SCOPED_MODELS`, whose comment there already
+// apologises for the fit ("a SELECT arm that is a session-presence check
+// rather than a membership test, and why that is not an oversight"). They do
+// have `app_user` write arms, so the equality list would be a different one —
+// a measurement, not a re-filing, and #3014 carries it.
+const GLOBAL_CATALOGUE_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
+    // #2980 «Вдъхновение». The SELECT arm admits EITHER session variable,
+    // which is #1664 avoided rather than rediscovered: a book belongs to
+    // nobody, so the only question is whether the caller is authenticated and
+    // both runners answer it. `runInUserContext` sets `app.user_id`;
+    // `runInTenantContext` sets `app.actor_user_id` and not the other.
+    //
+    // It also carries `publishedAt IS NOT NULL`, which is a DISCLOSURE
+    // boundary and not a display flag: the owner's constraint is that
+    // publishing waits for their review of the text, so production holds
+    // unpublished rows for a while and a `where` clause is one line somebody
+    // deletes while refactoring a list query.
+    ['Book', ['book_select', 'superuser_bypass']],
+    // The same, asking the PARENT whether it is published. Hiding the book row
+    // while serving its text is the whole of the leak rather than half a fix,
+    // and that is the one assertion a book-only test would pass over.
+    ['BookChapter', ['book_chapter_select', 'superuser_bypass']],
+]);
+
 // Models that are GLOBAL BY DESIGN — deliberately readable across every
 // tenant, so the absence of RLS is a product decision rather than a gap.
 //
@@ -513,6 +559,7 @@ const CLASSIFIED: ReadonlyMap<string, string> = new Map([
     ...[...CROSS_TENANT_SCOPED_MODELS.keys()].map((m) => [m, 'cross-tenant-fk'] as const),
     ...[...PARTY_SCOPED_MODELS.keys()].map((m) => [m, 'party-scoped'] as const),
     ...[...PLATFORM_ONLY_RLS_MODELS.keys()].map((m) => [m, 'platform-only-rls'] as const),
+    ...[...GLOBAL_CATALOGUE_RLS_MODELS.keys()].map((m) => [m, 'global-catalogue-rls'] as const),
     ...[...GLOBAL_BY_DESIGN_MODELS.keys()].map((m) => [m, 'global-by-design'] as const),
     ...[...NO_RLS_NOT_APP_USER_MODELS.keys()].map((m) => [m, 'no-rls-not-app-user'] as const),
 ]);
@@ -552,6 +599,7 @@ describe('Guardrail: every model is classified (no database required)', () => {
         for (const m of CROSS_TENANT_SCOPED_MODELS.keys()) add(m, 'cross-tenant-fk');
         for (const m of PARTY_SCOPED_MODELS.keys()) add(m, 'party-scoped');
         for (const m of PLATFORM_ONLY_RLS_MODELS.keys()) add(m, 'platform-only-rls');
+        for (const m of GLOBAL_CATALOGUE_RLS_MODELS.keys()) add(m, 'global-catalogue-rls');
         for (const m of GLOBAL_BY_DESIGN_MODELS.keys()) add(m, 'global-by-design');
         for (const m of NO_RLS_NOT_APP_USER_MODELS.keys()) add(m, 'no-rls-not-app-user');
         const dupes = [...seen].filter(([, v]) => v.length > 1);
@@ -1116,6 +1164,48 @@ describeFn(DB_SUITE_NAME, () => {
                     `PLATFORM_ONLY_RLS_MODELS in the same diff as the migration, with ` +
                     `the reason — and for ContentReport note that RLS is ROW-level, so ` +
                     `a new arm exposes every column of the matched row.`,
+            );
+        }
+    });
+
+    test('global catalogue models carry EXACTLY a read arm and the bypass', () => {
+        // Set EQUALITY, like the platform-only test above and for the same
+        // reason: these tables are protected by the ABSENCE of a permissive
+        // write policy, so a containment check cannot see an added
+        // `book_insert` — every expected policy stays in place and it passes.
+        //
+        // The denominator is printed because this bucket is small and new: a
+        // map that silently emptied would make this test pass over nothing,
+        // which is the shape `a-gate-narrow-enough-to-always-pass` is about.
+        console.log(
+            `[rls-global-catalogue] models=${GLOBAL_CATALOGUE_RLS_MODELS.size}`,
+        );
+        expect(GLOBAL_CATALOGUE_RLS_MODELS.size).toBeGreaterThan(0);
+
+        const problems: string[] = [];
+        for (const [model, allowed] of GLOBAL_CATALOGUE_RLS_MODELS) {
+            const names = policiesFor(model).sort();
+            const want = [...allowed].sort();
+            if (names.join('|') !== want.join('|')) {
+                problems.push(
+                    `${model} → policies [${names.join(', ')}], allowed [${want.join(', ')}]`,
+                );
+            }
+            if (!forcedTables.has(model)) {
+                problems.push(`${model} → FORCE ROW LEVEL SECURITY not enabled`);
+            }
+        }
+        if (problems.length > 0) {
+            throw new Error(
+                `Global-catalogue RLS drift (#2980):\n  `
+                    + problems.join('\n  ')
+                    + `\n\nThese tables hold reference data every farm reads the same copy `
+                    + `of, and nobody may write through a session. An EXTRA policy is the `
+                    + `failure to look for — `
+                    + `\`ALTER DEFAULT PRIVILEGES\` already grants app_user every command on `
+                    + `a new public table, so the absence of a policy IS the refusal. If a `
+                    + `new arm is genuinely wanted, add it here in the same diff as the `
+                    + `migration, with the reason.`,
             );
         }
     });
