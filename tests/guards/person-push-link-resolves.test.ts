@@ -335,7 +335,10 @@ describe('a notification destination resolves to a page', () => {
     const { ok, dead, ungradable, selfPrefixed } = classify(patterns);
 
     it('prints its denominator', () => {
-        // eslint-disable-next-line no-console
+        // No `eslint-disable` here, deliberately: every other guard in this
+        // directory prints its denominator bare, so the rule is not enforced
+        // for tests — and the lint CEILING counts INERT directives, so a
+        // defensive one fails the build. Measured: it did.
         console.log(
             `[notify-destination] ${sites.length} assignment(s) over `
                 + `${Object.keys(DESTINATION_FIELDS).length} field(s) → ${ok.length} resolve, `
