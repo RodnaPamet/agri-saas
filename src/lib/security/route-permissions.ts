@@ -128,6 +128,36 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // TaskAsset → Task.assigneeUserId names the person who was at those
     // coordinates, minute by minute — so this is not an ordinary machine
     // register read, and OWNER + ADMIN is the whole audience by owner ruling.
+    // #3026 — putting a machine ON a task, and taking it off.
+    //
+    // The PATH is under `farm-tasks`, and that is why this rule has to exist:
+    // `isOperatorAllowedPath` admits `/api/t/{slug}/farm-tasks/…` for the
+    // operator persona, so the middleware does NOT keep a MECHANISATOR out
+    // here the way it does on `/machines`. This rule is the only thing that
+    // does — the C.1 arrangement, and exactly how it gets missed.
+    //
+    // METHODS ARE NAMED, so the GET keeps its wider audience. That read
+    // carries configuration and no coordinates and a MECHANISATOR reaches it
+    // for their own open task; the writes are OWNER + ADMIN. Omitting
+    // `methods` would gate the read at `machines.manage` and take the machine
+    // list away from the person driving it — the inverse of the C.1b mistake,
+    // and just as silent.
+    //
+    // `machines.manage` rather than a task permission: the decision is about
+    // the machine register (which machine is where, and therefore whose
+    // position trace is attributable to which task), and the role matrix
+    // already says OWNER + ADMIN hold it while EDITOR, READER, AUDITOR and
+    // MECHANISATOR do not.
+    {
+        path: new RegExp(`^${T}\\/farm-tasks\\/[^/]+\\/assets(\\/.*)?$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'machines.manage',
+        note:
+            'Attaching a machine to a task and detaching it. GET on the same '
+            + 'path is deliberately NOT covered: it is the read a MECHANISATOR '
+            + 'needs for their own open task, and it carries no coordinates.',
+    },
+
     {
         path: new RegExp(`^${T}\\/machines(\\/.*)?$`),
         methods: ['GET'],
