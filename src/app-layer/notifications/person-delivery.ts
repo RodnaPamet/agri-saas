@@ -52,6 +52,7 @@
 import { NotificationDelivery } from '@prisma/client';
 
 import { runWithoutRls } from '@/lib/db/rls-middleware';
+import { logger } from '@/lib/observability/logger';
 
 import { resolveDelivery, type DeliveryDecision } from './resolve-delivery';
 
@@ -96,7 +97,7 @@ export async function resolvePersonDelivery(
     recipientUserId: string,
     now: Date,
 ): Promise<DeliveryDecision> {
-    const { preference, devices } = await runWithoutRls(
+    const { preference, devices, rowsRead, farmPreferences } = await runWithoutRls(
         { reason: 'person-push-devices' },
         async (db) => {
             const [prefs, subs] = await Promise.all([
@@ -124,9 +125,31 @@ export async function resolvePersonDelivery(
             return {
                 preference: strictestPreference(prefs),
                 devices: { web: endpoints.size, ios: tokens.size },
+                // The DENOMINATOR beside the answer. Without it the dedupe is
+                // unobservable — measured: a mutation that counted ROWS
+                // instead of distinct identities left the whole suite green,
+                // because the decision only reads zero-ness and each transport
+                // is attempted once however many devices it has. So the
+                // reading is the only consequence the dedupe has, and that
+                // makes it worth logging rather than worth deleting: it is
+                // what tells an operator "one device" when a person in three
+                // farms registered the same phone twice.
+                rowsRead: subs.length,
+                farmPreferences: prefs.length,
             };
         },
     );
+
+    logger.info('person-delivery.resolved', {
+        component: 'person-delivery',
+        // No userId: this line is about the DECISION, and a person-scoped log
+        // naming the person is a log that identifies who was messaged.
+        preference: preference ?? 'none',
+        farmPreferences,
+        devicesWeb: devices.web,
+        devicesIos: devices.ios,
+        rowsRead,
+    });
 
     return resolveDelivery({ preference, now, devices });
 }

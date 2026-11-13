@@ -26,6 +26,22 @@
  * suites either side of the seam. So every call here goes through the real
  * usecase, which chooses its own runner.
  */
+/**
+ * `enqueue` is the ONE mock in this 751-line file, and it is safe to be
+ * global to it: measured, the ONLY `enqueue(` call anywhere in the DM flow is
+ * the `person-push-send` site #2987 added, so no other case here can notice.
+ *
+ * Mocked rather than driven because `.env.test` sets no `REDIS_URL` — a real
+ * enqueue would fail — and because what matters is WHAT is enqueued, not that
+ * a queue accepted it. The other side of that boundary is
+ * `tests/unit/jobs/person-push-send.test.ts`.
+ */
+const enqueueMock = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/app-layer/jobs/queue', () => ({
+    __esModule: true,
+    enqueue: (...a: unknown[]) => enqueueMock(...a),
+}));
+
 import { randomUUID } from 'crypto';
 
 import { subscribeToPersonEvents } from '@/lib/notifications/notification-bus';
@@ -747,5 +763,72 @@ describeFn('P8.2 — direct messages (#2796)', () => {
             expect(rows[0].body).not.toContain('комбайна');
             expect(rows[0].body).toMatch(/^v[12]:/);
         });
+    });
+
+    describe('the background push — #2987 PR B, owner ruling 2026-11-13', () => {
+        /** Every `person-push-send` payload enqueued for one person. */
+        const pushesFor = (userId: string) =>
+            enqueueMock.mock.calls
+                .filter((c) => c[0] === 'person-push-send')
+                .map((c) => c[1] as Record<string, unknown>)
+                .filter((p) => p.recipientUserId === userId);
+
+        let convId = '';
+
+        beforeAll(async () => {
+            const opened = await openConversationFromHandle(ctxFor(OUTSIDER), HANDLE);
+            convId = opened.conversationId;
+            enqueueMock.mockClear();
+        }, 120_000);
+
+        it('enqueues ONE job for the recipient and none for the sender', async () => {
+            await sendDirectMessage(ctxFor(OUTSIDER), {
+                conversationId: convId,
+                body: 'Имате ли свободен комбайн?',
+            });
+
+            // The farm's OWNER receives it; the sender does not get told about
+            // their own message. `otherParticipantIds` excludes the caller, and
+            // this is the assertion that keeps it doing so.
+            expect(pushesFor(OWNER)).toHaveLength(1);
+            expect(pushesFor(OUTSIDER)).toHaveLength(0);
+        }, 60_000);
+
+        it('names NOBODY and carries no prose — narrower than the channel push', async () => {
+            const [push] = pushesFor(OWNER);
+            expect(push).toBeDefined();
+
+            // `uiLanguage` defaults to `bg`, so this is the RECIPIENT's
+            // language rather than the sender's.
+            expect(push.title).toBe('Ново съобщение');
+            // No sender name, which is the deliberate difference from the
+            // channel push. A channel's name is platform-seeded reference
+            // data; a sender's display name is personal data about a third
+            // party, and an APNs alert body is read by Apple —
+            // `DirectMessage.body` is encrypted at rest for exactly that kind
+            // of reason, so putting either in a push would undo it at the last
+            // hop.
+            expect(push.body).not.toContain('комбайн');
+            expect(push.body).not.toContain(OUTSIDER);
+            expect(String(push.body)).toBe(
+                'Имате ново лично съобщение. Отворете, за да го прочетете.',
+            );
+            // Per CONVERSATION, so a short exchange is one banner rather than
+            // one per message.
+            expect(push.collapseKey).toBe(`dm-${convId}`);
+            expect(push.link).toBe(`/messages/${convId}`);
+        }, 60_000);
+
+        it('a DEDUPLICATED send enqueues nothing', async () => {
+            // The early return happens before the transaction, so there is no
+            // message and nobody to tell. Same property the SSE publish has,
+            // and asserted here because the push is a SECOND thing that would
+            // otherwise fire on a no-op.
+            enqueueMock.mockClear();
+            const again = await openConversationFromHandle(ctxFor(OUTSIDER), HANDLE);
+            expect(again.conversationId).toBe(convId);
+            expect(enqueueMock.mock.calls.filter((c) => c[0] === 'person-push-send'))
+                .toHaveLength(0);
+        }, 60_000);
     });
 });

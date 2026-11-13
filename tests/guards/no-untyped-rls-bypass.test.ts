@@ -226,8 +226,18 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // bound is the ORDER of a handle→profile→owner chain that has nothing
         // to do with devices.
         //
-        // Raised by exactly two, for two named callers.
-        expect(callers.length).toBeLessThanOrEqual(8);
+        // NINE, not eight: `app-layer/notifications/person-delivery.ts` is the
+        // third file of the same #2987 change and was missed when I first
+        // raised this — the ratchet caught it, which is the ratchet working.
+        // It reads the recipient's `UserNotificationPreference` rows ACROSS
+        // farms (the table is keyed `@@unique([userId, tenantId])`, so a
+        // person in three farms has three, and a tenantless event belongs to
+        // none of them) and counts their devices the same way. Same forced
+        // bypass, same `userId` bound, same shape of answer: a preference enum
+        // and two integers.
+        //
+        // Raised by exactly three, for three named callers.
+        expect(callers.length).toBeLessThanOrEqual(9);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -297,7 +307,16 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // `deleteMany` would remove zero rows and return normally
         // (`rls-delete-is-silent-and-select-governs-it`), so the dead device
         // would be pushed to for ever while every send kept reporting `gone`.
-        expect(sites.length).toBeLessThanOrEqual(17);
+        // 17 → 18: the fifth #2987 site, in `person-delivery.ts`. ONE block
+        // holding both reads — the preference rows and the device rows — and
+        // one rather than two deliberately, the opposite choice from the two
+        // transports above. There the read and the PRUNE are separate because
+        // the prune needs the bypass for its own reason (a tenant-scoped
+        // delete removes zero rows silently). Here the two reads ARE one
+        // answer: the decision needs the preference AND the device count
+        // together, and splitting them would let a future edit read one under
+        // a bypass and the other not, with neither reason looking wrong.
+        expect(sites.length).toBeLessThanOrEqual(18);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

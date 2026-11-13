@@ -34,6 +34,21 @@
  * BROKEN publisher produces and also what a correctly-suppressed mute
  * produces, so each suppression case notifies somebody else in the same post.
  */
+/**
+ * `enqueue` is the ONE mock in this file, and it is mocked rather than driven
+ * because the alternative is a live BullMQ: `.env.test` sets no `REDIS_URL`,
+ * so a real enqueue would fail and the push half would be untestable here.
+ * Capturing the payload is also the stronger assertion — what matters is WHAT
+ * is enqueued (the recipient, the copy, the collapse key), not that a queue
+ * accepted it, and `tests/unit/jobs/person-push-send.test.ts` covers the other
+ * side of that boundary.
+ */
+const enqueueMock = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/app-layer/jobs/queue', () => ({
+    __esModule: true,
+    enqueue: (...a: unknown[]) => enqueueMock(...a),
+}));
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
@@ -108,7 +123,15 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
 
     beforeEach(() => {
         __resetNotificationBusForTests();
+        enqueueMock.mockClear();
     });
+
+    /** Every `person-push-send` payload enqueued for one person. */
+    const pushesFor = (userId: string) =>
+        enqueueMock.mock.calls
+            .filter((c) => c[0] === 'person-push-send')
+            .map((c) => c[1] as Record<string, unknown>)
+            .filter((p) => p.recipientUserId === userId);
 
     it('the bus is IN-PROCESS, so a publish is observable here', () => {
         // The precondition every count below rests on. Asserted rather than
@@ -428,6 +451,92 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
             } finally {
                 them.stop();
             }
+        }, 60_000);
+    });
+
+    describe('the background push — #2987 PR B', () => {
+        it('a MENTION enqueues one job naming the CHANNEL, in the recipient\u2019s language', async () => {
+            await postToChannel(ctxFor(AUTHOR), channelId, {
+                body: 'Иване, какво мислиш?',
+                mentionUserIds: [MENTIONED],
+            });
+
+            const [push] = pushesFor(MENTIONED);
+            expect(push).toBeDefined();
+            // `uiLanguage` defaults to `bg`, so the copy is Bulgarian — the
+            // RECIPIENT's language, not the author's. An English body here
+            // would mean `getTranslations()` had resolved a request cookie.
+            expect(push.title).toBe('Споменаха Ви');
+            // The channel NAME is in the body and the POST is not. That is the
+            // 2026-11-01 ruling ("keep the KEY, drop the free text"), and it
+            // matters here more than for a task: `ChannelPost.body` is
+            // PLAINTEXT at rest, so nothing but this stops a farmer's prose
+            // reaching Apple.
+            expect(push.body).toContain('Тест');
+            expect(push.body).not.toContain('Иване, какво мислиш?');
+            expect(push.link).toBe(`/channels/${channelId}`);
+            expect(push.collapseKey).toBe(`channel-${channelId}-mention`);
+        }, 60_000);
+
+        it('a REPLY enqueues the REPLY copy, not the mention copy', async () => {
+            const parent = await postToChannel(ctxFor(MENTIONED), channelId, {
+                body: 'моят въпрос',
+                kind: 'QUESTION',
+            });
+            enqueueMock.mockClear();
+
+            await replyToPost(ctxFor(AUTHOR), parent.postId, { body: 'ето отговор' });
+
+            const [push] = pushesFor(MENTIONED);
+            expect(push).toBeDefined();
+            expect(push.title).toBe('Нов отговор');
+            expect(push.collapseKey).toBe(`channel-${channelId}-reply`);
+        }, 60_000);
+
+        it('a reply that ALSO mentions its parent author pushes ONCE, as a MENTION', async () => {
+            // Two causes, one act — and the mention wins because it is the more
+            // specific description. Asserted on the COUNT and on which copy,
+            // because "one push" alone would be satisfied by either.
+            const parent = await postToChannel(ctxFor(MENTIONED), channelId, {
+                body: 'въпрос втори',
+                kind: 'QUESTION',
+            });
+            enqueueMock.mockClear();
+
+            await replyToPost(ctxFor(AUTHOR), parent.postId, {
+                body: 'Иване, ето',
+                mentionUserIds: [MENTIONED],
+            });
+
+            const pushes = pushesFor(MENTIONED);
+            expect(pushes).toHaveLength(1);
+            expect(pushes[0].title).toBe('Споменаха Ви');
+        }, 60_000);
+
+        it('a MUTED member gets no job — the mute suppresses the push too', async () => {
+            const heard = listen(MENTIONED);
+            try {
+                await postToChannel(ctxFor(AUTHOR), channelId, {
+                    body: 'двама от вас',
+                    mentionUserIds: [MUTED, MENTIONED],
+                });
+                expect(pushesFor(MUTED)).toHaveLength(0);
+                // The pairing: the same post DID enqueue for somebody, so the
+                // zero is the mute rather than a broken caller.
+                expect(pushesFor(MENTIONED)).toHaveLength(1);
+                expect(heard.got).toHaveLength(1);
+            } finally {
+                heard.stop();
+            }
+        }, 60_000);
+
+        it('an ordinary post enqueues NOTHING', async () => {
+            const res = await postToChannel(ctxFor(AUTHOR), channelId, {
+                body: 'просто споделям',
+            });
+            expect(res.postId).toBeTruthy();
+            expect(enqueueMock.mock.calls.filter((c) => c[0] === 'person-push-send'))
+                .toHaveLength(0);
         }, 60_000);
     });
 
