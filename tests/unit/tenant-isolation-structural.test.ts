@@ -285,6 +285,29 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // (`isOperatorBlockedPersonPath`), which is why a reporting
             // surface belongs under this prefix rather than that one.
             'social',
+            // #2980 — «Вдъхновение», the book library. AUTHENTICATED like
+            // `me` and `social`, and tenantless for the strongest reason of
+            // the three: a book is GLOBAL CATALOGUE data. `Book` and
+            // `BookChapter` carry no `tenantId` at all and every farm reads
+            // the same copy, exactly as for `Unit`, `AgriEvent` and
+            // `SoilSample` — so the invariant has no subject here rather than
+            // being waived, and both models are named in
+            // `global-catalogue-models` with that reason.
+            //
+            // A tenant-scoped path would not merely misfile it. The owner
+            // ruled the surface non-tenant (2026-11-13) because a MECHANISATOR
+            // must reach it: the operator lockdown lives inside
+            // `if (isTenantPath(pathname))`, so a non-tenant path is never
+            // asked about, while `/api/t/{slug}/library` would be refused by
+            // `isOperatorAllowedPath` — an allowlist the library is not on.
+            // `tests/unit/library-reaches-the-operator.test.ts` executes that.
+            //
+            // What stands in for tenant scoping is `publishedAt`, enforced in
+            // the query AND in `book_select`, which is the only disclosure
+            // boundary these tables have. A route here that took a tenant
+            // identifier from the request would be the defect this exemption
+            // could hide; there is nothing per-farm to take.
+            'library',
             // Epic O-1/O-2 — hub-and-spoke organization layer. Org
             // routes resolve `OrgContext` (NOT `RequestContext`) and
             // operate above the tenant scope. The cross-tenant drill-

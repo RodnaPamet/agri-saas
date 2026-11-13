@@ -90,6 +90,18 @@ const SOCIAL_API_ROOTS = [
     // route is collected the day it is added.
     'src/app/api/t/[tenantSlug]/farm-brand/',
     'src/app/api/public/farms/',
+    // ── #2980, «Вдъхновение» ──
+    //
+    // Not a "social" surface by name, and on the same DARK-LAUNCH RAIL, which
+    // is what this list is actually about — the two entries above are already
+    // here because "the roadmap did not build under `api/social/`". A library
+    // read gates on `library.enabled`, default OFF, for the reason every P2-P9
+    // surface does: that is this repo's only agreed way to turn a new surface
+    // off in production without shipping an image.
+    //
+    // Declared by PREFIX so a third library route is collected the day it is
+    // added rather than when somebody remembers this file.
+    'src/app/api/library/',
 ] as const;
 
 /**

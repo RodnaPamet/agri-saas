@@ -189,7 +189,7 @@ runner stage — see the Dockerfile), so none of those three could run
 against the deployed database. The only way to seed content used to be
 copying a one-off applier script into the container by hand.
 
-`scripts/seed.ts` — one operator-facing CLI with four subcommands —
+`scripts/seed.ts` — one operator-facing CLI with six subcommands —
 closes that gap the same way `scripts/worker.ts` already does: esbuild
 bundles it into a self-contained `dist/seed.mjs` (`npm run build:seed`,
 wired into the Dockerfile right after `build:worker`, before the
@@ -228,9 +228,32 @@ Subcommands:
   exits non-zero with a message naming the missing env var. It never
   silently writes a chunk with no usable embedding. Configure a hosted
   embeddings endpoint (e.g. OpenAI) before running this subcommand.
-- **`all [--tenant <slug>]`** — runs all three, each attempted and
-  reported independently (one step's failure does not skip the others).
-  Exits non-zero if any step failed.
+- **`channels`** — seeds the GLOBAL channel catalogue (P9.2): 10 crop, 5
+  input and 28 oblast channels. Idempotent on `Channel.key`, and a re-run
+  updates NAMES only — `memberCount`, `slowModeSeconds` and `archivedAt` are
+  left alone, because the first is maintained by the join path and the other
+  two are an operator's decisions. It JOINS NOBODY: channels are suggested
+  from a farm's crops and oblast and joined by the person.
+- **`library --file <path> | --publish <slug> | --unpublish <slug>`** — seeds
+  ONE book of «Вдъхновение» (#2980) from a JSON file YOU supply. Exactly one
+  of the three flags; two are refused rather than resolved by precedence.
+  - `--file` writes or updates the book, idempotent on `Book.slug`, chapters
+    replaced wholesale. It writes an **UNPUBLISHED** book and never touches
+    `publishedAt` on a re-run, so re-seeding a corrected text neither
+    publishes a withheld book nor withdraws a live one.
+  - `--publish` is the separate decision that makes it readable. **Review the
+    FILE before running it** — an unpublished book is refused to every
+    session by `book_select`, so there is no way to read one back through the
+    API, by design.
+  - `--unpublish` takes a book back out without destroying it.
+  The book text is deliberately NOT in this repository: it is public, so a
+  commit IS publication. Copy the JSON to the VM, run `--file`, then
+  `--publish` when you are satisfied.
+- **`all [--tenant <slug>]`** — runs knowledge, satellite, corpus and
+  channels, each attempted and reported independently (one step's failure does
+  not skip the others). Exits non-zero if any step failed. **`library` is
+  deliberately excluded**: it needs a `--file` there is nothing to default to,
+  so including it would fail every `all` run.
 
 **What "already seeded" looks like** — every step is a safe no-op on a
 re-run, reporting skips instead of creating duplicates:
