@@ -577,6 +577,29 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
                 resolvedAt: true, parentPostId: true,
                 removedByModerationAt: true, autoHiddenAt: true,
                 deletedAt: true, createdAt: true,
+                /*
+                 * P9.6's attachment METADATA, on the DM precedent exactly
+                 * (owner ruling 2026-11-08): the mime, the size and the digest,
+                 * not the bytes. The response is one JSON document and
+                 * `PER_COLLECTION_LIMIT` bounds ROWS rather than megabytes, so
+                 * the bytes are named in `notIncluded` instead of being
+                 * silently absent.
+                 *
+                 * The DURATION comes too, and is the one column with no DM
+                 * counterpart: it is what the person declared about their own
+                 * recording, which is information about them in a way a byte
+                 * count is not.
+                 *
+                 * `attachmentKey` is deliberately NOT exported — honest and
+                 * useless, in the DM entry's words. The egress route authorises
+                 * by MEMBERSHIP, so a bare key in a downloadable file resolves
+                 * to nothing for the person holding it, and exporting a locator
+                 * that grants no access only widens where it travels.
+                 */
+                attachmentMime: true,
+                attachmentBytes: true,
+                attachmentSha256: true,
+                attachmentDurationMs: true,
                 // The farm they posted AS (#2989). Their own affiliation at
                 // the time of writing, on their own row, so it is their
                 // information — and it is the one fact here that a reader

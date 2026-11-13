@@ -63,6 +63,7 @@
  */
 import { prisma } from '@/lib/prisma';
 import { runInUserContext } from '@/lib/db-context';
+import type { PrismaTx } from '@/lib/db-context';
 import { afterCommit } from '@/lib/db/after-commit';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { publishChannelActivityEvent } from '@/lib/notifications/notification-bus';
@@ -238,9 +239,36 @@ export async function leaveChannel(ctx: UserContext, channelId: string): Promise
     });
 }
 
+/**
+ * A post's attachment — P9.6 (#2940), the DM shape with a duration.
+ *
+ * The BYTES are not here: they come from
+ * `GET /api/social/channel-posts/{id}/attachment`, which authorises by
+ * MEMBERSHIP while the post itself is readable by any authenticated caller. So
+ * a non-member sees that a post carries a recording and cannot fetch it, which
+ * is deliberate and is why the client must not render a player for them.
+ *
+ * `durationMs` is the author's DECLARED length, validated against the two-minute
+ * cap and never measured — see `channel-media.ts` for why the byte ceiling is
+ * the enforceable bound. It is null for a photograph.
+ */
+export interface ChannelPostAttachmentView {
+    readonly mime: string;
+    readonly bytes: number;
+    readonly durationMs: number | null;
+}
+
 export interface ChannelPostView {
     readonly id: string;
     readonly authorUserId: string;
+    /**
+     * EMPTY STRING rather than null, which keeps every client unchanged while
+     * the column is nullable (P9.6).
+     *
+     * An empty body is ambiguous on its own — a photo-only post and a removed
+     * one both have none — and `deleted` is what separates them: `''` with
+     * `deleted: false` is a post whose content is its attachment.
+     */
     readonly body: string;
     readonly kind: string;
     readonly createdAt: Date;
@@ -255,6 +283,8 @@ export interface ChannelPostView {
      * null on a `POST` and a `CARD` by construction rather than by filtering.
      */
     readonly resolvedAt: Date | null;
+    /** P9.6 — null when the post is text only, or when it is hidden. */
+    readonly attachment: ChannelPostAttachmentView | null;
     /**
      * How many replies hang off this post (#2961).
      *
@@ -392,13 +422,17 @@ function toPostView(
         id: string;
         authorUserId: string;
         authorTenantId: string | null;
-        body: string;
+        body: string | null;
         kind: unknown;
         createdAt: Date;
         deletedAt: Date | null;
         removedByModerationAt: Date | null;
         autoHiddenAt: Date | null;
         resolvedAt: Date | null;
+        attachmentKey?: string | null;
+        attachmentMime?: string | null;
+        attachmentBytes?: number | null;
+        attachmentDurationMs?: number | null;
         _count: { replies: number };
     },
     authors: AuthorBook,
@@ -410,10 +444,28 @@ function toPostView(
     return {
         id: r.id,
         authorUserId: r.authorUserId,
-        body: hidden ? '' : r.body,
+        // `?? ''` is the P9.6 view boundary: the column is nullable because a
+        // photograph or a voice note alone is a complete post, and no client
+        // needed to learn a third state to read one.
+        body: hidden ? '' : (r.body ?? ''),
         kind: String(r.kind),
         createdAt: r.createdAt,
         deleted: hidden,
+        /*
+         * HIDDEN POSTS CARRY NO ATTACHMENT in the view, for the reason the
+         * body is blanked: a removed post must not advertise what it held.
+         * Serving is refused independently — `readChannelAttachment` checks
+         * the same three columns — so this is the second of two layers rather
+         * than the only one.
+         */
+        attachment:
+            hidden || r.attachmentKey == null || r.attachmentMime == null
+                ? null
+                : {
+                      mime: r.attachmentMime,
+                      bytes: r.attachmentBytes ?? 0,
+                      durationMs: r.attachmentDurationMs ?? null,
+                  },
         resolvedAt: r.resolvedAt,
         replyCount: r._count.replies,
         // Suppressed on a hidden post — see the field's docblock. Written as
@@ -475,6 +527,11 @@ export async function readChannelFeed(
                 createdAt: true, deletedAt: true,
                 removedByModerationAt: true, autoHiddenAt: true,
                 resolvedAt: true,
+                // P9.6 — selected on BOTH read paths, because `toPostView` is
+                // the one mapper and a shape that differed between the feed
+                // and a thread is how the collapse rule drifts (#2961).
+                attachmentKey: true, attachmentMime: true,
+                attachmentBytes: true, attachmentDurationMs: true,
                 // ONE aggregate for the page, not a query per post — the N+1
                 // the D1 guardrail refuses. Prisma folds this into the same
                 // statement, and `@@index([parentPostId])` serves it.
@@ -546,6 +603,42 @@ async function assertNotSlowed(
  * `channel_post_insert`'s WITH CHECK rather than by this function — see the
  * header. What this function adds is slow mode, which cannot live in SQL.
  */
+/**
+ * The posting gate — membership, ban, slow mode — in ONE place.
+ *
+ * Extracted by P9.6 (#2940), because `channel-media.ts` posts too and a second
+ * spelling of "may this person post here" is the #1664 class: that defect was
+ * one rule written twice, keyed on two different session variables, and the
+ * divergence was a silently unenforced block rather than a wrong sentence.
+ *
+ * It takes the open `tx` so the reads happen in the caller's transaction and
+ * session context — a privileged read here would take a second pool connection
+ * while the first is held, which is #1191's P0.8 deadlock.
+ *
+ * This check is for the MESSAGE, not the security. `channel_post_insert`'s
+ * WITH CHECK refuses a forged author, a non-member and a banned member in the
+ * DATABASE, so the rules hold even if every caller of this forgets it; what
+ * the function buys is a code a client can act on instead of a 500.
+ */
+export async function assertMayPost(
+    tx: PrismaTx,
+    channelId: string,
+    userId: string,
+    slowModeSeconds: number,
+): Promise<void> {
+    const membership = await tx.channelMembership.findUnique({
+        where: { channelId_userId: { channelId, userId } },
+        select: { bannedAt: true },
+    });
+    if (!membership) {
+        throw codedForbidden('CHANNEL_NOT_A_MEMBER', 'Join the channel before posting in it.');
+    }
+    if (membership.bannedAt != null) {
+        throw codedForbidden('CHANNEL_BANNED', 'You can no longer post in that channel.');
+    }
+    await assertNotSlowed(tx, channelId, userId, slowModeSeconds);
+}
+
 /**
  * A page of ONE post's replies, OLDEST first (#2961).
  *
@@ -627,6 +720,11 @@ export async function readPostReplies(
                 createdAt: true, deletedAt: true,
                 removedByModerationAt: true, autoHiddenAt: true,
                 resolvedAt: true,
+                // P9.6 — selected on BOTH read paths, because `toPostView` is
+                // the one mapper and a shape that differed between the feed
+                // and a thread is how the collapse rule drifts (#2961).
+                attachmentKey: true, attachmentMime: true,
+                attachmentBytes: true, attachmentDurationMs: true,
                 // Always 0 for a reply — a thread is one level deep — and
                 // selected anyway because `toPostView` is the ONE mapper and
                 // a second shape for replies is how the collapse rule drifts.
@@ -696,24 +794,7 @@ export async function postToChannel(
         // it and posting is still safe and still refused — just unreadably.
         // `tests/integration/p9-3a-channel-core.test.ts` asserts both layers,
         // and the RLS one by dropping the policy.
-        const membership = await tx.channelMembership.findUnique({
-            where: { channelId_userId: { channelId, userId: ctx.userId } },
-            select: { bannedAt: true },
-        });
-        if (!membership) {
-            throw codedForbidden(
-                'CHANNEL_NOT_A_MEMBER',
-                'Join the channel before posting in it.',
-            );
-        }
-        if (membership.bannedAt != null) {
-            throw codedForbidden(
-                'CHANNEL_BANNED',
-                'You can no longer post in that channel.',
-            );
-        }
-
-        await assertNotSlowed(tx, channelId, ctx.userId, channel.slowModeSeconds);
+        await assertMayPost(tx, channelId, ctx.userId, channel.slowModeSeconds);
 
         const post = await tx.channelPost.create({
             // `kind` defaults in the DATABASE (`@default(POST)`), so an absent

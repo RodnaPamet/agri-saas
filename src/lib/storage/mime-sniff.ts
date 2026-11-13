@@ -57,6 +57,40 @@ function refineZip(buf: Buffer): string {
     return 'application/zip';
 }
 
+
+const FTYP_MAGIC = [0x66, 0x74, 0x79, 0x70] as const; // "ftyp" at offset 4
+
+/**
+ * ISO-BMFF (`ftyp`) covers m4a, mp4 video, HEIC and a dozen others, so the
+ * BRAND decides — P9.6 (#2940) needs this to tell a voice note from a video.
+ *
+ * Only the audio brands resolve. `mp42` / `isom` are deliberately NOT mapped
+ * to audio: they are the generic brands a VIDEO file carries, and telling an
+ * audio-only mp4 from one with a video track means walking the `moov` atom's
+ * track list, which this module is explicitly not ("a magic-number check, not
+ * a parser"). Returning null for them means the caller refuses the upload,
+ * which is the safe direction — a rejected voice note is a retry, an accepted
+ * video is a two-minute cap holding back ten minutes of footage.
+ */
+function refineFtyp(buf: Buffer): string | null {
+    const brand = buf.subarray(8, 12).toString('latin1');
+    if (brand === 'M4A ' || brand === 'M4B ' || brand === 'mp41') return 'audio/mp4';
+    return null;
+}
+
+const OGG_MAGIC = [0x4f, 0x67, 0x67, 0x53] as const; // "OggS"
+
+/**
+ * An Ogg container is audio or video depending on its codec, and the codec
+ * identification header sits in the first page. `OpusHead` and `\x01vorbis`
+ * are the two audio ones; a theora stream answers null and is refused.
+ */
+function refineOgg(buf: Buffer): string | null {
+    const head = buf.subarray(0, MAX_PREFIX).toString('latin1');
+    if (head.includes('OpusHead') || head.includes('vorbis')) return 'audio/ogg';
+    return null;
+}
+
 const SIGNATURES: readonly Signature[] = [
     { mime: 'application/pdf', magic: [0x25, 0x50, 0x44, 0x46] },            // %PDF
     { mime: 'image/jpeg', magic: [0xff, 0xd8, 0xff] },
@@ -68,6 +102,20 @@ const SIGNATURES: readonly Signature[] = [
     // resolve to the doc type; the allowlist admits both, and the point here
     // is "this is an OLE2 document, not the HTML you claimed".
     { mime: 'application/msword', magic: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] },
+    // P9.6 (#2940) — the two audio containers a voice note may arrive in.
+    //
+    // APPENDED rather than inserted: every entry above keeps its precedence,
+    // and `sniffMimeType` returns on the first match, so adding to the end
+    // cannot change what an existing format resolves to.
+    //
+    // `audio/webm` is deliberately ABSENT. Its EBML magic (1A 45 DF A3) is
+    // shared with video/webm and the two cannot be told apart without parsing
+    // the track list — so accepting it would let a video through a cap written
+    // for two minutes of speech. iOS records m4a natively, which is the client
+    // this unblocks; a web recorder that can only produce webm is a later,
+    // additive signature with its own test.
+    { mime: 'audio/mp4', magic: FTYP_MAGIC, offset: 4, refine: refineFtyp },
+    { mime: 'audio/ogg', magic: OGG_MAGIC, refine: refineOgg },
 ];
 
 /** RIFF….WEBP — magic split across two ranges. */
