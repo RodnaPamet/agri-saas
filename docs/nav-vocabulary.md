@@ -49,6 +49,7 @@ The guard reads this table. Keep the column order and one row per concept.
 | channel | Канал | Channel | channels.breadcrumbChannel | Общност, Група, Форум, Разговор | channels., sidebarNav. |
 | channels | Канали | Channels | channels.title, channels.breadcrumbCurrent | Общности, Групи, Форум, Разговори | channels. |
 | channelNav | Канали | Channel | sidebarNav.channels |  |  |
+| library | Вдъхновение | Inspiration | library.title, sidebarNav.library | Библиотека, Книги, Четене | library. |
 
 ## Channels: «Канали», and the recommendation that lost to a measurement
 

@@ -1,5 +1,6 @@
 {
     "sidebarNav": {
+        "library": "Inspiration",
         "board": "Board",
         "sectionGovern": "Govern",
         "asset": "Asset",
@@ -2948,6 +2949,16 @@
         "zoomIn": "Zoom in",
         "zoomOut": "Zoom out",
         "unitTonne": "t"
+    },
+    "library": {
+        "title": "Inspiration",
+        "intro": "Books on strategy and management, readable without a connection.",
+        "empty": "No books have been published yet.",
+        "error": "The books could not be loaded.",
+        "notFound": "This book was not found.",
+        "back": "Back to Inspiration",
+        "source": "Source",
+        "license": "Licence"
     },
     "sharepointPicker": {
         "title": "Import from SharePoint",

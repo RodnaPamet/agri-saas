@@ -79,6 +79,8 @@ export interface TenantContextValue {
      * an absent one.
      */
     channelsEnabled?: boolean;
+    /** #2980 — «Вдъхновение». Resolved server-side; see `channelsEnabled`. */
+    libraryEnabled?: boolean;
     permissions: {
         canRead: boolean;
         canWrite: boolean;

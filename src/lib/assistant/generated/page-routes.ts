@@ -49,6 +49,8 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/forgot-password",
     "/invite/[token]",
     "/invite/org/[token]",
+    "/library",
+    "/library/[slug]",
     "/login",
     "/no-tenant",
     "/org/[orgSlug]",
