@@ -1950,6 +1950,28 @@ exports[`API contract — per-schema snapshots schema: AssetUpdateRequest 1`] = 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AttachTaskAssetResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "attached": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "alreadyAttached": {
+      "type": "boolean",
+      "description": "True when the pair was already there, so this call wrote nothing."
+    }
+  },
+  "required": [
+    "attached",
+    "alreadyAttached"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AuditLogEntry 1`] = `
 "{
   "type": "object",
@@ -6512,6 +6534,28 @@ exports[`API contract — per-schema snapshots schema: DeleteConversationResult 
   },
   "required": [
     "ok"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: DetachTaskAssetResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "detached": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "wasAttached": {
+      "type": "boolean",
+      "description": "False when the pair was not attached — still a 200, never a 404."
+    }
+  },
+  "required": [
+    "detached",
+    "wasAttached"
   ]
 }"
 `;

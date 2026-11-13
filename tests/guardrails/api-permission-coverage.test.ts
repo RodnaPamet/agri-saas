@@ -88,6 +88,25 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/machines',
         why: 'Machine tracking reads — the fleet, a day\'s track and a day\'s worked parcels. OWNER + ADMIN only, because a position trace is employee location data rather than an asset attribute.',
     },
+    // #3026 — the task↔machine writes, and the root is NARROW on purpose.
+    //
+    // `farm-tasks` wholesale would be wrong: most routes under it are
+    // deliberately member-level with no rule in `ROUTE_PERMISSIONS`, and
+    // pulling the whole subtree in would demand a rule for each or an
+    // exemption list that says nothing. This one directory is in scope for the
+    // reason the `machines` entry gives — the rule only means something if this
+    // guard can see the route it names, and the orphan check reported my rule
+    // as dead precisely because the route sat outside every root.
+    //
+    // The GET in this directory is deliberately NOT wrapped: it carries
+    // configuration and no coordinates, and a MECHANISATOR needs it for their
+    // own open task. The file qualifies through its POST, and the per-file
+    // check is satisfied by that — which is worth stating, because a reader
+    // seeing this root might expect every export here to be gated.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/farm-tasks/[taskId]/assets',
+        why: 'Attaching a machine to a task and detaching it — `machines.manage`, OWNER + ADMIN. The sibling GET is wider by design, so only the writes carry a rule.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/sso',
         why: 'Tenant SSO configuration — admin-only.',

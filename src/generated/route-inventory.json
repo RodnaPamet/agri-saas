@@ -1539,7 +1539,7 @@
     {
       "path": "/api/t/{tenantSlug}/farm-tasks/{taskId}/assets/{assetId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/farm-tasks/{taskId}/machine",

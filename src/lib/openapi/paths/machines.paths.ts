@@ -174,6 +174,14 @@ const TaskParams = TenantParams.extend({
     }),
 });
 
+/** #3026 — the DELETE addresses a member, so the asset id is a path param. */
+const TaskAssetParams = TaskParams.extend({
+    assetId: z.string().openapi({
+        description:
+            'The machine to take off the task. An id that is not attached answers 200 with `wasAttached: false`, never a 404 — the phone replays queued work, and refusing something already done parks a poison item in its outbox.',
+    }),
+});
+
 const TaskMachineSchema = z
     .object({
         assetId: z.string(),
@@ -202,6 +210,29 @@ const TaskAssetSchema = z
 const TaskAssetListSchema = z
     .object({ assets: z.array(TaskAssetSchema) })
     .openapi('TaskAssetList');
+
+/** #3026 — the attach body and the two write results. */
+const AttachTaskAssetBodySchema = z
+    .object({ assetId: z.string().describe('The machine to put on the task.') })
+    .openapi('AttachTaskAssetBody');
+
+const AttachTaskAssetResultSchema = z
+    .object({
+        attached: z.literal(true),
+        alreadyAttached: z
+            .boolean()
+            .describe('True when the pair was already there, so this call wrote nothing.'),
+    })
+    .openapi('AttachTaskAssetResult');
+
+const DetachTaskAssetResultSchema = z
+    .object({
+        detached: z.literal(true),
+        wasAttached: z
+            .boolean()
+            .describe('False when the pair was not attached — still a 200, never a 404.'),
+    })
+    .openapi('DetachTaskAssetResult');
 
 const TrackedMachinesSchema = z
     .object({
@@ -339,6 +370,61 @@ export function registerMachinePaths(registry: OpenAPIRegistry): void {
         params: TaskParams,
         success: { status: 200, description: 'The task’s locatable assets.', schema: TaskAssetListSchema },
         extraResponses: codedErrorResponses({
+            404: '`TASK_NOT_FOUND` — no such task, or it belongs to another farm.',
+        }),
+    });
+
+    /*
+     * #3026 — the writes. Documented BECAUSE the read next door is: a
+     * REGISTERED path must describe every method its route file exports, so
+     * adding a POST to a described path and leaving the spec alone fails the
+     * contract guard rather than quietly producing an undocumented method.
+     */
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/farm-tasks/{taskId}/assets',
+        operationId: 'attachTaskAsset',
+        summary: 'Put a machine on a task',
+        description:
+            'NARROWER than the GET on the same path: `machines.manage`, so OWNER and ADMIN only. The read is deliberately wider — it carries configuration and no coordinates, and the machine operator needs it for their own open task. IDEMPOTENT: a second call for the same pair answers 200 with `alreadyAttached: true` and writes nothing, because the unique index on (taskId, assetId) arbitrates rather than a read-then-write. The phone retries on a flaky link, so a repeated request is the normal case.',
+        tags: ['Machines'],
+        params: TaskParams,
+        body: { schema: AttachTaskAssetBodySchema, description: 'The machine to attach.' },
+        success: {
+            status: 200,
+            description: 'Attached, with whether it was already there.',
+            schema: AttachTaskAssetResultSchema,
+        },
+        extraResponses: codedErrorResponses({
+            403:
+                '`MACHINES_MANAGE_REQUIRED` — the caller holds `canWrite` but not '
+                + '`machines.manage`, which is every EDITOR and the machine-operator '
+                + 'persona. Distinct from the generic role refusal on purpose: a '
+                + 'client should say this register is not theirs rather than that they '
+                + 'cannot modify anything.',
+            400: '`ASSET_NOT_LOCATABLE` — the asset cannot be located (a hand tool, say), so it cannot be a task\u2019s machine. The task\u2019s machine list filters to locatable types, so such a row would be written and never read back.',
+            404:
+                '`TASK_NOT_FOUND` or `ASSET_NOT_FOUND` — no such task or machine, or it belongs to another farm. '
+                + 'The same refusal for both, so neither answer says whether the id exists elsewhere.',
+        }),
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/farm-tasks/{taskId}/assets/{assetId}',
+        operationId: 'detachTaskAsset',
+        summary: 'Take a machine off a task',
+        description:
+            '`machines.manage` — OWNER and ADMIN. IDEMPOTENT: detaching a pair that is not attached answers 200 with `wasAttached: false` rather than 404, because the phone replays queued work and a refusal for something already done would park a poison item in an outbox that has nothing wrong with it. The asset id is in the PATH rather than the body, unlike the social block DELETE: that one hides a third party\u2019s USER id from a device log, and a machine is the farm\u2019s own equipment.',
+        tags: ['Machines'],
+        params: TaskAssetParams,
+        success: {
+            status: 200,
+            description: 'Detached, with whether it had been attached.',
+            schema: DetachTaskAssetResultSchema,
+        },
+        extraResponses: codedErrorResponses({
+            403: '`MACHINES_MANAGE_REQUIRED` — as on the POST: `canWrite` is not enough, the machine register is OWNER + ADMIN.',
             404: '`TASK_NOT_FOUND` — no such task, or it belongs to another farm.',
         }),
     });
