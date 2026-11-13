@@ -189,8 +189,16 @@ describeFn('#3026 — task machine writes', () => {
              *
              * `createMany` + `skipDuplicates` compiles to `ON CONFLICT DO
              * NOTHING`, so the database resolves the collision and `count`
-             * says which side of it a call was on. Five consecutive runs green
+             * says which side of it a call was on. Nine consecutive runs green
              * after the change.
+             *
+             * ITS DETECTION RATE IS 1 IN 4, measured by putting the
+             * read-then-create spelling back: the transactions overlap only
+             * sometimes, so this case is a weak guard against a regression even
+             * though it is what found the defect. Said plainly because a
+             * reader who sees it green has not learned that the write is
+             * atomic — the single-statement `ON CONFLICT` is what makes that
+             * true, and the comment on the usecase is where that is argued.
              *
              * The phone produces this race routinely: it is an outbox client on
              * rural LTE, so a request that times out is retried while the first
