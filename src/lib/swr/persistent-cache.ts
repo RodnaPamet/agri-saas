@@ -163,6 +163,25 @@ const PERSISTABLE_PATHS: readonly string[] = [
     // adding an entry means accepting the response on a phone that may be lost
     // or sold — the question `ParcelLease.lessorName` exists to force.
     '/offers',
+    // #2980 — «Вдъхновение». The FULL path, not `/library/books`:
+    // `tenantRelativePath` strips only the `/api/t/<slug>/` prefix and hands a
+    // non-tenant key back unchanged, so a tenant-relative spelling here would
+    // match nothing and persist nothing — silently, which is why the shape is
+    // spelled out rather than left to the reader.
+    //
+    // The prefix matcher means this one entry covers the directory AND the
+    // TEXT of every book. That is the decision, not a side effect: the offline
+    // copy worth having is the chapters. Accepting it means accepting a
+    // published book on a phone that may be lost or sold — public-domain text
+    // every reader sees the same of, carrying no personal data, which is the
+    // easy direction of this allowlist. `ParcelLease.lessorName` is the
+    // question it exists to force, and a book is not it.
+    //
+    // No apostrophes in this comment, deliberately: the guard over this list
+    // parses it as TEXT, and an apostrophe opens what its extractor reads as a
+    // string literal. A first draft said "each book" with a possessive and
+    // produced two garbage entries plus a count of 10.
+    '/api/library/books',
 ];
 
 /**

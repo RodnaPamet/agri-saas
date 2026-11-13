@@ -73,8 +73,28 @@ function allowlist(): string[] {
 }
 
 /** Where a tenant-relative allowlist path's route handler lives. */
+/**
+ * The route file an allowlist entry names.
+ *
+ * TWO shapes, since #2980 put the first NON-TENANT key in that list.
+ *
+ * A tenant-relative entry (`/journal`, `/offers`) is resolved under
+ * `src/app/api/t/[tenantSlug]/`, because that is what `useTenantSWR` builds
+ * and what `tenantRelativePath` strips back off. An entry that already begins
+ * `/api/` is a full path — `tenantRelativePath` hands a non-tenant key back
+ * unchanged, so the allowlist has to spell it in full — and resolves under
+ * `src/app/` directly.
+ *
+ * Getting this wrong is not a false pass: the existence assertion below
+ * reported `/api/library/books: false` for a route that exists and does answer
+ * with an ETag, which is a false ALARM. Worth the extra branch rather than an
+ * exemption, because the next non-tenant entry would hit it too.
+ */
 function routeFileFor(path: string): string {
-    return join(REPO_ROOT, TENANT_API, path.replace(/^\//, ''), 'route.ts');
+    const rel = path.replace(/^\//, '');
+    return path.startsWith('/api/')
+        ? join(REPO_ROOT, 'src/app', rel, 'route.ts')
+        : join(REPO_ROOT, TENANT_API, rel, 'route.ts');
 }
 
 describe('every persisted read answers with an ETag (#1845)', () => {

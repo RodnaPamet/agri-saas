@@ -10,39 +10,40 @@ import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { StartTourButton } from '@/components/ui/OnboardingTour';
 import { useCommandPalette } from '@/components/command-palette/command-palette-provider';
 import {
-    X,
-    LayoutDashboard,
-    ToggleRight,
-    BadgeEuro,
-    Building2,
     AlertTriangle,
-    Paperclip,
-    FileText,
-    ClipboardList,
-    Settings,
-    LogOut,
+    ArrowLeftRight,
+    BadgeCheck,
+    BadgeEuro,
+    Banknote,
+    BookOpen,
+    Boxes,
+    Building2,
+    Calculator,
     Calendar as CalendarIcon,
+    CalendarClock,
+    ClipboardList,
+    CloudSun,
+    Coins,
+    FileText,
+    Flag,
+    LayoutDashboard,
+    LineChart,
+    LogOut,
+    MapPin,
+    MessagesSquare,
+    Newspaper,
+    NotebookPen,
     PanelLeftClose,
     PanelLeftOpen,
-    MapPin,
-    Boxes,
-    NotebookPen,
-    Wheat,
-    Warehouse,
-    LineChart,
-    Coins,
-    Banknote,
-    Calculator,
-    ArrowLeftRight,
-    CloudSun,
-    CalendarClock,
-    TrendingUp,
-    Newspaper,
+    Paperclip,
     ScrollText,
-    MessagesSquare,
-    BadgeCheck,
-    Flag,
+    Settings,
+    ToggleRight,
+    TrendingUp,
     type LucideIcon,
+    Warehouse,
+    Wheat,
+    X,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useLocalStorage } from '@/components/ui/hooks';
@@ -130,6 +131,7 @@ export function useNavSections(): NavSectionDef[] {
     // nothing to do with the marketplace — as a REDIRECT, so the symptom is
     // "my channels vanished" rather than an error.
     const channelsEnabled = tenant.channelsEnabled === true;
+    const libraryEnabled = tenant.libraryEnabled === true;
 
     // R13-PR7 — tenant sidebar restructure.
     //
@@ -276,6 +278,28 @@ export function useNavSections(): NavSectionDef[] {
                     label: t('channels'),
                     icon: MessagesSquare,
                     visible: channelsEnabled,
+                },
+                // «Вдъхновение» (#2980) — the book library. THE ONLY ITEM IN
+                // THIS NAV WITH A RAW HREF: every sibling goes through
+                // `tenantHref`, and this one must not. The owner ruled the
+                // surface non-tenant (2026-11-13) because a book belongs to no
+                // farm, and the path shape is what carries it past the
+                // operator lockdown — that gate sits inside
+                // `if (isTenantPath(pathname))`, so `/t/{slug}/library` would
+                // be evaluated against an allowlist that does not name it.
+                // Wrapping this in `tenantHref` would therefore not merely
+                // 404; it would close the surface to the persona the path was
+                // chosen for.
+                //
+                // Last in the section for «Канали»'s reason, and it is the way
+                // IN for the same reason: two books are published and live in
+                // production with nothing linking to them, which is #2844 with
+                // content behind it.
+                {
+                    href: '/library',
+                    label: t('library'),
+                    icon: BookOpen,
+                    visible: libraryEnabled,
                 },
             ]),
         },

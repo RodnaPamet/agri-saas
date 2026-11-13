@@ -699,7 +699,24 @@ export function isPersonPath(pathname: string): boolean {
         // produced three gate-coverage findings in one day (#1652, #1665,
         // #1745). The handler half stays; this adds the Edge half.
         pathname === '/api/account' ||
-        pathname.startsWith('/api/account/')
+        pathname.startsWith('/api/account/') ||
+        // «Вдъхновение» — #2980. Both halves, and the API half was ALREADY
+        // live without this: `/api/library/books` merged in #3019 and was in
+        // neither population — not a tenant path, not a person path — so it
+        // took no Edge MFA gate, exactly as `/api/account/**` did until #1192.
+        // The page half arrives with PR 3 and would have been born into the
+        // same hole.
+        //
+        // A library is person-scoped because a book belongs to no farm: the
+        // owner ruled the surface non-tenant (2026-11-13), and `book_select`
+        // admits either session variable, so `getUserCtx` is what the route
+        // uses. It is deliberately NOT added to
+        // `isOperatorBlockedPersonPath` — that path shape was chosen so a
+        // MECHANISATOR reaches it.
+        pathname === '/library' ||
+        pathname.startsWith('/library/') ||
+        pathname === '/api/library' ||
+        pathname.startsWith('/api/library/')
     );
 }
 

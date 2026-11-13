@@ -65,7 +65,23 @@ describe('the SWR persist allowlist', () => {
         // the easy direction of this cap, and it is still a decision: the
         // response sits on a device that may be lost or sold, which is the
         // question `ParcelLease.lessorName` exists to force.
-        const MAX_PERSISTED_ENDPOINTS = 8;
+        // 8 -> 9 (#2980): `/api/library/books`, «Вдъхновение». Two things make
+        // this entry different from the eight above it, and both are decisions
+        // rather than consequences.
+        //
+        // It is the first NON-TENANT key in the list, so it is spelled as the
+        // FULL path: `tenantRelativePath` strips only the `/api/t/<slug>/`
+        // prefix and returns a non-tenant key unchanged, so a tenant-relative
+        // `/library/books` would match nothing and persist nothing, silently.
+        //
+        // And the prefix matcher means it covers each book TEXT as well as the
+        // directory — which is the point, since the offline copy worth having
+        // is the chapters, not a list of two titles. The content is
+        // public-domain book text, identical for every reader, carrying no
+        // names, contacts, identifiers or anything in ENCRYPTED_FIELDS. The
+        // easy direction of this cap, and still a decision: it sits on a
+        // device that may be lost or sold.
+        const MAX_PERSISTED_ENDPOINTS = 9;
         const list = allowlist();
         if (list.length > MAX_PERSISTED_ENDPOINTS) {
             throw new Error(
