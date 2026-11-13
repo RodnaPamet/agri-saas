@@ -56,6 +56,8 @@ const APP_ROOT = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)');
 const DELIBERATELY_UNLINKED: Readonly<Record<string, string>> = {
     '/grain/payroll':
         'A retired surface kept as a REDIRECT to `/grain/costs`, where payroll became a category. Unlinked on purpose — the sidebar and `GrainSectionNav` point at the category — and kept rather than deleted because the URL is in browser histories and bookmarks, and a farmer who followed one to a 404 would reasonably conclude their payroll data had been lost.',
+    '/machines/[assetId]':
+        'A redirect to `/assets/[assetId]`, and unlinked is the POINT. #2948 stage 5\'s area alert pushes `link: /t/{slug}/machines/{assetId}`, a shape agrent-ios #577 already resolves in TestFlight 128.1 — so the server cannot change it without breaking a shipped build. One `push-send` reaches BOTH transports, and the web has no machine surface at all (the live map and day history are iOS screens), so a web-push recipient who clicked that notification reached a 404. Nothing inside the product should link here: a web reader goes to the asset directly, and this exists only to make another client\'s destination land somewhere real. Delete it when the web gets a fleet surface, and point the alert at that instead.',
     '/issues/[issueId]':
         'A legacy redirect to `/farm-tasks/[id]`, and being unlinked is the POINT: it exists to catch bookmarks and old links from before the rename, so a link to it from inside the product would send somebody the long way round. Deleting it instead would 404 those bookmarks — #1087 is what a silent route removal costs.',
     '/field/[taskId]':
