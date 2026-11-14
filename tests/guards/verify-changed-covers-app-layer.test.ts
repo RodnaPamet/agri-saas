@@ -57,6 +57,24 @@
  * that as an edge — the bug being guarded against, committed by the guard.
  * Strings are KEPT, because an import specifier IS a string literal.
  *
+ * ## A graph can be INFLATED rather than empty, and the floors miss that
+ *
+ * `Selector teeth` reported `stemOf()` as SURVIVED on this file's first green
+ * run, and it was right. Gutting it to a constant does not empty the graph —
+ * it collapses every import target onto ONE map key, so `importersOf` holds a
+ * single entry containing every importing file and `reachingTests` answers
+ * "nearly everything" for every input. Measured with the gut in place: 441 of
+ * 441 app-layer files "reaching" an integration suite, and every root at 441.
+ * Every assertion still passed, and the floors passed HARDER — reach went up,
+ * not down.
+ *
+ * That is the shape to remember. A floor separates zero from nonzero and says
+ * nothing about whether the derivation DISCRIMINATES, and a collapsed graph is
+ * wrong in the direction that reads as more coverage. So the controls below
+ * assert the graph tells modules apart: the key count (exactly 1 when
+ * collapsed), the spread of reach across files (identical for every file when
+ * collapsed), and a named pair whose reach is both non-empty and BOUNDED.
+ *
  * ## What this asserts, and what it only REPORTS
  *
  * The assertion is scoped to `tests/integration`, which is #3057's property.
@@ -218,6 +236,50 @@ describe('verify:changed covers the app layer (#3057)', () => {
         expect(withoutAppLayer.length).toBeLessThan(RULES.pathRules.length);
         const gaps = integrationGaps(withoutAppLayer);
         expect(gaps.length).toBeGreaterThanOrEqual(200);
+    });
+
+    it('the import graph TELLS MODULES APART — the stemOf control', () => {
+        // `stemOf` SURVIVED a mutation to a constant on the first green run.
+        // Collapsed, every target shares one key, so the graph says
+        // "everything reaches everything" and every floor above passes by a
+        // wider margin. These are the assertions that fail when it does.
+
+        // (a) the function itself, on named inputs.
+        expect(stemOf('src/app-layer/usecases/channels.ts')).toBe(
+            'src/app-layer/usecases/channels',
+        );
+        expect(stemOf('src/app-layer/notifications/index.ts')).toBe(
+            'src/app-layer/notifications',
+        );
+        // Injective on two distinct modules — the property a collapse breaks,
+        // and the one a `return ''` / `null` / `undefined` gut cannot satisfy.
+        expect(stemOf('src/a.ts')).not.toBe(stemOf('src/b.ts'));
+
+        // (b) the KEY COUNT. ~2,077 measured 2026-11-14; exactly 1 when
+        // `stemOf` returns a constant.
+        expect(importersOf.size).toBeGreaterThanOrEqual(1500);
+
+        // (c) the SPREAD. A collapsed graph gives every app-layer file the
+        // same reach, so more than one distinct count is the discriminator.
+        // Measured: min 0, median 9, max 805.
+        const counts = new Set(REACH.map((r) => r.tests.length));
+        expect(counts.size).toBeGreaterThanOrEqual(20);
+    });
+
+    it('a named pair reaches, and the reach is BOUNDED', () => {
+        // Non-empty proves the edges exist; bounded proves they are the RIGHT
+        // edges. A collapsed graph satisfies the first and fails the second.
+        const channels = REACH.find((r) => r.file === 'src/app-layer/usecases/channels.ts');
+        expect(channels).toBeDefined();
+        const integration = (channels as { tests: string[] }).tests.filter(
+            (t) => rootOf(t) === 'tests/integration',
+        );
+        // The suite that asserts this usecase's push-link literal exactly —
+        // the one #3030/PR 3056 changed while the tool ran none of it.
+        expect(integration).toContain('tests/integration/channel-mention-notifies.test.ts');
+        // 12 measured. Bounded well below the 279-suite root, which is what a
+        // collapsed graph reports.
+        expect(integration.length).toBeLessThan(100);
     });
 
     it('reports the WIDER gap rather than implying it is covered', () => {
