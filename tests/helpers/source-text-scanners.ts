@@ -86,6 +86,37 @@ function codeShaped(pattern: string): boolean {
  * Sorted by path so the output is stable across machines — an unsorted set
  * would make the exact-match assertion in the rail fail on filesystem order.
  */
+/**
+ * Does this BLANKED source read file content at all?
+ *
+ * Exported, and taken by the already-blanked text, so the guard's control
+ * cannot re-spell it — #2933. The control used to carry its own copy
+ * (`!src.includes('blankNonCode') && /…/.test(blankNonCode(src))`), which is a
+ * second spelling of the detector: fixing one and not the other makes the
+ * cross-check agree with the OLD method and stop grading the new one.
+ */
+export function readsSourceText(blanked: string): boolean {
+    return blanked.includes('readFileSync') || blanked.includes('collectSourceFiles');
+}
+
+/**
+ * Does this BLANKED source actually CALL the blanking helper?
+ *
+ * A CALL, not the identifier anywhere, and the argument is `blanked` rather
+ * than raw text. Both halves are the #2933 fix:
+ *
+ *   • decided on CODE — the check sat above the blanking, one line from the
+ *     comment explaining why blanking must come first, so a guard that merely
+ *     NAMED the helper in a docblock went invisible to the detector while
+ *     still matching code-shaped literals against unblanked content;
+ *   • a CALL — `blankNonCode` survives blanking inside a STRING literal,
+ *     because the helper keeps strings, so a name-anywhere test is still
+ *     satisfied by prose that quotes it.
+ */
+export function routesThroughBlankNonCode(blanked: string): boolean {
+    return /\bblankNonCode\s*\(/.test(blanked);
+}
+
 export function findSourceTextScanners(): Scanner[] {
     const files = collectSourceFiles({
         roots: GUARD_ROOTS,
@@ -97,14 +128,29 @@ export function findSourceTextScanners(): Scanner[] {
     const out: Scanner[] = [];
     for (const abs of files) {
         const raw = readFileSync(abs, 'utf8');
-        if (!raw.includes('readFileSync') && !raw.includes('collectSourceFiles')) continue;
-        if (raw.includes('blankNonCode')) continue;
 
         // Dogfooding: blank the GUARD's own comments before reading its
         // patterns. Without this, a docblock explaining `.includes('logEvent')`
         // — the one in this very file, for instance — would be collected as a
         // live pattern. The bug being guarded against, committed by the guard.
         const code = blankNonCode(raw);
+
+        // BOTH decisions are made on `code`, and that ordering is the #2933
+        // fix. They were made on `raw` — above the blanking, one line from the
+        // comment explaining why blanking has to come first — so a guard that
+        // merely NAMED `blankNonCode` in a docblock, to explain why it does
+        // not use it or to cite it in a historical note, became invisible to
+        // this detector while still matching code-shaped literals against
+        // unblanked content. Four guards were exempt for a reason nobody
+        // decided, and a fifth stayed visible only because its author wrote
+        // the helper's PATH instead of its symbol as a deliberate workaround.
+        //
+        // The exemption also tests for a CALL rather than for the identifier
+        // anywhere: `blankNonCode` survives blanking inside a STRING literal
+        // (the helper keeps strings), so a name-anywhere check would still be
+        // satisfied by prose that happens to quote it.
+        if (!readsSourceText(code)) continue;
+        if (routesThroughBlankNonCode(code)) continue;
 
         const patterns = new Set<string>();
         for (const m of code.matchAll(MATCHER)) {
