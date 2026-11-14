@@ -1980,6 +1980,14 @@ function queueChannelActivityNotify(args: ChannelActivityTargets): void {
                 // column of them. The reason is in the key so a mention does
                 // not silently replace a reply notification and vice versa.
                 collapseKey: `channel-${args.channelId}-${t.reason}`,
+                // The subject in PIECES, so quiet hours can hold this push and
+                // #3020's 06:00 summary can rebuild the permalink rather than
+                // replaying a path stored last night.
+                subject: {
+                    kind: t.reason === 'mention' ? 'CHANNEL_MENTION' : 'CHANNEL_REPLY',
+                    channelId: args.channelId,
+                    postId: args.postId,
+                },
             });
         }
     });

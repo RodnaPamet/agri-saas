@@ -163,6 +163,13 @@ const NOT_A_CREDENTIAL: ReadonlyArray<[reason: string, columns: readonly string[
         ['attachmentKey'],
     ],
     [
+        // A separate entry rather than joining the catalogue-slug reason
+        // above: that one says "chosen by the tenant", and this is chosen by
+        // nobody — it is derived from the clock.
+        'A DATE BUCKET, not key material (#3020). `PersonPushDeferral.nightKey` is `quietNightKey`\'s output — the calendar night a push was held for, in `Europe/Sofia` — so it is the same shape for every person held on the same night and authenticates nothing. It is the one field an operator needs to answer "what did the window hold back last night", which is the question #3020 was filed to make answerable without reading a log, so redacting it would remove the trail\'s only useful axis.',
+        ['nightKey'],
+    ],
+    [
         'A domain or regulatory code a person reads off a document.',
         ['lotCode', 'measureCode', 'regionCode', 'reasonCode'],
     ],

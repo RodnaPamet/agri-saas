@@ -32,22 +32,33 @@
  * a failure for one person must not re-send to the others. A channel post may
  * mention five people; that is five jobs.
  *
- * ## QUIET HOURS SUPPRESS HERE RATHER THAN DEFERRING, and that is a GAP
+ * ## QUIET HOURS DEFER HERE, and the row is what made that possible
  *
- * `push-send` defers to 06:00 by enqueuing ONE `push-summary` for the night,
- * which then reads the person's unread `Notification` rows for that tenant.
- * A tenantless event writes NO `Notification` row — it cannot, the column is
- * NOT NULL — so there would be nothing for a summary to count. A person
- * summary enqueued here would wake somebody at 06:00 to tell them about
- * zero things.
+ * Owner ruling 2026-11-14 (#3020): a mention, a reply or a direct message
+ * arriving 22:00–06:00 `Europe/Sofia` is HELD and delivered as one summary
+ * push at 06:00, as a farm notification already is.
  *
- * So inside the window the push is SUPPRESSED, and the person finds the
- * message when they next open the app: the SSE frame and the REST read are
- * both unaffected. That is strictly better than today, where the push does not
- * exist at all and the window therefore changes nothing — but it IS a hole,
- * and **#3020 carries it** rather than this docblock being the only record.
- * Closing it needs a durable record of tenantless notifications, which is
- * #2990's territory (the read cursor) and not a line of code here.
+ * This file suppressed instead until then, and the reason it had to is worth
+ * keeping: `push-send` defers by enqueuing one `push-summary`, which reads the
+ * person's unread `Notification` rows for that tenant — and a tenantless event
+ * writes NO such row, because `Notification.tenantId` is NOT NULL with an FK.
+ * A person summary had nothing to count, so enqueuing one would have woken
+ * somebody at 06:00 to tell them about zero things.
+ *
+ * `PersonPushDeferral` is the store that closes it: one tenantless row per
+ * held push, which the 06:00 job counts. That table's own docblock carries why
+ * rows rather than a counter (a deploy prunes the container, so #2987's log
+ * line vanished mid-night) and why not a nullable `Notification.tenantId`.
+ *
+ * This docblock previously pointed at #2990 as the territory that would close
+ * it. That was wrong twice over: #2990 was the read cursor and unread counts,
+ * which shipped without touching this, and the thing actually needed was a
+ * store of its own — the P5.4a shape, where `StatementOfReasons` became its
+ * own outbox rather than borrowing a tenant-scoped one.
+ *
+ * The window still governs only whether somebody is INTERRUPTED. The SSE frame
+ * and the REST read are unaffected, so a person with the app open at 23:00
+ * sees the mention arrive.
  *
  * ## The payload carries no free text
  *
@@ -59,10 +70,13 @@
  * through Redis and APNs.
  */
 import { resolvePersonDelivery } from '@/app-layer/notifications/person-delivery';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { listMyFarms } from '@/app-layer/usecases/my-farms';
 import { sendApnsToPerson } from '@/lib/notifications/apns';
 import { sendWebPushToPerson } from '@/lib/notifications/web-push';
 import { logger } from '@/lib/observability/logger';
+import type { PersonPushSubject } from '@/app-layer/jobs/types';
 
 export interface PersonPushSendInput {
     /** The person being notified — never the actor. */
@@ -82,6 +96,12 @@ export interface PersonPushSendInput {
      * does not produce a column of identical banners.
      */
     collapseKey: string;
+    /**
+     * What the push is ABOUT, so quiet hours can hold it with a destination
+     * the 06:00 summary can rebuild (#3020). Optional only for the deploy
+     * window — see `PersonPushSubject`.
+     */
+    subject?: PersonPushSubject;
 }
 
 export interface PersonPushSendResult {
@@ -182,15 +202,66 @@ export async function runPersonPushSend(
     const decision = await resolvePersonDelivery(recipientUserId, new Date());
 
     if (decision.deferral !== null) {
-        // See the docblock: there is nothing to summarise, so this is a
-        // SUPPRESSION with the deferral's own reason attached rather than a
-        // silent drop. Logged at info with the night key, so the volume held
-        // back by the window is countable — which is the evidence #3020 needs.
-        logger.info('person-push.suppressed', {
+        // HELD, not suppressed — owner ruling 2026-11-14 (#3020). This was a
+        // drop with a log line until then, and the log was the only record:
+        // a direct message at 23:00 produced no interruption EVER, while a
+        // farm notification at 23:00 produced one at 06:00. Two recipients of
+        // two kinds of message got different treatment for a reason neither
+        // could see.
+        const { at, nightKey } = decision.deferral;
+
+        // A ROW first, because the row is what the summary counts and what
+        // makes "exactly one item" answerable for the link rule. A log line
+        // cannot be counted after a deploy: Watchtower prunes the old
+        // container, so #2987's evidence vanished mid-night.
+        await runWithoutRls({ reason: 'person-push-deferral' }, (db) =>
+            db.personPushDeferral.create({
+                data: {
+                    recipientUserId,
+                    nightKey,
+                    // An ABSENT subject is a payload from the previous image,
+                    // mid-deploy. It still gets a row — being counted and
+                    // linkless is the several-items behaviour, and strictly
+                    // better than the drop this replaces.
+                    kind: input.subject?.kind ?? 'DIRECT_MESSAGE',
+                    channelId: input.subject && 'channelId' in input.subject
+                        ? input.subject.channelId
+                        : null,
+                    postId: input.subject && 'postId' in input.subject
+                        ? input.subject.postId
+                        : null,
+                    conversationId: input.subject && 'conversationId' in input.subject
+                        ? input.subject.conversationId
+                        : null,
+                },
+                select: { id: true },
+            }),
+        );
+
+        // ONE summary per person per night. `jobId` is what achieves that —
+        // BullMQ refuses a duplicate id, so the fifth mention of a night
+        // cannot schedule a fifth summary, and it is a single `add` rather
+        // than a read-modify-write two workers could interleave. Copied from
+        // `push-send`'s farm deferral, which solved the identical problem.
+        //
+        // The DELAY, not a cron: `quietWindowEnd` resolves 06:00 in
+        // `Europe/Sofia`, so the boundary is DST-correct. A UTC cron at a
+        // fixed hour would be an hour wrong for half the year.
+        await enqueue(
+            'person-push-summary',
+            { recipientUserId, nightKey },
+            {
+                jobId: `person-push-summary:${recipientUserId}:${nightKey}`,
+                delay: Math.max(0, at.getTime() - Date.now()),
+            },
+        );
+
+        logger.info('person-push.deferred', {
             component: 'person-push',
             collapseKey,
             reason: decision.suppressedBecause,
-            nightKey: decision.deferral.nightKey,
+            nightKey,
+            kind: input.subject?.kind ?? 'unknown',
             // No prose: the payload is displayed copy.
         });
         return { attempted: 0, delivered: 0 };

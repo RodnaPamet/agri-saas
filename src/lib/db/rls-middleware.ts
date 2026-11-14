@@ -195,6 +195,7 @@ export type RlsBypassReason =
      * for ever. `[[rls-delete-is-silent-and-select-governs-it]]`.
      */
     | 'person-push-devices'
+    | 'person-push-deferral'
     /**
      * Request-time read across the tenants of ONE organization, for the
      * Epic O-3 portfolio summary. Reads aggregate `ComplianceSnapshot` rows
@@ -415,6 +416,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'org-tenant-bootstrap': true,
     'dm-recipient-resolution': true,
     'person-push-devices': true,
+    'person-push-deferral': true,
 };
 
 const KNOWN_REASONS: ReadonlySet<string> = new Set(Object.keys(REASON_REGISTRY));

@@ -280,6 +280,48 @@ export interface PersonPushSendPayload {
     farmRelativePath: string | null;
     /** The Web Push `tag` and the APNs `apns-collapse-id`, as one field. */
     collapseKey: string;
+    /**
+     * WHAT this push is about, in pieces — so quiet hours can hold it and the
+     * 06:00 summary can rebuild a destination (#3020).
+     *
+     * `farmRelativePath` above is a composed path and deliberately not the
+     * source of truth here: parsing a path back into ids is the #1087 shape in
+     * reverse, and a route that moves would silently change what a stored
+     * deferral points at.
+     *
+     * OPTIONAL only for the deploy window. A payload enqueued by the previous
+     * image carries none, and `runPersonPushSend` then writes a deferral row
+     * with no destination rather than dropping it — so the person is still
+     * COUNTED in their summary and simply gets no link, which is exactly the
+     * several-items behaviour. Both producers pass it, enforced by the type at
+     * their call sites.
+     */
+    subject?: PersonPushSubject;
+}
+
+/**
+ * The identity of a person-scoped push's subject, for #3020's deferral rows.
+ *
+ * A discriminated union rather than three nullable ids, so "a mention with no
+ * post" is not expressible — the summary's link rule reads these fields and a
+ * half-filled subject would produce a link to nowhere.
+ */
+export type PersonPushSubject =
+    | { kind: 'CHANNEL_MENTION' | 'CHANNEL_REPLY'; channelId: string; postId: string }
+    | { kind: 'DIRECT_MESSAGE'; conversationId: string };
+
+/**
+ * #3020 — one summary push for everything quiet hours held back from a person.
+ *
+ * `nightKey` identifies the night that scheduled it and is what makes the
+ * BullMQ `jobId` idempotent, so the fifth mention of a night cannot schedule a
+ * fifth summary. It is deliberately NOT the read key: the job reads every
+ * UNDELIVERED row for the person, so a night whose send failed is recovered by
+ * the next one rather than being lost.
+ */
+export interface PersonPushSummaryPayload {
+    recipientUserId: string;
+    nightKey: string;
 }
 
 /**
@@ -1034,6 +1076,7 @@ export interface JobPayloadMap {
     'process-outbox': ProcessOutboxPayload;
     'push-send': PushSendPayload;
     'person-push-send': PersonPushSendPayload;
+    'person-push-summary': PersonPushSummaryPayload;
     'push-summary': PushSummaryPayload;
     'zero-success-route-check': ZeroSuccessRouteCheckPayload;
     'data-lifecycle': DataLifecyclePayload;
@@ -1214,6 +1257,23 @@ export const JOB_DEFAULTS: Record<JobName, {
         // That argues for retrying, not for retrying differently, which is why
         // the numbers match.
         attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'person-push-summary': {
+        // ONE attempt, and for `statement-dispatch`'s reason rather than
+        // `person-push-send`'s: a retry would RE-SEND. The job stamps
+        // `deliveredAt` only after a send resolves, so a failed run leaves
+        // every row undelivered and the person's NEXT summary picks them up —
+        // which is a retry at the right granularity, per ROW rather than per
+        // run.
+        //
+        // That also means the queue is `deliveredAt IS NULL` and not this
+        // job's own retry count, so a night whose Redis job was lost is
+        // recovered by the following night rather than stranded. The cost is
+        // latency, not loss.
+        attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 500,
@@ -1785,4 +1845,8 @@ export const PUSH_QUEUE_JOBS: ReadonlySet<JobName> = new Set([
     // budget and starve every other job type for the rest of the minute —
     // including the outbox sweep, which is how notifications reach email.
     'person-push-send',
+    // The 06:00 drain rides the same queue as the sends it summarises: it is
+    // the same fan-out shape (one job per person) and the same reason to keep
+    // it off the main worker's limiter budget.
+    'person-push-summary',
 ]);

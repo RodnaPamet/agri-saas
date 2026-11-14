@@ -290,7 +290,12 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // `userId` to that one person. A function here that took a tenant from
         // the payload — or resolved one from the recipient — is the defect
         // this exemption could hide, and is the thing to check in review.
-        'person-push-send'];
+        'person-push-send',
+        // #3020 — the 06:00 summary of what quiet hours held back from a
+        // person. Same reason as its producer above: `PersonPushDeferral` has
+        // no tenant column, so there is no tenantId to propagate and a
+        // resolved one would be invented.
+        'person-push-summary'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -416,6 +421,12 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // for cardinality, so a tenantId on this payload would name an axis
         // the data does not have.
         'ZeroSuccessRouteCheckPayload',
+        // #3020 — the 06:00 summary's payload: a recipient and the night key
+        // that scheduled it. No tenantId for its producer's reason, and the
+        // night key is the SCHEDULING identity rather than a scope — the job
+        // reads every unsettled row for the person, so a night whose send
+        // failed is recovered by the next one.
+        'PersonPushSummaryPayload',
         // #2987 — see `person-push-send` in EXEMPT_JOBS above. The payload
         // carries a recipient and composed copy and nothing else; a tenantId
         // on it would have to be invented, because a channel post and a direct

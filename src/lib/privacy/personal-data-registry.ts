@@ -126,8 +126,16 @@ export interface PersonalDataEntry {
 /**
  * Every tenantless person-naming column in the schema.
  *
- * Ordered as the guard reports them (alphabetical by model) so a diff against
- * a failure message is readable.
+ * Grouped by DOMAIN — auth, exchange, direct messages, channels, then the
+ * person-scoped remainder — so related models read together.
+ *
+ * This said "alphabetical by model" until #3020 and was not: `Conversation`
+ * follows `ExchangeThread`, `ChannelMembership` follows `MessageReaction`. The
+ * claim is worth correcting rather than deleting because it actively
+ * misdirects — adding `PersonPushDeferral` by alphabetical comparison put it
+ * between `PersonProfile` and `PlatformAuditLog`, splitting the two `Person*`
+ * models for no reason. The guard reports failures by its own sort, not this
+ * file's, so nothing depends on the order here except a reader.
  */
 export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
     {
@@ -486,6 +494,24 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
             + 'User row is DELETED, and P5.6 erasure PSEUDONYMISES the user instead, so '
             + 'the User survives and the cascade never runs. An entry here is what '
             + 'actually removes it.',
+    },
+    {
+        model: 'PersonPushDeferral',
+        columns: ['recipientUserId'],
+        disposition: 'ERASE_ONLY',
+        action: 'DELETE_ROW',
+        reason:
+            'A push that quiet hours held back, waiting for the 06:00 summary (#3020). '
+            + 'DELETE_ROW because the row has no meaning without the person it was going '
+            + 'to interrupt: it names no second party — the destination is kept as a '
+            + 'channel, post or conversation id, never as a sender — so nothing else '
+            + 'loses its subject, which is the test Account passes and ExchangeBlock '
+            + 'fails. ERASE_ONLY rather than exported because it is transient delivery '
+            + 'state rather than a record of anything: a row lives from the moment a '
+            + 'notification is suppressed until the next summary sends it, and exporting '
+            + 'the queue depth of an undelivered push answers no question the person '
+            + 'asked. It carries no prose — the push text is composed at send time in '
+            + 'the recipient\'s language — so there is nothing in it to read back.',
     },
 ];
 

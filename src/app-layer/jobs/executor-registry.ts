@@ -375,6 +375,32 @@ executorRegistry.register('push-send', async (payload) => {
     );
 });
 
+// ── person-push-summary ──────────────────────────────────────────────
+//
+// #3020's 06:00 drain: one push for everything quiet hours held back from a
+// person. The tenantless sibling of `push-summary`, and like its neighbour
+// below it carries NO `tenantId` — recorded as person-scoped in
+// `job-scope-audit` rather than looking like a job that forgot one.
+
+executorRegistry.register('person-push-summary', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runPersonPushSummary } = await import('../jobs/person-push-summary');
+    const r = await runPersonPushSummary({
+        recipientUserId: payload.recipientUserId,
+        nightKey: payload.nightKey,
+    });
+    // scanned = held items the summary covered, actioned = summaries sent (0
+    // or 1), skipped = the difference. A run that found nothing reports all
+    // three as zero, which is the honest reading of "the queue was empty"
+    // rather than a success it did not achieve.
+    return makeResult(
+        'person-push-summary', startedAt, startMs,
+        r.count, r.delivered, r.count - r.delivered,
+        { count: r.count, delivered: r.delivered },
+    );
+});
+
 // ── person-push-send ─────────────────────────────────────────────────
 //
 // The tenantless sibling of `push-send`: a channel mention, a channel reply or
@@ -398,6 +424,10 @@ executorRegistry.register('person-push-send', async (payload) => {
         // tenant-prefixed, because that payload carries a `tenantId`.
         farmRelativePath: payload.farmRelativePath,
         collapseKey: payload.collapseKey,
+        // What the push is ABOUT (#3020), so quiet hours can hold it with a
+        // destination the 06:00 summary can rebuild. Absent on a payload
+        // enqueued by the previous image.
+        subject: payload.subject,
     });
     // Same arithmetic as `push-send`: scanned = transports attempted,
     // actioned = transports that reached at least one device, skipped = the

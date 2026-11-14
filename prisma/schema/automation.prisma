@@ -748,3 +748,107 @@ model ProcessEdgePractice {
   @@unique([edgeId, practiceKey])
   @@index([tenantId, processMapId])
 }
+
+/// A person-scoped push HELD BACK by quiet hours, so the 06:00 summary has
+/// something to count (#3020).
+///
+/// ## Why this table exists at all
+///
+/// `push-send` already defers a FARM notification: inside 22:00-06:00
+/// `Europe/Sofia` it enqueues one `push-summary` for the night, and at 06:00
+/// that job counts the person's unread `Notification` rows for that tenant.
+/// A person-scoped event cannot do the same, because
+///
+///     Notification.tenantId  String  -- NOT NULL, FK to Tenant
+///
+/// and a channel mention or a direct message belongs to a PERSON who may have
+/// no farm or several. Resolving one would invent a tenant for a person-scoped
+/// obligation, which is the wall P5.4a hit with `NotificationOutbox` and the
+/// reason `StatementOfReasons` became its own outbox.
+///
+/// Making `Notification.tenantId` nullable is the fix that looks cheaper and
+/// is not: every tenant-scoped notification query would need a null arm, and
+/// the ones that forgot it would silently include or exclude person-scoped
+/// rows across a column read throughout the product.
+///
+/// ## Why ROWS and not a counter
+///
+/// A Redis counter or an in-process tally is cheaper and wrong here.
+/// Watchtower prunes the old container on deploy, so anything held only in
+/// memory - or only in a log line, which is what #2987 shipped - vanishes
+/// mid-night and the 06:00 job would send a confident summary of ZERO. Rows
+/// survive a deploy.
+///
+/// They are also what makes the link rule answerable: the owner's ruling
+/// (2026-11-14) is that a night holding exactly ONE item links to that item
+/// and a night holding several carries no link, and "exactly one" is a
+/// question you can only ask of a set you kept.
+///
+/// ## The destination is kept in PIECES, never as a path
+///
+/// `channelId` + `postId`, or `conversationId` - so the 06:00 job composes the
+/// current five-segment permalink rather than replaying a path stored last
+/// night. #1087 is what a stored route shape costs when the route moves.
+///
+/// No prose is stored. The push text is composed at send time in the
+/// RECIPIENT's language, which is the P5.4b rule: a locale resolved at queue
+/// time is a different question from the one the recipient will be asked.
+model PersonPushDeferral {
+  id String @id @default(cuid())
+
+  /// The person who was not interrupted. A plain id, not a relation: the
+  /// tenantless social tables spell person ids this way (`UserBlock`), and
+  /// erasure is driven by `personal-data-registry.ts` rather than by a cascade.
+  recipientUserId String
+
+  /// The night this was held for, from `quietNightKey`. Carried for
+  /// observability and for the summary job's `jobId`, which is what keeps one
+  /// summary per person per night without a read-modify-write two workers
+  /// could interleave.
+  nightKey String
+
+  kind PersonPushDeferralKind
+
+  /// Set for CHANNEL_MENTION and CHANNEL_REPLY.
+  channelId      String?
+  /// The post the event is ABOUT - the reply, never its parent.
+  postId         String?
+  /// Set for DIRECT_MESSAGE.
+  conversationId String?
+
+  /// NULL while the person is still owed an interruption. The queue IS
+  /// `settledAt IS NULL`, so a failed send leaves the row and the person's
+  /// next summary picks it up - the P5.4b granularity, where retrying the RUN
+  /// would re-send what already went out.
+  ///
+  /// `settledAt` and NOT `deliveredAt`, which is what this was first called:
+  /// the summary stamps it after a successful send AND when the person has no
+  /// transport at all, because nothing will ever deliver those rows and
+  /// keeping them would grow the table without bound while every later run
+  /// reached the same conclusion. A field named for delivery, stamped when
+  /// nothing was delivered, writes a false fact into a timestamp - the
+  /// `TimelineMessage.deleted` lesson. So the name says what is true:
+  /// the deferral is SETTLED, by delivery or by there being nobody to tell.
+  ///
+  /// A run that lands inside the NEXT night's window leaves it NULL
+  /// deliberately, so the following summary recovers those rows. The farm
+  /// sibling drops that case because "the rows it describes are still in the
+  /// bell either way" - and a tenantless event writes no bell row, so here
+  /// dropping would be the only loss of the interruption.
+  settledAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  /// The summary read: this person's undelivered rows, oldest first.
+  @@index([recipientUserId, settledAt, createdAt])
+  @@index([nightKey])
+}
+
+/// Which held event a row describes. Decides nothing but the destination -
+/// the summary copy names a COUNT, because `translateFor` is a plain
+/// interpolator with no ICU support and a per-kind plural would need one.
+enum PersonPushDeferralKind {
+  CHANNEL_MENTION
+  CHANNEL_REPLY
+  DIRECT_MESSAGE
+}

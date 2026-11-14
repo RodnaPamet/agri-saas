@@ -542,6 +542,18 @@
         }
     },
     "notifications": {
+
+        "person": {
+
+            "summary": {
+
+                "title": "New messages",
+
+                "body": "While you were not disturbed — new messages: {count}"
+
+            }
+
+        },
         "title": "Notifications",
         "loading": "Loading notifications...",
         "lowStock": {

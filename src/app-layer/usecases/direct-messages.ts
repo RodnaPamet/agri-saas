@@ -704,6 +704,15 @@ export async function sendDirectMessage(
                 // banner rather than stacking one per message, which is what
                 // makes a short exchange one notification instead of six.
                 collapseKey: `dm-${input.conversationId}`,
+                // The subject in PIECES (#3020), so quiet hours holds this
+                // push with a destination the 06:00 summary can rebuild. The
+                // conversation id, not the message id: a summary opens the
+                // thread, and `readConversation` is keyed by conversation —
+                // the same reason the SSE frame carries the conversation.
+                subject: {
+                    kind: 'DIRECT_MESSAGE',
+                    conversationId: input.conversationId,
+                },
             });
         }
     } catch (err) {

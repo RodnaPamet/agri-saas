@@ -391,6 +391,19 @@ const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map
     // other: a platform-key route runs privileged and would read these rows
     // fine, which is the moderation console the guard is about.
     ['NoticeScore', ['superuser_bypass']],
+    // #3020 — a person-scoped push quiet hours held back, waiting for the
+    // 06:00 summary. Bypass-only, and this one is not a moderation internal:
+    // it is written by a JOB (`person-push-send`) and drained by a JOB
+    // (`person-push-summary`), so no request path reads or writes it and no
+    // `app_user` arm has anything to serve.
+    //
+    // Deliberately NOT given a recipient self-read arm, which is the arm a
+    // reader would expect by analogy with `ContentReport` above. Postgres RLS
+    // is ROW-level, so such an arm would expose every column of the row — and
+    // the thing the subject is entitled to is the PUSH, which they get. An arm
+    // here would be a disclosure surface with no feature behind it, and the
+    // rows say who contacted whom overnight.
+    ['PersonPushDeferral', ['superuser_bypass']],
 ]);
 
 // Models that are GLOBAL REFERENCE DATA and still carry RLS: readable by any
