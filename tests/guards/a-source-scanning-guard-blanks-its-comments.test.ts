@@ -44,7 +44,12 @@
  * conditions and why each is required.
  */
 import { blankNonCode } from '../helpers/blank-non-code';
-import { findSourceTextScanners } from '../helpers/source-text-scanners';
+import {
+    findSourceTextScanners,
+    readsSourceText,
+    routesThroughBlankNonCode,
+} from '../helpers/source-text-scanners';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 /**
  * Guards that still read source text without blanking it (#1774).
@@ -137,11 +142,56 @@ describe('a source-scanning guard blanks its comments (#1774)', () => {
             "const content = readFileSync(abs, 'utf8');",
             "const content = blankNonCode(readFileSync(abs, 'utf8'));",
         );
-        const looksAtRisk = (src: string) =>
-            !src.includes('blankNonCode')
-            && /(\w+)\s*\.\s*includes\(\s*'[^']{4,70}'/.test(blankNonCode(src));
+        // The detector's OWN predicates, imported rather than re-spelled.
+        // This control used to carry a copy (`!src.includes('blankNonCode')`),
+        // which is the pre-#2933 logic: fixing the detector and leaving the
+        // copy would make the cross-check agree with the OLD method and stop
+        // grading the new one.
+        const looksAtRisk = (src: string) => {
+            const code = blankNonCode(src);
+            return (
+                readsSourceText(code)
+                && !routesThroughBlankNonCode(code)
+                && /(\w+)\s*\.\s*includes\(\s*'[^']{4,70}'/.test(code)
+            );
+        };
         expect(looksAtRisk(unblanked)).toBe(true);
         expect(looksAtRisk(blanked)).toBe(false);
+    });
+
+    it('naming the helper in PROSE no longer exempts a guard (#2933)', () => {
+        // The defect itself. The exemption was decided against RAW text, one
+        // line above the blanking, so a docblock explaining why a guard does
+        // NOT use the helper made it invisible — and four guards were exempt
+        // for a reason nobody decided.
+        const prose = `
+            /** Deliberately does not use blankNonCode: its subject is YAML. */
+            import { readFileSync } from 'node:fs';
+            const content = readFileSync(abs, 'utf8');
+            if (content.includes('withApiErrorHandling')) pass();
+        `;
+        const code = blankNonCode(prose);
+        // Still a scanner…
+        expect(readsSourceText(code)).toBe(true);
+        // …and NOT exempt, because the mention was prose and there is no call.
+        expect(routesThroughBlankNonCode(code)).toBe(false);
+        // The pre-fix logic, for contrast: it exempted exactly this file.
+        expect(prose.includes('blankNonCode')).toBe(true);
+    });
+
+    it('the identifier inside a STRING does not exempt either (#2933)', () => {
+        // `blankNonCode` survives blanking inside a string literal, because
+        // the helper keeps strings — so a name-anywhere test would still be
+        // satisfied here. Requiring a CALL is what separates the two.
+        const quoted = `
+            import { readFileSync } from 'node:fs';
+            const WHY = 'we route through blankNonCode elsewhere';
+            const content = readFileSync(abs, 'utf8');
+            if (content.includes('withApiErrorHandling')) pass();
+        `;
+        const code = blankNonCode(quoted);
+        expect(code).toContain('blankNonCode');
+        expect(routesThroughBlankNonCode(code)).toBe(false);
     });
 
     it('a pattern quoted only in a comment is not collected — the dogfooding check', () => {
