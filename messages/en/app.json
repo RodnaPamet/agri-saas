@@ -542,6 +542,18 @@
         }
     },
     "notifications": {
+
+        "person": {
+
+            "summary": {
+
+                "title": "New messages",
+
+                "body": "New overnight: {count}"
+
+            }
+
+        },
         "title": "Notifications",
         "loading": "Loading notifications...",
         "lowStock": {

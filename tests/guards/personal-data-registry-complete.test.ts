@@ -288,6 +288,19 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
             // self-description attached to a random pseudonym, still
             // identifying the person and now unfindable.
             'PersonProfile',
+            // #3020 — a push quiet hours held back, waiting for the 06:00
+            // summary. The same kind of row as `ChannelPostMention` above: an
+            // index that exists solely to address an interruption, so without
+            // the person it addresses nothing.
+            //
+            // It names no second party, which is the criterion. The
+            // destination is kept as a channel, post or conversation id and
+            // never as a sender, so deleting it destroys nobody's record — the
+            // post or message that caused it belongs to its author and is a
+            // different row entirely. Pseudonymising would leave an
+            // undeliverable instruction addressed to a random id, which the
+            // summary would then count for ever.
+            'PersonPushDeferral',
             'UserBlock',
         ]);
     });

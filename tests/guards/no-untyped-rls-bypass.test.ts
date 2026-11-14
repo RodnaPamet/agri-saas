@@ -265,7 +265,24 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // Its own reason rather than borrowing that one: the rule is shared,
         // the READER is not, and `exchange-farm-attribution` in a bypass log
         // would name the wrong surface.
-        expect(callers.length).toBeLessThanOrEqual(10);
+        // 10 -> 11 by #3020: `jobs/person-push-send.ts` writes a
+        // `PersonPushDeferral` row when quiet hours holds a push. The table is
+        // TENANTLESS and its only policy is `superuser_bypass` — nothing on a
+        // request path reads or writes it, by design — so a bypass is the only
+        // way to write it at all, not a shortcut past a policy that would have
+        // allowed it.
+        //
+        // Its own reason (`person-push-deferral`) rather than borrowing the
+        // `person-push-devices` one this file already uses: that bypass reads
+        // a person's PREFERENCES and devices to decide delivery, and this one
+        // WRITES a held notification. Sharing the reason would put a write
+        // under a name that reads as a lookup in the bypass log.
+        // 11 -> 12 by #3020's second half: `jobs/person-push-summary.ts`, the
+        // 06:00 drain. Same table, same reason, a different FILE — the
+        // deferral is written by one job and settled by another, and a single
+        // module doing both would put a write on the request-path side of a
+        // boundary that has no request path.
+        expect(callers.length).toBeLessThanOrEqual(12);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -351,7 +368,20 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // boundary across two modules. The same argument the
         // `person-delivery` entry above makes for keeping a preference read
         // and a device count under one bypass.
-        expect(sites.length).toBeLessThanOrEqual(19);
+        // 19 -> 20 by #3020: ONE site, the `PersonPushDeferral` insert
+        // described above. One row, one statement — there is nothing to group
+        // with it, which is why this moves by exactly one where #3043's file
+        // held two reads under a single bypass.
+        // 20 -> 22 by #3020's second half: TWO sites in
+        // `jobs/person-push-summary.ts` — the read-and-count, and the settle.
+        // They are deliberately not one: the read happens before a delivery
+        // decision that can refuse to send, and folding the settle into it
+        // would stamp rows as handled before anything had decided they were.
+        //
+        // The `User` read in that file is NOT a third site: it goes through
+        // the plain client, as `push-summary` reads the same column, because
+        // `User` carries no `tenantId` for RLS to scope.
+        expect(sites.length).toBeLessThanOrEqual(22);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

@@ -43,6 +43,8 @@ let subscriptionRows: Array<{
  * a mock that accepted anything would hide that.
  */
 const bypassReasons: string[] = [];
+/** Every `PersonPushDeferral` row the job wrote (#3020). */
+const deferralsWritten: Record<string, unknown>[] = [];
 jest.mock('@/lib/db/rls-middleware', () => ({
     __esModule: true,
     runWithoutRls: (opts: { reason: string }, cb: (db: unknown) => unknown) => {
@@ -50,6 +52,16 @@ jest.mock('@/lib/db/rls-middleware', () => ({
         return cb({
             userNotificationPreference: { findMany: async () => preferenceRows },
             pushSubscription: { findMany: async () => subscriptionRows },
+            // #3020's deferral row. Captured rather than discarded, so this
+            // suite can assert WHAT was held and not merely that nothing was
+            // sent — a double that swallowed the write would leave the hold
+            // indistinguishable from the drop it replaced.
+            personPushDeferral: {
+                create: async (args: { data: Record<string, unknown> }) => {
+                    deferralsWritten.push(args.data);
+                    return { id: 'pd-1' };
+                },
+            },
         });
     },
 }));
@@ -65,6 +77,30 @@ jest.mock('@/lib/db/rls-middleware', () => ({
 let recipientFarms: Array<{ slug: string }> = [{ slug: 'zk-pobeda' }];
 /** Who was asked, so "it never asked" is observable rather than inferred. */
 const farmLookups: string[] = [];
+/**
+ * The queue, captured (#3020). Mocked rather than driven because there is no
+ * Redis in a unit suite — and the capture is what lets the hold be asserted:
+ * the `jobId` is the whole mechanism for "one summary per person per night",
+ * since BullMQ refuses a duplicate. Whether it then dedupes is BullMQ's
+ * contract; that the key is STABLE is ours.
+ */
+interface EnqueuedJob {
+    name: string;
+    payload: Record<string, unknown>;
+    options?: Record<string, unknown>;
+}
+const enqueued: EnqueuedJob[] = [];
+jest.mock('@/app-layer/jobs/queue', () => ({
+    __esModule: true,
+    enqueue: async (
+        name: string,
+        payload: Record<string, unknown>,
+        options?: Record<string, unknown>,
+    ) => {
+        enqueued.push({ name, payload, options });
+    },
+}));
+
 jest.mock('@/app-layer/usecases/my-farms', () => ({
     __esModule: true,
     listMyFarms: async (userId: string) => {
@@ -109,6 +145,12 @@ function at(when: Date): void {
 beforeEach(() => {
     jest.clearAllMocks();
     bypassReasons.length = 0;
+    // #3020's captures. Cleared per test for the reason `jest.clearAllMocks`
+    // does not cover them: these are plain arrays, not mocks, so a stale entry
+    // would make the NEXT test's "one row" assertion pass on the previous
+    // test's row.
+    deferralsWritten.length = 0;
+    enqueued.length = 0;
     preferenceRows = [];
     recipientFarms = [{ slug: 'zk-pobeda' }];
     farmLookups.length = 0;
@@ -285,10 +327,16 @@ describe('the deep link names a farm, because every page in this product does', 
         expect(farmLookups).toEqual([]);
     });
 
-    it('does not look a farm up for a push it is not going to send', async () => {
-        // The resolution sits after both delivery gates, so a suppressed push
-        // costs no query. Asserted because the obvious placement — beside the
-        // other destructuring at the top — is one line earlier and wrong.
+    it('does not look a farm up for a push it is HOLDING', async () => {
+        // The resolution sits after both delivery gates, so a held or
+        // suppressed push costs no query. Asserted because the obvious
+        // placement — beside the other destructuring at the top — is one line
+        // earlier and wrong.
+        //
+        // It matters more since #3020 than when it was written: the slug is
+        // resolved for the RECIPIENT at SEND time, and a held push is sent by
+        // a different job hours later, by which time the person's farms may
+        // differ. Resolving here would bake in last night's answer.
         at(ASLEEP);
         await runPersonPushSend(INPUT);
         expect(farmLookups).toEqual([]);
@@ -296,22 +344,41 @@ describe('the deep link names a farm, because every page in this product does', 
 });
 
 describe('the suppressions', () => {
-    it('QUIET HOURS suppress rather than defer, and enqueue no summary', async () => {
-        // #3020. A tenantless event writes no `Notification` row, so a 06:00
-        // summary would have nothing to count — it would wake somebody to tell
-        // them about zero things. The person finds the message when they open
-        // the app; the SSE frame and the REST read are unaffected.
+    it('QUIET HOURS now HOLD rather than drop, writing a row and scheduling one summary', async () => {
+        // Owner ruling 2026-11-14 (#3020). This asserted the opposite until
+        // then — "suppress rather than defer, and enqueue no summary" — and
+        // that was correct while there was nothing to count: a tenantless
+        // event writes no `Notification` row, so a 06:00 summary would have
+        // woken somebody to tell them about zero things.
+        //
+        // `PersonPushDeferral` is what changed the answer. The row is the
+        // count, so the summary has something to say.
         at(ASLEEP);
 
         const r = await runPersonPushSend(INPUT);
 
+        // Still sends nothing NOW — the window is about interruption.
         expect(r).toEqual({ attempted: 0, delivered: 0 });
         expect(webPush).not.toHaveBeenCalled();
         expect(apns).not.toHaveBeenCalled();
-        // The night key is logged, because that count is the evidence #3020
-        // asks for before anybody decides what to build.
+
+        // HELD: one row, carrying the subject in pieces so the summary can
+        // rebuild a destination rather than replay a stored path.
+        expect(deferralsWritten).toHaveLength(1);
+        expect(deferralsWritten[0]).toMatchObject({
+            recipientUserId: INPUT.recipientUserId,
+            nightKey: expect.any(String),
+        });
+
+        // ONE summary, scheduled forward, keyed so a second mention of the
+        // same night cannot schedule a second.
+        const summaries = enqueued.filter((c) => c.name === 'person-push-summary');
+        expect(summaries).toHaveLength(1);
+        expect(summaries[0]!.options?.jobId)
+            .toBe(`person-push-summary:${INPUT.recipientUserId}:${deferralsWritten[0]!.nightKey}`);
+
         expect(info).toHaveBeenCalledWith(
-            'person-push.suppressed',
+            'person-push.deferred',
             expect.objectContaining({ reason: 'quiet-hours', nightKey: expect.any(String) }),
         );
     });

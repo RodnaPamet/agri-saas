@@ -542,6 +542,18 @@
         }
     },
     "notifications": {
+
+        "person": {
+
+            "summary": {
+
+                "title": "Нови съобщения",
+
+                "body": "Нови през нощта: {count}"
+
+            }
+
+        },
         "title": "Известия",
         "loading": "Зареждане на известия...",
         "lowStock": {

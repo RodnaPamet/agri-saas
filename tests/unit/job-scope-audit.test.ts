@@ -165,6 +165,12 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // also a NARROWER claim than the job makes: the sweep is every
             // channel on the platform, and charging one arbitrary farm for
             // platform moderation work is the `notice-score` reason exactly.
+            // person-push-summary (#3020) is the 06:00 drain for the pushes
+            // quiet hours held back from a PERSON. Person-scoped for its
+            // producer's reason exactly: the rows it reads carry no tenant,
+            // because `PersonPushDeferral` has none — a channel mention and a
+            // direct message belong to somebody who may have no farm or
+            // several.
             // person-push-send (#2987) delivers a channel mention, a channel
             // reply or a direct message to one person's devices. Tenantless
             // for the strongest reason on this list: the subject has no farm,
@@ -178,7 +184,7 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // may hold a row under only one of them. The axis this job scopes
             // by is the RECIPIENT, and every query under `person-push-devices`
             // filters userId to that one person.
-            if (['person-push-send', 'channel-auto-hide', 'usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
+            if (['person-push-send', 'person-push-summary', 'channel-auto-hide', 'usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {
