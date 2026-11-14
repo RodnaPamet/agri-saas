@@ -494,6 +494,76 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'get',
+        path: '/api/social/activity',
+        operationId: 'readMyActivity',
+        summary: '«За Вас» — replies to your posts and mentions of you',
+        description:
+            'What happened to the caller across every channel (P9.7). Newest '
+            + 'first, paged on `before`.\n\n'
+            + 'ONE query rather than a merge: both halves are `ChannelPost` rows — '
+            + 'a mention is a post that names you, a reply is a post whose parent '
+            + 'is yours — so this is a single OR over one table with the table\'s '
+            + 'own ordering. `GET /api/social/inbox` merges because a direct '
+            + 'message and an exchange thread live in different tables, and it '
+            + 'pays for that with a hand-written total order; there is nothing to '
+            + 'merge here.\n\n'
+            + '`reason` is a DESCRIPTOR and never a sentence, because the item is '
+            + 'produced where the reader\'s language is not yet known. A post that '
+            + 'both mentions you AND replies to yours reports `mention`, which is '
+            + 'the more specific description — and the same precedence the '
+            + 'notification applies, so the two cannot disagree about what an '
+            + 'event was.\n\n'
+            + 'Your OWN posts never appear: replying to yourself is not something '
+            + 'that happened to you.\n\n'
+            + 'A post from somebody who has BLOCKED you still appears. #3065 '
+            + 'stopped a blocked person from interrupting the blocker — no push, '
+            + 'no SSE frame — and did not make their posts invisible. This is a '
+            + 'PULL surface, so it is governed by visibility rather than contact, '
+            + 'and the post is readable in the channel feed either way.',
+        tags: TAGS,
+        query: z.object({
+            limit: z.string().optional().openapi({
+                description: 'Positive integer, clamped to 100. Default 50.',
+            }),
+            before: z.string().optional().openapi({
+                description:
+                    'ISO timestamp from the previous page\'s OLDEST item. An '
+                    + 'unparseable value is a 400 (`INVALID_CURSOR`), never ignored: '
+                    + 'ignoring returns page one, which a paging client reads as the '
+                    + 'end and then as duplicates.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_LIMIT or INVALID_CURSOR.',
+            404: 'The flag is off.',
+        }),
+        success: {
+            status: 200,
+            description: 'One page of activity, newest first.',
+            schema: z.object({
+                items: z.array(z.object({
+                    post: ChannelPostSchema,
+                    channelId: z.string(),
+                    channelNameBg: z.string(),
+                    channelNameEn: z.string(),
+                    reason: z.enum(['mention', 'reply']).openapi({
+                        description:
+                            'Why this concerns the caller. A descriptor, not copy — '
+                            + 'the reader composes the sentence.',
+                    }),
+                    parentPostId: z.string().nullable().openapi({
+                        description:
+                            'Set when the item is a reply, so a client can open the '
+                            + 'thread rather than the reply on its own.',
+                    }),
+                })),
+                hasMore: z.boolean(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
         path: '/api/social/channel-posts/{postId}',
         operationId: 'readChannelPost',
         summary: 'One post, by its own id — the permalink read',

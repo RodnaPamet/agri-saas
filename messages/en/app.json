@@ -1,5 +1,6 @@
 {
     "sidebarNav": {
+        "forYou": "For you",
         "library": "Inspiration",
         "board": "Board",
         "sectionGovern": "Govern",
@@ -6761,6 +6762,36 @@
         "signOut": "Sign out"
     },
     "channels": {
+
+
+        "forYou": {
+
+
+            "title": "For you",
+
+
+            "breadcrumbCurrent": "For you",
+
+
+            "empty": "Replies to your posts and mentions of you will appear here.",
+
+
+            "loadError": "This could not be loaded.",
+
+
+            "loadOlder": "Show older",
+
+
+            "reasonMention": "Mentioned you",
+
+
+            "reasonReply": "Replied to you",
+
+
+            "inChannel": "in {channel}"
+
+
+        },
 
         "card": {
 

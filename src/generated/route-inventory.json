@@ -606,6 +606,11 @@
       "documented": false
     },
     {
+      "path": "/api/social/activity",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/blocks",
       "status": "live",
       "documented": true

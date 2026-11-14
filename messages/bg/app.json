@@ -1,5 +1,6 @@
 {
     "sidebarNav": {
+        "forYou": "За Вас",
         "library": "Вдъхновение",
         "board": "Табло",
         "sectionGovern": "Стопанство",
@@ -6761,6 +6762,36 @@
         "signOut": "Изход"
     },
     "channels": {
+
+
+        "forYou": {
+
+
+            "title": "За Вас",
+
+
+            "breadcrumbCurrent": "За Вас",
+
+
+            "empty": "Тук ще се появяват отговорите на Вашите публикации и когато Ви споменат.",
+
+
+            "loadError": "Съдържанието не можа да бъде заредено.",
+
+
+            "loadOlder": "Покажи по-стари",
+
+
+            "reasonMention": "Споменаха Ви",
+
+
+            "reasonReply": "Отговориха Ви",
+
+
+            "inChannel": "в {channel}"
+
+
+        },
 
         "card": {
 
