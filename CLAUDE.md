@@ -4138,9 +4138,30 @@ displaces something AND needs a coordinated agrent-ios change (#2942).
 **THE NAV ITEM IS GATED ON A FEATURE FLAG, AND ITS POLARITY IS INVERTED
 AGAINST EVERY NEIGHBOUR.** Each other `visible:` in `useNavSections()` reads
 `tenant.availableModules` and degrades to "available" when absent;
-`channelsEnabled` degrades to HIDDEN. `social.channels` is default-OFF, so for
-most tenants the surface answers 404, and a nav item leading to a 404 is worse
-than an absent one. Flags are server-only by design — there is no client-side
+`channelsEnabled` degrades to HIDDEN. `social.channels` is default-OFF — the
+COLUMN default is false — and a nav item leading to a 404 is worse than an
+absent one, which is what the inverted polarity buys.
+
+**The production ROW is a different fact, and it is ON.** Measured on
+`agrent_production` 2026-11-14: `enabled = t`, zero cohorts, since 2026-11-13,
+so channels are live for everyone and 43 channels are seeded. This paragraph
+read "default-OFF, so for most tenants the surface answers 404" until then, and
+the second half had been false since the owner flipped the row — a sentence
+whose two halves are different claims, one about a schema default and one about
+runtime configuration, joined by a "so" that stopped holding.
+
+It misled this session into telling the agrent-ios session to check the flag
+before suspecting the contract, which would have sent them looking in exactly
+the wrong place; they held a contradicting fact and said so, which is the only
+thing that could have caught it. **No test can catch prose about runtime
+state.** So when you cite a flag's VALUE rather than its default, read the row:
+
+```
+SELECT key, enabled, cardinality(cohorts) FROM "FeatureFlag" WHERE key = '…';
+```
+
+The default and the row are independent, and only the default is in the
+repository. Flags are server-only by design — there is no client-side
 flags hook, and adding one would be a second source of truth for a kill switch
 (P5.3) — so the layout resolves it with `isFeatureEnabled` inside its existing
 `Promise.all` and carries it on `TenantProvider`, exactly as
