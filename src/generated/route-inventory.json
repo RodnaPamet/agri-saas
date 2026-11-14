@@ -611,6 +611,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/channel-posts/{postId}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/channel-posts/{postId}/attachment",
       "status": "live",
       "documented": true

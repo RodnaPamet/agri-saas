@@ -3892,19 +3892,42 @@ and looked exactly like a working one. Nothing failed: a missing notification is
 not a route, no copy was absent because none is composed, and the behavioural
 suites asserted that the ROW was written, which was true.
 
-**It is wired now, and the LIMIT is worth reading before relying on it.**
+**It is wired now, on BOTH transports, and the link has a destination.**
 `queueChannelActivityNotify` publishes on a fourth bus address,
 `channel-activity:<userId>`, for every mention and every reply — honouring
 `mutedAt` in `reachableTargets`, which is also what makes that column mean
-something. That is an SSE event: a person with the app OPEN is told at once, a
-person with it closed learns nothing until they open it. Every push transport
-in this repo is tenant-scoped end to end (`PushSubscription.tenantId` is NOT
-NULL, `sendApnsToUser` binds RLS through `runInTenantContext`,
-`UserNotificationPreference` is per (user, farm)) and a channel has no farm, so
-a background push needs a person-scoped transport that does not exist yet. A
-direct message is in exactly the same position and equally silent; #2987 carries
-the remainder. **`mutedAt` also still has no WRITER** — #2990 owns the mute
-control and the read cursor together.
+something — and it enqueues `person-push-send`, so a person with the app CLOSED
+is told as well. `direct-messages.ts` enqueues the same job; the two are the
+only producers.
+
+Three sentences that stood here are retired rather than deleted, because each
+was true when written and the dates are the point. *"A background push needs a
+person-scoped transport that does not exist yet"* — #2987 built it: every other
+push transport in this repo is tenant-scoped end to end
+(`PushSubscription.tenantId` is NOT NULL, `sendApnsToUser` binds RLS through
+`runInTenantContext`, `UserNotificationPreference` is per (user, farm)), and a
+channel has no farm, so the job resolves a farm for the RECIPIENT and composes
+the link. *"A direct message is in exactly the same position and equally
+silent"* — it is not, since the same change. *"`mutedAt` still has no
+WRITER"* — #3042's `setChannelMuted` is it, which is what makes honouring the
+column above more than a gesture.
+
+**The push link is the five-segment permalink, since #3030.** It carried
+`/channels/{channelId}?post={postId}` until then, which resolved on the web to
+the top of a channel feed that ignored the parameter — so a farmer tapping a
+notification about their own mention arrived at a search. The page landed
+BEFORE the link changed, and in that order deliberately:
+`person-push-link-resolves` grades every notification destination against the
+real `(app)` page routes, so it refused the longer path for as long as nothing
+served it.
+
+**This paragraph was stale for two of its three claims, and the PRs that
+invalidated them were mine.** #2987 and #3042 each shipped the mechanism whose
+absence a sentence here asserted, and neither updated this file — so for two
+days the operating manual said a mute control would do nothing and a closed app
+would hear nothing, both of which had been built. It is corrected by #3030,
+which is one PR too late. The rule at the top of "Implementation notes" is the
+rule: a PR that invalidates a claim here updates it in the SAME diff.
 
 **Three removal columns, not one.** `removedByModerationAt` (a human decision,
 reversed by #2867's restore route), `autoHiddenAt` (P9.3's threshold, reversed by

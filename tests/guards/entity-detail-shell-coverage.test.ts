@@ -197,6 +197,20 @@ describe("EntityDetailLayout adoption — PR-4", () => {
       // above and for the same reason: the shell would fight the layout
       // rather than carry it.
       "src/app/t/[tenantSlug]/(app)/exchange/threads/dm/[conversationId]/page.tsx",
+      // A channel post's PERMALINK (#3030) — the same call as the DM
+      // conversation above, and for the same reason. It renders
+      // `MessageTimeline` in a full-height flex column; `EntityDetailLayout`
+      // is back-link + title + meta + actions + tabs over a scrolling body,
+      // and the shell would fight the scroll container rather than carry it.
+      //
+      // KNOWN_NON_PRIMARY_DETAIL rather than WAVE_2_DEFERRED deliberately:
+      // that list means "will migrate later" and is capped so it SHRINKS,
+      // and this page is never going to adopt the shell. (The channel feed
+      // page sits in WAVE_2_DEFERRED with a reason that reads exactly like
+      // this one — worth moving when somebody is next in that file, since it
+      // will not graduate either and permanently occupies a slot in a list
+      // designed to empty.)
+      "src/app/t/[tenantSlug]/(app)/channels/[channelId]/posts/[postId]/page.tsx",
     ]);
 
     function walk(dir: string, out: string[] = []): string[] {

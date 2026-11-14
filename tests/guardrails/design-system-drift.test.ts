@@ -502,6 +502,26 @@ describe('New page token discipline', () => {
         // `pages-are-reachable`'s `DELIBERATELY_UNLINKED` names the condition —
         // when the web gets a fleet surface, the alert points there and this
         // page goes.
+        // 97 → 99 (+2, #3030): the channel-post permalink —
+        // `channels/[channelId]/posts/[postId]/page.tsx` +
+        // `PostPermalinkClient.tsx`. A genuinely new route, so it enters the
+        // tally the way every unpromoted route above does, and the +2 is the
+        // #1587 shape exactly (a page and its client are two page-ish files).
+        //
+        // Not drift, checked rather than asserted: no raw colour scale in
+        // either file, and the className vocabulary is the one the feed client
+        // beside it already uses — `text-content-muted`, `space-y-tight`,
+        // `pb-default`/`pt-default`, plus layout utilities.
+        //
+        // Deliberately NOT promoted to MIGRATED_PAGES, for the reason the
+        // `/machines/[assetId]` note above gives: that list is what a reader
+        // consults to see what "migrated" means, and promoting a page to dodge
+        // a +2 puts a mislabel in it. This page is a thin reader over
+        // `MessageTimeline` and has no EntityListPage/EntityDetailLayout shape
+        // to adopt.
+        //
+        // MEASURED from the failing assertion (99), not computed as 97+2 — a
+        // shared ratchet stays honest only if the number comes from the run.
         // THE DENOMINATOR, BEFORE THE CAP — #2377.
         //
         // `unmigrated` derives from `allPages`, so a walk that found nothing
@@ -518,11 +538,11 @@ describe('New page token discipline', () => {
         // does not move it, and far above zero so an emptied walk fails.
         console.log(
             `[design-system-drift] ${allPages.length} page-ish file(s) under the tenant tree, `
-                + `${unmigrated.length} unmigrated (cap 97)`,
+                + `${unmigrated.length} unmigrated (cap 99)`,
         );
         expect(allPages.length).toBeGreaterThanOrEqual(80);
 
-        expect(unmigrated.length).toBeLessThanOrEqual(97);
+        expect(unmigrated.length).toBeLessThanOrEqual(99);
     });
 
     it('migrated page count is at least 4', () => {

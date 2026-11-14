@@ -473,6 +473,52 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'get',
+        path: '/api/social/channel-posts/{postId}',
+        operationId: 'readChannelPost',
+        summary: 'One post, by its own id — the permalink read',
+        description:
+            'Added by #3030 for the permalink page, and it did not already exist: the '
+            + 'feed returns TOP-LEVEL posts for a channel and `…/replies` reads the '
+            + 'parent only to VALIDATE it, returning the replies alone. Nothing returned '
+            + 'a single post, which is exactly what a permalink is.\n\n'
+            + 'A REMOVED post answers 200 with the collapse applied — present, empty '
+            + 'body, no author — rather than 404. The link may be sitting in somebody\'s '
+            + 'push notification from before the removal, and "that never existed" is a '
+            + 'different statement from "that is gone". The row\'s existence is not the '
+            + 'secret; its content is, and the collapse is what withholds it.\n\n'
+            + 'A REPLY is readable by its own id, unlike `…/replies`, which refuses a '
+            + 'reply as a parent because threads are one level deep. A push for a reply '
+            + 'names the REPLY, so a permalink to one is a legitimate thing to hold, and '
+            + '`parentPostId` is returned so a client can offer the parent for context.\n\n'
+            + 'Readable by a NON-MEMBER, exactly as the feed and the thread are: '
+            + '`channel_post_select` admits any authenticated caller. That is also why a '
+            + 'null row is reported as NOT FOUND rather than forbidden — it is a genuinely '
+            + 'absent row, never a policy refusal.\n\n'
+            + 'No ETag, unlike the library reads: a post\'s reply count and its removal '
+            + 'state both change, and a channel is the surface a farmer refreshes rather '
+            + 'than one they carry offline.',
+        tags: TAGS,
+        extraResponses: codedErrorResponses({
+            404: 'CHANNEL_POST_NOT_FOUND — no such post, or the flag is off.',
+        }),
+        success: {
+            status: 200,
+            description:
+                'The post, the channel it belongs to, and its parent when it is a reply.',
+            schema: z.object({
+                post: ChannelPostSchema,
+                channelId: z.string(),
+                parentPostId: z.string().nullable().openapi({
+                    description:
+                        'NULL for a top-level post. Set when the permalink names a reply, '
+                        + 'which is the only thing a client can link UP by.',
+                }),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
         path: '/api/social/channel-posts/{postId}/replies',
         operationId: 'readChannelPostReplies',
         summary: 'A page of one post\'s replies',
