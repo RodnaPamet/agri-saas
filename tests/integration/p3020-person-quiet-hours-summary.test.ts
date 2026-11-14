@@ -278,7 +278,7 @@ describeFn('#3020 — a held person push becomes one 06:00 summary', () => {
             // pieces rather than replayed from a stored path.
             expect(sends[0]!.farmRelativePath).toBe('/channels/ch-9/posts/po-9');
             // The RECIPIENT's language — `uiLanguage: 'bg'`.
-            expect(String(sends[0]!.body)).toContain('нови съобщения: 1');
+            expect(String(sends[0]!.body)).toContain('Нови през нощта: 1');
 
             // Settled, so tomorrow does not re-summarise it.
             expect(await prisma.personPushDeferral.count({
@@ -298,7 +298,7 @@ describeFn('#3020 — a held person push becomes one 06:00 summary', () => {
             expect(sends).toHaveLength(1);
             // The owner's rule: no destination is invented for a mixed night.
             expect(sends[0]!.farmRelativePath).toBeNull();
-            expect(String(sends[0]!.body)).toContain('нови съобщения: 2');
+            expect(String(sends[0]!.body)).toContain('Нови през нощта: 2');
         }, 60_000);
 
         it('links to the conversation when the one item is a direct message', async () => {

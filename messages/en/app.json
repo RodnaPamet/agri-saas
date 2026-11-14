@@ -549,7 +549,7 @@
 
                 "title": "New messages",
 
-                "body": "While you were not disturbed — new messages: {count}"
+                "body": "New overnight: {count}"
 
             }
 
