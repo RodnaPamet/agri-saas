@@ -539,6 +539,19 @@ export interface ChannelPostAttachmentView {
     readonly durationMs: number | null;
 }
 
+/**
+ * A machine-written card's data, for the reader to compose (P9.4, #2938).
+ *
+ * `payload` is deliberately `unknown`-ish rather than a union of the four card
+ * shapes: the kinds are added one phase at a time, and a union here would make
+ * every future kind a breaking change to this type for every consumer. The
+ * CLIENT narrows on `kind`, which is the discriminator.
+ */
+export interface ChannelCardView {
+    readonly kind: string;
+    readonly payload: Record<string, unknown> | null;
+}
+
 export interface ChannelPostView {
     readonly id: string;
     readonly authorUserId: string;
@@ -566,6 +579,24 @@ export interface ChannelPostView {
     readonly resolvedAt: Date | null;
     /** P9.6 — null when the post is text only, or when it is hidden. */
     readonly attachment: ChannelPostAttachmentView | null;
+    /**
+     * P9.4 — the card, or null for a post somebody wrote (#2938).
+     *
+     * Returned TOGETHER with its payload rather than as a bare `cardKind`,
+     * and that is deliberate: the payload is the only thing that makes a card
+     * renderable, so exposing the kind alone would leave `cardPayloadJson` a
+     * column nothing reads. #2961 is what that costs — `resolvedAt` was
+     * written from P9.3b and returned by no read path, so the state the
+     * roadmap named was unobservable through the API.
+     *
+     * The FACTS only. The framing copy is the reader's, from
+     * `channels.card.*`, because one channel is read in both languages.
+     *
+     * Null on a HIDDEN card for the same reason the body is emptied: a card
+     * taken down by moderation must not serve its headline through a
+     * different field.
+     */
+    readonly card: ChannelCardView | null;
     /**
      * How many replies hang off this post (#2961).
      *
@@ -783,6 +814,7 @@ const POST_VIEW_SELECT = {
     resolvedAt: true,
     attachmentKey: true, attachmentMime: true,
     attachmentBytes: true, attachmentDurationMs: true,
+    cardKind: true, cardPayloadJson: true,
     _count: { select: { replies: true } },
 } as const;
 
@@ -816,6 +848,14 @@ function toPostView(
         attachmentMime?: string | null;
         attachmentBytes?: number | null;
         attachmentDurationMs?: number | null;
+        // OPTIONAL, like the attachment fields above, so a caller selecting a
+        // narrower shape still typechecks — which is exactly the hazard
+        // `POST_VIEW_SELECT` exists to remove. A hand-written select that
+        // omitted these would compile and yield `card: null` for every card;
+        // the constant is what makes that unrepresentable, and this type
+        // deliberately does not pretend to be the second line of defence.
+        cardKind?: unknown;
+        cardPayloadJson?: unknown;
         _count: { replies: number };
     },
     authors: AuthorBook,
@@ -850,6 +890,22 @@ function toPostView(
                       durationMs: r.attachmentDurationMs ?? null,
                   },
         resolvedAt: r.resolvedAt,
+        /*
+         * A HIDDEN CARD CARRIES NO PAYLOAD, which is the same collapse as the
+         * blanked body and the suppressed attachment — a card taken down by
+         * moderation must not serve its headline through a different field.
+         *
+         * Part of this one function on purpose: three fields now withhold
+         * content for one state, and a reader sees one rule rather than three
+         * that can drift apart.
+         */
+        card:
+            hidden || r.cardKind == null
+                ? null
+                : {
+                      kind: String(r.cardKind),
+                      payload: (r.cardPayloadJson ?? null) as Record<string, unknown> | null,
+                  },
         replyCount: r._count.replies,
         // Suppressed on a hidden post — see the field's docblock. Written as
         // part of the SAME collapse as the empty body, so the two cannot

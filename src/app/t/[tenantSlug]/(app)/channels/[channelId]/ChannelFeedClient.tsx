@@ -69,6 +69,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Heading } from '@/components/ui/typography';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { makeAuthorLabel } from '@/lib/channels/author-label';
+import { composeCardText, type CardCopy } from '@/lib/channels/card-text';
 
 import { DisplayNamePrompt } from './DisplayNamePrompt';
 
@@ -88,6 +89,15 @@ interface PostWire {
     deleted: boolean;
     resolvedAt: string | null;
     replyCount: number;
+    /**
+     * P9.4's machine-written card, or null for a post somebody wrote.
+     *
+     * The FACTS only — the framing copy is composed here, from
+     * `channels.card.*`, because one channel is read in both languages and a
+     * sentence composed when the card was generated would pick a language for
+     * every future reader.
+     */
+    card: { kind: string; payload: Record<string, unknown> | null } | null;
 }
 
 interface FeedWire {
@@ -122,6 +132,15 @@ export function ChannelFeedClient({
         [t],
     );
     const locale = useLocale();
+    // Bound ONCE: `t` is stable for a locale, and rebuilding this inside the
+    // mapping would make a new object per render for no reason.
+    const cardCopy: CardCopy = React.useMemo(
+        () => ({
+            newsHeading: t('card.news.heading'),
+            newsSource: (vars) => t('card.news.source', vars),
+        }),
+        [t],
+    );
 
     // LITERAL person-scoped paths — channel policies key on `app.user_id`.
     const feedPath = `/api/social/channels/${encodeURIComponent(channelId)}`;
@@ -213,6 +232,27 @@ export function ChannelFeedClient({
         pendingAnchor.current = null;
     }, [older]);
 
+    /**
+     * A card's label and body, or a person's author line.
+     *
+     * Composed HERE and not on the server: the server sends facts, the reader
+     * picks the language. `composeCardText` is shared with any other surface
+     * that renders a card so the two cannot word it differently.
+     */
+    const cardOrAuthor = React.useCallback(
+        (p: PostWire): { senderLabel: string | null; body: string } => {
+            if (!p.card) return { senderLabel: authorLabel(p.author), body: p.body };
+            const composed = composeCardText(p.card, cardCopy);
+            // An UNKNOWN card kind falls back to the body the server sent,
+            // which is the headline as plain text. A client one release behind
+            // the server must render something a person can read rather than
+            // an empty bubble — the `StreamEventKind` rule, where an unknown
+            // value is visibly ignored instead of silently dropped.
+            return composed ?? { senderLabel: null, body: p.body };
+        },
+        [authorLabel, cardCopy],
+    );
+
     const messages: TimelineMessage[] = React.useMemo(() => {
         const newestFirst = [
             ...(data?.posts ?? []),
@@ -228,7 +268,6 @@ export function ChannelFeedClient({
             .map((p) => ({
                 id: p.id,
                 senderUserId: p.authorUserId,
-                body: p.body,
                 createdAt: p.createdAt,
                 // The BOOLEAN, not a fabricated date. A channel post has no
                 // deletion timestamp: the three removal columns are collapsed
@@ -237,9 +276,16 @@ export function ChannelFeedClient({
                 // PER MESSAGE, not per sender — one person can have posted
                 // here as two farms, and the farm was recorded at write time
                 // precisely so the older post keeps the older farm.
-                senderLabel: authorLabel(p.author),
+                //
+                // A CARD has no author line: it is the platform's, not a
+                // person's, so the heading takes that slot. `author` is
+                // already null on it from the server (no `PersonProfile`, no
+                // `authorTenantId`), so this is the label the reader sees
+                // rather than an override of one.
+                ...cardOrAuthor(p),
             }));
-    }, [data, older, sameChannel, authorLabel]);
+    }, [data, older, sameChannel, cardOrAuthor]);
+
 
     const canPost = channel?.joined === true && channel?.banned !== true;
 

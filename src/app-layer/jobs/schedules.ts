@@ -170,6 +170,28 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * notification sweeps, so a long erasure transaction is not competing
          * with them for the 12-connection pool.
          */
+        /*
+         * P9.4's cards (#2938), daily.
+         *
+         * 03:00 UTC, deliberately BEFORE the 03:45-04:30 retention chain: this
+         * is a short read-and-insert rather than a long transaction, so
+         * queueing it behind those sweeps would delay the one job whose output
+         * a person is meant to SEE that morning.
+         *
+         * A UTC cron rather than a zone-resolved instant, which is the
+         * opposite of the choice #3020 made for the 06:00 summary — and the
+         * difference is what the time MEANS. There, 06:00 is a promise to the
+         * recipient, so DST drift would break it. Here the hour is only "early
+         * enough to be there before anybody looks", and an hour of seasonal
+         * drift changes nothing a reader could notice. The DAY is resolved in
+         * `Europe/Sofia` inside the job, which is the part that must not drift.
+         */
+        name: 'channel-cards',
+        pattern: '0 3 * * *',
+        description: 'Generate the day\'s channel cards (#2938)',
+        defaultPayload: {},
+    },
+    {
         name: 'account-erasure-sweep',
         pattern: '15 4 * * *',
         description: 'Pseudonymise accounts 30 days after a deletion request (#1597)',

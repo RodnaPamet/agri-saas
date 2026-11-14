@@ -75,15 +75,56 @@ export function isSystemUserEmail(email: string): boolean {
 const cache = new Map<string, string>();
 
 /**
+ * `system+platform@jobs.invalid` — the PLATFORM's own actor, for a row that
+ * belongs to no farm (#2938).
+ *
+ * A channel card is written by the platform, not by a tenant: a channel has no
+ * `tenantId` at all, and attributing a card to `system+<someTenant>` would make
+ * platform content read as one farm's. So this is a scope beside the per-tenant
+ * rows rather than a thirteenth tenant.
+ *
+ * Note the CACHE below is keyed by EMAIL and not by tenant id, which this
+ * addition is the reason for. Keyed by id, a tenant whose id were literally
+ * `platform` would share this row — the `notification-bus` lesson, where
+ * `notif:person:<id>` was spelled `person:<id>` precisely so an impostor
+ * receives nothing rather than something. An email is unique by construction,
+ * so the collision is not merely unlikely, it is unrepresentable.
+ */
+export const PLATFORM_SYSTEM_EMAIL = `system+platform@${SYSTEM_EMAIL_DOMAIN}`;
+
+/**
  * The system user's id for `tenantId`, creating the row on first use.
  *
  * Call this OUTSIDE any tenant transaction — see the module docblock.
  */
 export async function resolveSystemUserId(tenantId: string): Promise<string> {
-    const hit = cache.get(tenantId);
+    return resolveByEmail(systemUserEmail(tenantId), { tenantId });
+}
+
+/**
+ * The PLATFORM's system user id, creating the row on first use.
+ *
+ * For a row that belongs to no farm — a P9.4 channel card. Same mechanism,
+ * same reserved domain, same rotation-safe lookup; a different address.
+ */
+export async function resolvePlatformSystemUserId(): Promise<string> {
+    return resolveByEmail(PLATFORM_SYSTEM_EMAIL, { scope: 'platform' });
+}
+
+/**
+ * The lookup and the create, shared by both scopes.
+ *
+ * Extracted rather than duplicated: the CANDIDATES comment below is a
+ * correctness argument about key rotation, and a second copy of this function
+ * would be a second place for it to go stale.
+ */
+async function resolveByEmail(
+    email: string,
+    logFields: Record<string, string>,
+): Promise<string> {
+    const hit = cache.get(email);
     if (hit) return hit;
 
-    const email = systemUserEmail(tenantId);
     /*
      * CANDIDATES, not `hashForLookup` — and this is a correctness fix the
      * `lookup-hash-call-sites-registered` guard caught before it shipped.
@@ -108,7 +149,7 @@ export async function resolveSystemUserId(tenantId: string): Promise<string> {
         select: { id: true },
     });
     if (existing) {
-        cache.set(tenantId, existing.id);
+        cache.set(email, existing.id);
         return existing.id;
     }
 
@@ -127,11 +168,11 @@ export async function resolveSystemUserId(tenantId: string): Promise<string> {
 
     logger.info('system-user.created', {
         component: 'system-user',
-        tenantId,
+        ...logFields,
         userId: created.id,
     });
 
-    cache.set(tenantId, created.id);
+    cache.set(email, created.id);
     return created.id;
 }
 

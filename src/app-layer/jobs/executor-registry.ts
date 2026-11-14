@@ -684,6 +684,29 @@ executorRegistry.register('unverified-account-sweep', async (payload) => {
     );
 });
 
+// ── channel-cards ───────────────────────────────────────────────────
+//
+// P9.4's daily card generation (#2938). Carries NO `tenantId`: a channel has
+// none, so `job-scope-audit` records it as person/platform-scoped rather than
+// as a job that forgot one.
+
+executorRegistry.register('channel-cards', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runChannelCards } = await import('./channel-cards');
+    const r = await runChannelCards();
+    // scanned = channels considered for the one kind that exists today,
+    // actioned = cards inserted, skipped = the difference. The PER-KIND
+    // arithmetic is in the job's own log line, because a single triple cannot
+    // say which kind was dormant — which is the whole point of the reading.
+    const news = r.byKind.NEWS;
+    return makeResult(
+        'channel-cards', startedAt, startMs,
+        news?.channels ?? 0, r.cards, (news?.channels ?? 0) - r.cards,
+        { cards: r.cards, byKind: r.byKind },
+    );
+});
+
 // ── exchange-expiry-sweep ───────────────────────────────────────────
 
 executorRegistry.register('exchange-expiry-sweep', async (payload) => {

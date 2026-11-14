@@ -108,6 +108,27 @@ const ChannelPostSchema = z
                 + 'a reader which one it was would disclose a moderation action to a third '
                 + 'party.',
         }),
+        card: z.object({
+            kind: z.string().openapi({
+                description:
+                    'NEWS, LISTING, SCHEME or EVENT. The discriminator a client '
+                    + 'narrows `payload` on.',
+            }),
+            payload: z.record(z.string(), z.unknown()).nullable().openapi({
+                description:
+                    'The card\'s FACTS, locale-independent — a NEWS card carries '
+                    + '`{ tag, title, url, source, publishedAt }`. The framing copy is '
+                    + 'the reader\'s, from `channels.card.*`, because one channel is '
+                    + 'read in both languages and a sentence composed at generation '
+                    + 'time would pick a language for every future reader.',
+            }),
+        }).nullable().openapi({
+            description:
+                'The machine-written card (P9.4), or null for a post somebody wrote. '
+                + 'NULL on a hidden card too, which is the same collapse as the emptied '
+                + 'body: a card taken down by moderation must not serve its headline '
+                + 'through a different field.',
+        }),
         resolvedAt: z.string().datetime({ offset: true }).nullable().openapi({
             description:
                 'When a «Въпрос» was marked «Решено», else null — always null on a `POST` '

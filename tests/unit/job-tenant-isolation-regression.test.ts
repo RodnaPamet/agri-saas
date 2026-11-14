@@ -295,7 +295,11 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // person. Same reason as its producer above: `PersonPushDeferral` has
         // no tenant column, so there is no tenantId to propagate and a
         // resolved one would be invented.
-        'person-push-summary'];
+        'person-push-summary',
+        // #2938 — P9.4's daily card generation. A channel is tenantless by
+        // design, so this job ranges over every farm's shared surfaces and
+        // has no tenant axis to scope.
+        'channel-cards'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -421,6 +425,10 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // for cardinality, so a tenantId on this payload would name an axis
         // the data does not have.
         'ZeroSuccessRouteCheckPayload',
+        // #2938 — P9.4's card generation takes no arguments at all: the run
+        // derives its own day in `Europe/Sofia` and ranges over every
+        // non-archived channel, none of which has a tenant.
+        'ChannelCardsPayload',
         // #3020 — the 06:00 summary's payload: a recipient and the night key
         // that scheduled it. No tenantId for its producer's reason, and the
         // night key is the SCHEDULING identity rather than a scope — the job

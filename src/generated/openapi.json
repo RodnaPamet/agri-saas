@@ -3473,6 +3473,31 @@
             "type": "boolean",
             "description": "True for an author retraction, a moderator removal OR an auto-hide. The three are separate columns and are deliberately COLLAPSED here: telling a reader which one it was would disclose a moderation action to a third party."
           },
+          "card": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "NEWS, LISTING, SCHEME or EVENT. The discriminator a client narrows `payload` on."
+              },
+              "payload": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": {},
+                "description": "The card's FACTS, locale-independent — a NEWS card carries `{ tag, title, url, source, publishedAt }`. The framing copy is the reader's, from `channels.card.*`, because one channel is read in both languages and a sentence composed at generation time would pick a language for every future reader."
+              }
+            },
+            "required": [
+              "kind",
+              "payload"
+            ],
+            "description": "The machine-written card (P9.4), or null for a post somebody wrote. NULL on a hidden card too, which is the same collapse as the emptied body: a card taken down by moderation must not serve its headline through a different field."
+          },
           "resolvedAt": {
             "type": [
               "string",
@@ -3525,6 +3550,7 @@
           "kind",
           "createdAt",
           "deleted",
+          "card",
           "resolvedAt",
           "author",
           "replyCount"

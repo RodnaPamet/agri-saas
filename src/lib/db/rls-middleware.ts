@@ -102,6 +102,7 @@ export type RlsBypassReason =
      * only where `PublicFarmProfile` confirms the page is published.
      */
     | 'channel-author-farm-handle'
+    | 'channel-card-generation'
     /** NextAuth JWT callback discovering a user's tenant memberships. */
     | 'auth-tenant-discovery'
     /** Credentials lookup (password reset, invite redemption, etc.). */
@@ -403,6 +404,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'farm-handle-availability': true,
     'exchange-farm-attribution': true,
     'channel-author-farm-handle': true,
+    'channel-card-generation': true,
     'auth-tenant-discovery': true,
     'auth-credentials': true,
     'webhook-ingest': true,
