@@ -139,6 +139,27 @@
             "why": "Rendered tests, the design-system drift guardrail and the public-surface guards all range over components rather than over the file you edited."
         },
         {
+            "when": "^src\\/app-layer\\/utils\\/",
+            "run": [
+                "src/app-layer/utils/__tests__"
+            ],
+            "why": "A test COLOCATED under `__tests__` is collected by jest — the `node` project's testMatch is `**/*.test.ts` and the `jsdom` project names `<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}` explicitly — but every other `run` target in this file is a `tests/*` prefix, so until #3059 NO rule could name one and four real suites were unreachable by this tool. Measured 2026-11-14: editing `utils/cadence.ts`, `use-toast-with-undo.ts` or `use-zod-form.ts` derived a population containing none of their own tests. `cadence.ts` is the sharp case — nothing under `tests/` imports it, so its ONLY test is the colocated one and the tool reported success having run nothing that executes it. Mapped PER SUBTREE rather than as one `^src\\/` rule, and that is a change of mind from the issue, which guessed the broad form would cost \"almost nothing\": measured, the three directories are 4 suites / 40 tests and about 40s above jest's ~10s fixed floor, because the hook tests run under jsdom. Only one of the three is ever relevant to a given change, and a colocated test sits beside its subject precisely BECAUSE it tests that subject — so `directory → directory/__tests__` is the exact edge. `tests/guards/colocated-tests-are-selectable.test.ts` DERIVES every `__tests__` directory under `src/` and fails until some rule maps its parent, so a fifth one is covered when it is written rather than when somebody remembers."
+        },
+        {
+            "when": "^src\\/components\\/ui\\/hooks\\/",
+            "run": [
+                "src/components/ui/hooks/__tests__"
+            ],
+            "why": "A test COLOCATED under `__tests__` is collected by jest — the `node` project's testMatch is `**/*.test.ts` and the `jsdom` project names `<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}` explicitly — but every other `run` target in this file is a `tests/*` prefix, so until #3059 NO rule could name one and four real suites were unreachable by this tool. Measured 2026-11-14: editing `utils/cadence.ts`, `use-toast-with-undo.ts` or `use-zod-form.ts` derived a population containing none of their own tests. `cadence.ts` is the sharp case — nothing under `tests/` imports it, so its ONLY test is the colocated one and the tool reported success having run nothing that executes it. Mapped PER SUBTREE rather than as one `^src\\/` rule, and that is a change of mind from the issue, which guessed the broad form would cost \"almost nothing\": measured, the three directories are 4 suites / 40 tests and about 40s above jest's ~10s fixed floor, because the hook tests run under jsdom. Only one of the three is ever relevant to a given change, and a colocated test sits beside its subject precisely BECAUSE it tests that subject — so `directory → directory/__tests__` is the exact edge. `tests/guards/colocated-tests-are-selectable.test.ts` DERIVES every `__tests__` directory under `src/` and fails until some rule maps its parent, so a fifth one is covered when it is written rather than when somebody remembers."
+        },
+        {
+            "when": "^src\\/lib\\/hooks\\/",
+            "run": [
+                "src/lib/hooks/__tests__"
+            ],
+            "why": "A test COLOCATED under `__tests__` is collected by jest — the `node` project's testMatch is `**/*.test.ts` and the `jsdom` project names `<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}` explicitly — but every other `run` target in this file is a `tests/*` prefix, so until #3059 NO rule could name one and four real suites were unreachable by this tool. Measured 2026-11-14: editing `utils/cadence.ts`, `use-toast-with-undo.ts` or `use-zod-form.ts` derived a population containing none of their own tests. `cadence.ts` is the sharp case — nothing under `tests/` imports it, so its ONLY test is the colocated one and the tool reported success having run nothing that executes it. Mapped PER SUBTREE rather than as one `^src\\/` rule, and that is a change of mind from the issue, which guessed the broad form would cost \"almost nothing\": measured, the three directories are 4 suites / 40 tests and about 40s above jest's ~10s fixed floor, because the hook tests run under jsdom. Only one of the three is ever relevant to a given change, and a colocated test sits beside its subject precisely BECAUSE it tests that subject — so `directory → directory/__tests__` is the exact edge. `tests/guards/colocated-tests-are-selectable.test.ts` DERIVES every `__tests__` directory under `src/` and fails until some rule maps its parent, so a fifth one is covered when it is written rather than when somebody remembers."
+        },
+        {
             "when": "^src\\/app-layer\\/",
             "run": [
                 "tests/integration"
