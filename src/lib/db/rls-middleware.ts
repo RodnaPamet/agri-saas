@@ -92,6 +92,16 @@ export type { PrismaTx } from '@/lib/db-context';
  * any reason not in this set.
  */
 export type RlsBypassReason =
+    /**
+     * The handle of the farm a channel post was written AS — #3043.
+     *
+     * `FarmBrand` is tenant-scoped, and the channel read paths run in a USER
+     * context (`app.user_id`, no `app.tenant_id`), so a scoped read returns
+     * zero rows SILENTLY — #1664's shape. The author line therefore resolves
+     * the handle privileged, OUTSIDE the feed's transaction, and returns one
+     * only where `PublicFarmProfile` confirms the page is published.
+     */
+    | 'channel-author-farm-handle'
     /** NextAuth JWT callback discovering a user's tenant memberships. */
     | 'auth-tenant-discovery'
     /** Credentials lookup (password reset, invite redemption, etc.). */
@@ -391,6 +401,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'public-media-read': true,
     'farm-handle-availability': true,
     'exchange-farm-attribution': true,
+    'channel-author-farm-handle': true,
     'auth-tenant-discovery': true,
     'auth-credentials': true,
     'webhook-ingest': true,

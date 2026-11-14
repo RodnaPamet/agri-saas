@@ -63,6 +63,8 @@
  */
 import { prisma } from '@/lib/prisma';
 import { runInUserContext } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
+import { ExchangeRepository } from '@/app-layer/repositories/exchange';
 import type { PrismaTx } from '@/lib/db-context';
 import { afterCommit } from '@/lib/db/after-commit';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
@@ -604,6 +606,24 @@ export interface ChannelPostView {
     readonly author: {
         readonly displayName: string | null;
         readonly farmName: string | null;
+        /**
+         * The handle of the farm the author posted AS, where that farm has a
+         * PUBLISHED page — #3043, for agrent-ios #596.
+         *
+         * It is what makes a direct message startable from a post: the open
+         * route takes a handle, and until now a post carried a farm's NAME and
+         * no way to address it.
+         *
+         * NOT an address for the AUTHOR. A DM to a farm reaches that farm's
+         * active owner (P8.2, owner ruling 2026-11-06), who may be somebody
+         * else entirely — the field name invites the opposite reading, which is
+         * why this says so here as well as at the call site.
+         *
+         * Null when the farm has no published page, and null for the whole
+         * `author` object on a hidden post, which is the point of it living
+         * in here.
+         */
+        readonly farmHandle: string | null;
     } | null;
 }
 
@@ -643,6 +663,58 @@ export interface ChannelPostView {
 interface AuthorBook {
     readonly names: ReadonlyMap<string, string>;
     readonly farms: ReadonlyMap<string, string>;
+    /** tenantId → the farm's handle, present only where its page is published. */
+    readonly handles: ReadonlyMap<string, string>;
+}
+
+/**
+ * tenantId → farm handle, for farms whose page is published — #3043.
+ *
+ * ## It DELEGATES, because this rule already had a spelling
+ *
+ * `ExchangeRepository.listPublishedFarmBrands` has answered "which of these
+ * tenants are reachable by handle" since the exchange attributed listings. My
+ * first draft asked the question again here, against `PublicFarmProfile`
+ * instead of `FarmBrand.published` — a second spelling of one rule, which is
+ * the #1664 class, and the divergence would have been a DISCLOSURE difference:
+ * the exchange and the channels disagreeing about whether a farm is publicly
+ * reachable.
+ *
+ * It also had the weaker argument. Mine was "the projection is what
+ * `/f/{handle}` serves, so a brand published without one hands out a dead
+ * handle". The exchange's is about WITHDRAWAL and is the one that matters in
+ * practice: `published: true` means a farm taking its page down stops being
+ * returned, so attribution reverts on the next read with nothing to back-fill
+ * and no listing left naming a page that 404s. Reuse keeps both surfaces on
+ * whichever answer that method gives.
+ *
+ * ## PRIVILEGED and OUTSIDE the transaction, and both halves are forced
+ *
+ * `FarmBrand` is tenant-scoped, so read through the feed's `runInUserContext`
+ * transaction it returns **zero rows, silently** — that runner sets
+ * `app.user_id` and deliberately not `app.tenant_id`. #1664's shape, and it is
+ * how the first draft of this feature passed all four of its NEGATIVE cases
+ * while both positives failed: a resolution that returns null for everything
+ * is indistinguishable from one that is correctly conservative.
+ *
+ * And it cannot be called from inside that transaction, because a privileged
+ * read there takes a SECOND pool connection while the first is held —
+ * #1191's P0.8 deadlock. `postToChannel`'s mention resolution sits outside its
+ * transaction for the same reason.
+ *
+ * Its own reason string rather than the exchange's: the rule is shared, the
+ * READER is not, and `exchange-farm-attribution` in a bypass log would name
+ * the wrong surface.
+ */
+async function resolveFarmHandles(
+    tenantIds: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+    if (tenantIds.length === 0) return new Map();
+
+    return runWithoutRls({ reason: 'channel-author-farm-handle' }, async (db) => {
+        const brands = await ExchangeRepository.listPublishedFarmBrands(db, [...tenantIds]);
+        return new Map(brands.map((b) => [b.tenantId, b.handle]));
+    });
 }
 
 async function resolveAuthors(
@@ -679,7 +751,7 @@ async function resolveAuthors(
     }
     const farms = new Map<string, string>();
     for (const t of tenants) farms.set(t.id, t.name);
-    return { names, farms };
+    return { names, farms, handles: new Map() };
 }
 
 /**
@@ -757,6 +829,20 @@ function toPostView(
                   farmName: r.authorTenantId
                       ? authors.farms.get(r.authorTenantId) ?? null
                       : null,
+                  // #3043 — INSIDE this object on purpose, so it is suppressed
+                  // by the same collapse as the body and the name. A handle
+                  // hung outside it would let a client offer «Пиши» above
+                  // content nobody can read, which is the attribution the
+                  // collapse exists to prevent.
+                  //
+                  // Null unless the author's farm has a PUBLISHED page. It is
+                  // the handle of the farm they posted AS, not an address for
+                  // the author: a DM to a farm reaches that farm's active
+                  // owner (P8.2, owner ruling 2026-11-06), who may be somebody
+                  // else.
+                  farmHandle: r.authorTenantId
+                      ? authors.handles.get(r.authorTenantId) ?? null
+                      : null,
               },
     };
 }
@@ -781,7 +867,7 @@ export async function readChannelFeed(
         Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
         CHANNEL_FEED_MAX_PAGE_SIZE,
     );
-    return runInUserContext(ctx, async (tx) => {
+    const inner = await runInUserContext(ctx, async (tx) => {
         const channel = await tx.channel.findUnique({
             where: { id: channelId },
             select: { id: true },
@@ -823,9 +909,21 @@ export async function readChannelFeed(
         // is a hasMore probe that is never rendered, so looking its author up
         // would be one wasted id per page.
         const authors = await resolveAuthors(tx, page);
-        const posts = page.map((r) => toPostView(r, authors));
-        return { posts, hasMore };
+        // The rows and the names come out; the HANDLES are resolved after the
+        // transaction closes — see `resolveFarmHandles`. Mapping inside here
+        // would need that privileged read while this connection is held.
+        return { page, authors, hasMore };
     });
+
+    const handles = await resolveFarmHandles([
+        ...new Set(
+            inner.page
+                .map((r) => r.authorTenantId)
+                .filter((id): id is string => id != null),
+        ),
+    ]);
+    const authors = { ...inner.authors, handles };
+    return { posts: inner.page.map((r) => toPostView(r, authors)), hasMore: inner.hasMore };
 }
 
 /**
@@ -965,7 +1063,7 @@ export async function readPostReplies(
         Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
         CHANNEL_FEED_MAX_PAGE_SIZE,
     );
-    return runInUserContext(ctx, async (tx) => {
+    const inner = await runInUserContext(ctx, async (tx) => {
         const parent = await tx.channelPost.findUnique({
             where: { id: postId },
             select: { id: true, parentPostId: true },
@@ -1013,8 +1111,25 @@ export async function readPostReplies(
         const hasMore = rows.length > limit;
         const page = rows.slice(0, limit);
         const authors = await resolveAuthors(tx, page);
-        return { replies: page.map((r) => toPostView(r, authors)), hasMore };
+        return { page, authors, hasMore };
     });
+
+    // Outside the transaction, for `resolveFarmHandles`' two reasons: the read
+    // is privileged (FarmBrand is tenant-scoped and invisible in a user
+    // context) and a privileged read inside an open transaction takes a second
+    // pool connection — #1191.
+    const handles = await resolveFarmHandles([
+        ...new Set(
+            inner.page
+                .map((r) => r.authorTenantId)
+                .filter((id): id is string => id != null),
+        ),
+    ]);
+    const authors = { ...inner.authors, handles };
+    return {
+        replies: inner.page.map((r) => toPostView(r, authors)),
+        hasMore: inner.hasMore,
+    };
 }
 
 export async function postToChannel(

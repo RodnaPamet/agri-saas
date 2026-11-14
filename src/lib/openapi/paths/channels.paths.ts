@@ -120,6 +120,7 @@ const ChannelPostSchema = z
             .object({
                 displayName: z.string().nullable(),
                 farmName: z.string().nullable(),
+                farmHandle: z.string().nullable(),
             })
             .nullable()
             .openapi({
@@ -135,7 +136,19 @@ const ChannelPostSchema = z
                     + 'sent no `tenantSlug`, or an author in no farm. Clients render '
                     + 'whichever half exists and show nothing when neither does; '
                     + '`authorUserId` stays beside this so a reply or a report has a '
-                    + 'stable key with no name to show.',
+                    + 'stable key with no name to show. '
+                    + '`farmHandle` (#3043) is the handle of the farm the author posted '
+                    + 'AS, present only where that farm has a PUBLISHED page — it is what '
+                    + 'makes a direct message startable from a post, since the open route '
+                    + 'takes a handle. It is NOT an address for the AUTHOR: a DM to a farm '
+                    + 'reaches that farm\'s ACTIVE OWNER, who may be somebody else '
+                    + 'entirely, so a client offering it should word the control so it '
+                    + 'does not promise otherwise. It lives INSIDE this object on purpose, '
+                    + 'so a hidden post offers no handle either — a handle beside a '
+                    + 'suppressed author would let a client offer to message somebody '
+                    + 'about content nobody can read. Decided by the same authority the '
+                    + 'exchange uses to attribute a listing, so the two surfaces cannot '
+                    + 'disagree about whether a farm is publicly reachable.',
             }),
         replyCount: z.number().int().openapi({
             description:
