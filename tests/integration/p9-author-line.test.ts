@@ -127,6 +127,9 @@ describeFn('#2989 — the channel author line', () => {
         expect(await authorOf(postId)).toEqual({
             displayName: 'Иван Петров',
             farmName: FARM_NAME,
+            // Null throughout this suite: it creates no `FarmBrand`, and a
+            // farm with no published brand offers no handle (#3043).
+            farmHandle: null,
         });
     }, 60_000);
 
@@ -138,7 +141,7 @@ describeFn('#2989 — the channel author line', () => {
             tenantSlug: FARM_SLUG,
         });
         const author = await authorOf(postId);
-        expect(author).toEqual({ displayName: null, farmName: FARM_NAME });
+        expect(author).toEqual({ displayName: null, farmName: FARM_NAME, farmHandle: null });
         // Said twice on purpose: the value must not appear, however the shape
         // of the object changes later.
         expect(JSON.stringify(author)).not.toContain('Георги');
@@ -153,6 +156,7 @@ describeFn('#2989 — the channel author line', () => {
         expect(await authorOf(postId)).toEqual({
             displayName: 'Иван Петров',
             farmName: null,
+            farmHandle: null,
         });
     }, 60_000);
 
@@ -160,7 +164,7 @@ describeFn('#2989 — the channel author line', () => {
         const { postId } = await postToChannel(ctxFor(NAMELESS), channelId, {
             body: 'Анонимен принос.',
         });
-        expect(await authorOf(postId)).toEqual({ displayName: null, farmName: null });
+        expect(await authorOf(postId)).toEqual({ displayName: null, farmName: null, farmHandle: null });
     }, 60_000);
 
     it('a farm the author is NOT a member of is refused, and writes nothing', async () => {
@@ -204,6 +208,9 @@ describeFn('#2989 — the channel author line', () => {
         expect(await authorOf(visible.postId)).toEqual({
             displayName: 'Иван Петров',
             farmName: FARM_NAME,
+            // Null throughout this suite: it creates no `FarmBrand`, and a
+            // farm with no published brand offers no handle (#3043).
+            farmHandle: null,
         });
     }, 60_000);
 
@@ -219,7 +226,7 @@ describeFn('#2989 — the channel author line', () => {
         const { replies } = await readPostReplies(ctxFor(NAMELESS), parent.postId, {});
         expect(replies).toHaveLength(1);
         // Same rule as the feed: unpublished name withheld, farm shown.
-        expect(replies[0].author).toEqual({ displayName: null, farmName: FARM_NAME });
+        expect(replies[0].author).toEqual({ displayName: null, farmName: FARM_NAME, farmHandle: null });
     }, 60_000);
 
     it('one page resolves SEVERAL authors correctly, from one lookup each', async () => {
@@ -236,8 +243,8 @@ describeFn('#2989 — the channel author line', () => {
         });
         const feed = await readChannelFeed(ctxFor(NAMELESS), channelId, { limit: 50 });
         const byId = new Map(feed.posts.map((p) => [p.id, p.author]));
-        expect(byId.get(a.postId)).toEqual({ displayName: 'Иван Петров', farmName: FARM_NAME });
-        expect(byId.get(b.postId)).toEqual({ displayName: null, farmName: null });
-        expect(byId.get(c.postId)).toEqual({ displayName: null, farmName: FARM_NAME });
+        expect(byId.get(a.postId)).toEqual({ displayName: 'Иван Петров', farmName: FARM_NAME, farmHandle: null });
+        expect(byId.get(b.postId)).toEqual({ displayName: null, farmName: null, farmHandle: null });
+        expect(byId.get(c.postId)).toEqual({ displayName: null, farmName: FARM_NAME, farmHandle: null });
     }, 60_000);
 });

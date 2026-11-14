@@ -84,7 +84,7 @@ describeFn('#2989 — setting a display name', () => {
             tenantSlug: FARM_SLUG,
         });
         // Before: the designed fallback.
-        expect(await authorOf(postId)).toEqual({ displayName: null, farmName: 'ЗК Изгрев' });
+        expect(await authorOf(postId)).toEqual({ displayName: null, farmName: 'ЗК Изгрев', farmHandle: null });
 
         await setOwnDisplayName(ctx, { displayName: 'Иван Петров' });
 
@@ -93,6 +93,9 @@ describeFn('#2989 — setting a display name', () => {
         expect(await authorOf(postId)).toEqual({
             displayName: 'Иван Петров',
             farmName: 'ЗК Изгрев',
+            // Null: this suite creates no `FarmBrand`, and a farm with no
+            // published brand offers no handle (#3043).
+            farmHandle: null,
         });
         expect(await readOwnProfile(ctx)).toEqual({
             displayName: 'Иван Петров',
@@ -110,7 +113,7 @@ describeFn('#2989 — setting a display name', () => {
 
         await setOwnDisplayName(ctx, { displayName: null });
 
-        expect(await authorOf(postId)).toEqual({ displayName: null, farmName: 'ЗК Изгрев' });
+        expect(await authorOf(postId)).toEqual({ displayName: null, farmName: 'ЗК Изгрев', farmHandle: null });
         // The row must not be left published-with-no-name: that state renders
         // nothing, reads as a bug, and would start showing a name again the
         // moment any other writer set one.

@@ -237,7 +237,35 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // and two integers.
         //
         // Raised by exactly three, for three named callers.
-        expect(callers.length).toBeLessThanOrEqual(9);
+        //
+        // TEN since #3043: `app-layer/usecases/channels.ts`, under one new
+        // reason, `channel-author-farm-handle`. A channel post's author line
+        // carries the handle of the farm they posted AS, so a direct message
+        // can be started from a post.
+        //
+        // The bypass is forced twice over. `FarmBrand` is tenant-scoped and
+        // the channel read paths run in a USER context (`app.user_id`, no
+        // `app.tenant_id`), so a scoped read returns ZERO ROWS SILENTLY —
+        // #1664's shape, and measured: the first draft of that feature passed
+        // all four of its negative cases while both positives failed, because
+        // a resolution returning null for everything is indistinguishable from
+        // one that is correctly conservative. It also cannot run inside the
+        // feed's transaction, because a privileged read there takes a second
+        // pool connection while the first is held (#1191).
+        //
+        // What bounds it is that the RULE is not ours: it delegates to
+        // `ExchangeRepository.listPublishedFarmBrands`, the same method the
+        // exchange uses to attribute a listing. A second spelling of "which
+        // farms are reachable by handle" is the #1664 class, and the
+        // divergence would have been a disclosure difference rather than a
+        // wrong sentence. The answer's SHAPE is a handle and nothing else —
+        // no tenant id crosses the boundary, which is
+        // `exchange-farm-attribution`'s own argument.
+        //
+        // Its own reason rather than borrowing that one: the rule is shared,
+        // the READER is not, and `exchange-farm-attribution` in a bypass log
+        // would name the wrong surface.
+        expect(callers.length).toBeLessThanOrEqual(10);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -316,7 +344,14 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // answer: the decision needs the preference AND the device count
         // together, and splitting them would let a future edit read one under
         // a bypass and the other not, with neither reason looking wrong.
-        expect(sites.length).toBeLessThanOrEqual(18);
+        // 18 -> 19 by #3043: ONE site in `usecases/channels.ts`, holding two
+        // reads that are one answer — `listPublishedFarmBrands` is called
+        // inside the bypass and does the `FarmBrand` read itself, so the
+        // delegation keeps this to a single site rather than spreading the
+        // boundary across two modules. The same argument the
+        // `person-delivery` entry above makes for keeping a preference read
+        // and a device count under one bypass.
+        expect(sites.length).toBeLessThanOrEqual(19);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so
