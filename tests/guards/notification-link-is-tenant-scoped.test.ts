@@ -1,6 +1,7 @@
 /**
- * Every `Notification.linkUrl` a producer writes is resolvable by a client
- * that is NOT already inside a farm (#2512).
+ * Every notification DESTINATION a producer writes is resolvable by a client
+ * that is NOT already inside a farm (#2512, widened to every destination field
+ * by #3033).
  *
  * ## The defect this exists for
  *
@@ -28,14 +29,49 @@
  *
  * A hand-written list of producers is the thing that goes stale: a fourteenth
  * producer is exactly the case this is for, and it would be born outside a
- * list. So the population is every `linkUrl:` assignment under
- * `src/app-layer`, and the denominator is printed on every run.
+ * list. So the population is derived from `src/app-layer`, and the denominator
+ * is printed on every run.
+ *
+ * ## It derived over the right tree and the wrong KEY, until #3033
+ *
+ * The population was `linkUrl:` assignments — ONE field name — and a
+ * destination rides four. The field name was itself a hand-written list with a
+ * single entry, which is the staleness this section argues against, one level
+ * up. So the guard was correct about everything it ranged over while two real
+ * defects went past it on a single day, both satisfying "root-relative" and
+ * neither prefixed:
+ *
+ *   - the person-scoped push aimed at `/messages/{conversationId}`, a route
+ *     P8.4 ruled out (#2987);
+ *   - `machine-area-alert`'s `link:` at `/t/{slug}/machines/{assetId}`, which
+ *     was prefixed and named no page (#3032).
+ *
+ * The field list now lives in
+ * `tests/helpers/notification-destination-fields.ts`, shared with
+ * `person-push-link-resolves`, which ranges over the same fields on the
+ * page-EXISTENCE axis. One list, two axes — a second copy is how the first one
+ * came to have one entry.
+ *
+ * ## Three kinds of value, and only one is graded here
+ *
+ *   - a `tenant-prefixed` destination (`linkUrl`, `linkPath`, `link`) — graded;
+ *   - a `farm-relative` destination (`farmRelativePath`) — deliberately NOT
+ *     prefixed, and the sibling owns the inverted assertion. Restating it here
+ *     would put one property in two spellings, the #1664 class;
+ *   - a `LinkShape` DECLARATION (`link: { template: '/farm-tasks/[taskId]' }`
+ *     in the assistant's tools) — not a destination at all. See
+ *     `isLinkShapeDeclaration`.
  */
 import { readFileSync } from 'fs';
 import { join, relative } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import {
+    DESTINATION_FIELDS,
+    isLinkShapeDeclaration,
+    type DestinationField,
+} from '../helpers/notification-destination-fields';
 
 const ROOT = REPO_ROOT;
 
@@ -66,8 +102,24 @@ const ABSOLUTE_BY_DESIGN: Readonly<Record<string, string>> = {
  * strings also stops a `linkUrl` named inside a comment from entering the
  * population.
  */
-export function linkUrlAssignments(): { file: string; line: number; value: string }[] {
-    const out: { file: string; line: number; value: string }[] = [];
+/**
+ * The fields this guard grades: the `tenant-prefixed` ones.
+ *
+ * Derived from the shared posture map rather than listed, so a fifth field
+ * declared `tenant-prefixed` there is graded here without an edit — and a
+ * field whose posture changes stops being graded in the same move.
+ */
+const GRADED_FIELDS = (Object.keys(DESTINATION_FIELDS) as DestinationField[]).filter(
+    (f) => DESTINATION_FIELDS[f] === 'tenant-prefixed',
+);
+
+export function linkUrlAssignments(): {
+    file: string;
+    line: number;
+    field: string;
+    value: string;
+}[] {
+    const out: { file: string; line: number; field: string; value: string }[] = [];
     /**
      * Through `collectSourceFiles` and NOT a private walker: a neighbouring
      * guard records that a hand-rolled one was refused by the
@@ -77,18 +129,26 @@ export function linkUrlAssignments(): { file: string; line: number; value: strin
      */
     for (const abs of collectSourceFiles({ roots: ['src/app-layer'], extensions: ['.ts'] })) {
         const raw = readFileSync(abs, 'utf8');
-        if (!raw.includes('linkUrl')) continue;
+        if (!GRADED_FIELDS.some((f) => raw.includes(f))) continue;
         const code = blankNonCode(raw);
         const lines = code.split('\n');
+        // `\b` before the name so `linkUrl:` does not also match a
+        // `deepLinkUrl:` somebody adds later — the field list is the
+        // population, so a near-miss name must not slip into it silently.
+        const re = new RegExp(`\\b(${GRADED_FIELDS.join('|')}):\\s*(.+?),?\\s*$`);
         lines.forEach((ln, i) => {
-            const m = /linkUrl:\s*(.+?),?\s*$/.exec(ln);
+            const m = re.exec(ln);
             if (!m) return;
+            // The RAW line's value, because blanking empties the template
+            // literal we need to classify.
+            const value = (re.exec(raw.split('\n')[i] ?? '') ?? [])[2] ?? '';
+            // A `LinkShape` declaration is not a destination.
+            if (isLinkShapeDeclaration(value)) return;
             out.push({
                 file: relative(ROOT, abs).split('\\').join('/'),
                 line: i + 1,
-                // The RAW line's value, because blanking empties the template
-                // literal we need to classify.
-                value: (/linkUrl:\s*(.+?),?\s*$/.exec(raw.split('\n')[i] ?? '') ?? [])[1] ?? '',
+                field: m[1],
+                value,
             });
         });
     }
@@ -144,10 +204,17 @@ describe('§1 the population this covers', () => {
         const inScope = all.filter((a) => !(a.file in ABSOLUTE_BY_DESIGN));
         const literals = inScope.filter((a) => isGradable(a.value));
         const notLiteral = inScope.filter((a) => !isGradable(a.value));
+        // Per FIELD, because the whole #3033 defect was a denominator that
+        // looked healthy while ranging over one of four field names. A total
+        // alone would not have shown that, and will not show the next one.
+        const byField = GRADED_FIELDS.map(
+            (f) => `${f}=${literals.filter((a) => a.field === f).length}`,
+        ).join(' ');
         console.log(
-            `[notification-link-scoped] ${all.length} linkUrl assignment(s) across `
-                + `${new Set(all.map((a) => a.file)).size} file(s): `
-                + `${literals.length} literal path(s) GRADED, `
+            `[notification-link-scoped] ${all.length} destination assignment(s) across `
+                + `${new Set(all.map((a) => a.file)).size} file(s) over `
+                + `${GRADED_FIELDS.length} graded field(s): `
+                + `${literals.length} literal path(s) GRADED (${byField}), `
                 + `${notLiteral.length} name no path (type annotation, pass-through or `
                 + `variable) and therefore NOT graded, `
                 + `${exempt.length} absolute by design`,
@@ -156,12 +223,24 @@ describe('§1 the population this covers', () => {
         expect(all.length).toBeGreaterThanOrEqual(12);
         // And a floor on what is actually JUDGED — the number that would fall
         // silently if a producer stopped using a literal.
-        // 8 since `low-stock-monitor` was removed (owner ruling 2026-11-01).
-        // It wrote exactly one graded literal `linkUrl`, so the population
-        // shrank by one for a reason, not because the detector stopped seeing
-        // things — which is the failure a floor exists to catch, and why this
-        // moves only on a measured, explained change.
-        expect(literals.length).toBeGreaterThanOrEqual(8);
+        //
+        // 11 since #3033 widened the field set from `linkUrl` alone to every
+        // `tenant-prefixed` field: 8 `linkUrl` + 2 `linkPath` + 1 `link`,
+        // measured 2026-11-14. It was 8, and before that 9 until
+        // `low-stock-monitor` was removed (owner ruling 2026-11-01) — it wrote
+        // exactly one graded literal, so that shrink was a reason rather than
+        // the detector going blind, which is the failure a floor exists to
+        // catch.
+        //
+        // This floor is the one thing that would catch a revert to a single
+        // field, so it moves only on a measured, explained change.
+        expect(literals.length).toBeGreaterThanOrEqual(11);
+        // Every graded field must CONTRIBUTE. A field in the list that selects
+        // nothing is the #3033 shape over again — present in the population,
+        // absent from the denominator, and silent.
+        for (const f of GRADED_FIELDS) {
+            expect(literals.filter((a) => a.field === f).length).toBeGreaterThan(0);
+        }
     });
 });
 
@@ -207,5 +286,41 @@ describe('§3 the exemption has not gone stale', () => {
         expect(isGradable('ctx.tenantSlug ? `/t/${ctx.tenantSlug}/x` : null')).toBe(true);
         // EVERY path must be scoped, not merely one of them.
         expect(isResolvable('a ? `/t/${s}/x` : `/x`')).toBe(false);
+    });
+
+    it('grades every tenant-prefixed field, and only those', () => {
+        // The #3033 property itself. Derived from the shared map, so this
+        // fails if somebody narrows the posture of a field without saying so.
+        expect([...GRADED_FIELDS].sort()).toEqual(['link', 'linkPath', 'linkUrl']);
+        // `farmRelativePath` is deliberately OUT: it must NOT be prefixed, and
+        // `person-push-link-resolves` owns that inverted assertion. Grading it
+        // here would report the two live person-scoped destinations as
+        // violations and the "fix" would break them.
+        expect(GRADED_FIELDS).not.toContain('farmRelativePath');
+        // `url:` is out too — the invite emails point outside the tenant shell.
+        expect(GRADED_FIELDS).not.toContain('url');
+    });
+
+    it('a LinkShape declaration is not a destination — the object control', () => {
+        // `tools.ts` writes three of these. Without the exclusion they read as
+        // violations, because a route TEMPLATE is not `/t/`-prefixed and never
+        // should be: `linksFromRows` expands it into `AssistantLink.route`,
+        // which is documented tenant-RELATIVE.
+        expect(isLinkShapeDeclaration("{ template: '/farm-tasks/[taskId]', idField: 'id' }")).toBe(
+            true,
+        );
+        expect(isLinkShapeDeclaration('  { template: `/journal/[id]` }')).toBe(true);
+        // …and a real destination is still graded, so the exclusion cannot
+        // swallow the field wholesale.
+        expect(isLinkShapeDeclaration('`/t/${slug}/machines/${id}`')).toBe(false);
+        expect(isLinkShapeDeclaration('null')).toBe(false);
+    });
+
+    it('the extractor actually found each field in the tree', () => {
+        // A control on the SELECTION rather than the classifier: all three
+        // fields must appear at a real site. If a regex change stopped
+        // matching `linkPath:`, §2 would still pass over the remaining two.
+        const found = new Set(linkUrlAssignments().map((a) => a.field));
+        expect([...found].sort()).toEqual(['link', 'linkPath', 'linkUrl']);
     });
 });
