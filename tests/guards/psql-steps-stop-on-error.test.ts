@@ -39,19 +39,21 @@
  *
  * Registered in `SUBJECT_IS_NOT_BLANKABLE` (#1774), and the reason was found
  * by converting it and measuring rather than argued: the subject is YAML,
- * where a comment is `#`, and `tests/helpers/blank-non-code.ts` implements
- * JS/TS comment syntax only. Run over `load-test.yml` it leaves all 156 `#`
+ * where a comment is `#`, and `blankNonCode` implements JS/TS comment syntax
+ * only. Run over `load-test.yml` it leaves all 156 `#`
  * lines byte-identical. So routing through it would strip nothing while making
  * this guard LOOK like it had comment coverage — worse than handling `#` here,
  * which is what the line filter above does and what the detector cases below
  * prove.
  *
- * The helper is named by PATH rather than by symbol on purpose, and it is a
- * wart: `findSourceTextScanners` exempts any guard whose RAW text contains the
- * symbol, checked before it blanks anything, so merely explaining the helper
- * in a docblock makes a guard invisible to it. Five guards currently sit in
- * that position. Raised separately; writing the path keeps this one visible to
- * the detector that is supposed to police it.
+ * This docblock used to name the helper by PATH rather than by symbol, as a
+ * deliberate wart: `findSourceTextScanners` exempted any guard whose RAW text
+ * contained the symbol, checked one line ABOVE the blanking, so merely
+ * explaining the helper in a docblock made a guard invisible to the detector
+ * meant to police it. #2933 moved both checks onto the blanked code and
+ * narrowed the exemption to an actual CALL, so the symbol can be written
+ * plainly here — and this file is the proof that it changed something, because
+ * under the old logic these words would have removed it from the population.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

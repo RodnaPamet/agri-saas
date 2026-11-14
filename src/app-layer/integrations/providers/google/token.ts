@@ -64,7 +64,7 @@ export const GOOGLE_PROVIDER = 'google';
 
 /** The products a grant can cover, keyed to the scope that enables each. */
 export const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
 
 /**
  * Least-privilege scopes, and the choice matters beyond tidiness.
@@ -74,8 +74,34 @@ export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.e
  * RESTRICTED scope: it would put this app through a security assessment and
  * hand us read access to everything the user owns, to write a few documents.
  *
- * `calendar.events` likewise covers events without granting calendar
- * management (sharing, ACLs, deletion of whole calendars).
+ * `calendar.app.created` is narrower still, and it is also the only one of the
+ * two candidates that WORKS — #3053. This integration creates a dedicated farm
+ * calendar (`ensureFarmCalendar` → `POST /calendars`) and then reads it back by
+ * id, and Google accepts `calendars.insert` under only `calendar`,
+ * `calendar.app.created` or `calendar.calendars`; `calendars.get` likewise does
+ * not accept `calendar.events`. So the previous `calendar.events` could not
+ * create the calendar at all: the first real sync would have answered 403
+ * `insufficientPermissions`, and every later call operates on an id that was
+ * never minted.
+ *
+ * It was not caught earlier because nothing exercises this against real Google
+ * — the suites stub `fetch` — and the owner had switched calendar sync off in
+ * Agrent in favour of Drive alone. Found while porting the sync to another
+ * product.
+ *
+ * `app.created` is the least-privilege answer rather than a compromise: it
+ * covers creating secondary calendars and reading and writing events ONLY on
+ * calendars this app made, where `calendar.events` reaches the events on every
+ * calendar the person owns. Every one of the six Calendar calls in
+ * `providers/google/calendar.ts` addresses the stored (app-created) id —
+ * measured, there is no `primary`, no `calendarList` and no `acl` — so nothing
+ * needs the wider grant.
+ *
+ * **An existing `calendar.events` grant now reports `calendar: false`**, which
+ * is correct rather than a regression: such a grant cannot create the calendar,
+ * so the person is told to reconnect instead of meeting a 403 at use time —
+ * the whole point of `grantedProducts` below. No working calendar connection
+ * can exist to break, because creating one was impossible.
  */
 export const GOOGLE_SCOPES: readonly string[] = [GOOGLE_DRIVE_SCOPE, GOOGLE_CALENDAR_SCOPE];
 
