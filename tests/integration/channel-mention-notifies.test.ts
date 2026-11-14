@@ -75,6 +75,10 @@ const BANNED = `u-2987-banned-${randomUUID()}`;
 const LEAVER = `u-2987-leaver-${randomUUID()}`;
 /** Posts first, is banned after — the only path that reaches the ban check. */
 const BANNED_LATER = `u-2987-banned-later-${randomUUID()}`;
+/** Blocked the AUTHOR — must not be interrupted by them (#3065). */
+const BLOCKER = `u-3065-blocker-${randomUUID()}`;
+/** The AUTHOR blocked THEM — the other direction of the same rule. */
+const BLOCKED_BY_AUTHOR = `u-3065-blocked-${randomUUID()}`;
 let channelId = '';
 
 function ctxFor(userId: string): UserContext {
@@ -99,13 +103,24 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
             select: { id: true },
         });
         channelId = c.id;
-        for (const u of [AUTHOR, MENTIONED, MUTED, BANNED, LEAVER, BANNED_LATER]) {
+        for (const u of [AUTHOR, MENTIONED, MUTED, BANNED, LEAVER, BANNED_LATER, BLOCKER, BLOCKED_BY_AUTHOR]) {
             await joinChannel(ctxFor(u), channelId);
         }
         // Muting and banning have no writer in the app yet — #2990 owns the
         // read cursor and the mute control, and a ban is P9.3's moderation
         // path. Set directly, which is what makes the COLUMN the subject here
         // rather than some future endpoint.
+        // #3065's block rows, in BOTH directions. Written directly for the
+        // same reason the mute and ban are: the COLUMN is the subject, not
+        // whichever endpoint happens to write it.
+        await prisma.userBlock.createMany({
+            data: [
+                // They refused the author.
+                { blockerUserId: BLOCKER, blockedUserId: AUTHOR },
+                // The author refused them.
+                { blockerUserId: AUTHOR, blockedUserId: BLOCKED_BY_AUTHOR },
+            ],
+        });
         await prisma.channelMembership.update({
             where: { channelId_userId: { channelId, userId: MUTED } },
             data: { mutedAt: new Date() },
@@ -117,6 +132,17 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
     }, 120_000);
 
     afterAll(async () => {
+        // The block rows are tenantless and outlive the channel's cascade, so
+        // they are deleted by hand or they leak into every later suite's view
+        // of who has blocked whom.
+        await prisma.userBlock.deleteMany({
+            where: {
+                OR: [
+                    { blockerUserId: { in: [BLOCKER, AUTHOR] } },
+                    { blockedUserId: { in: [AUTHOR, BLOCKED_BY_AUTHOR] } },
+                ],
+            },
+        });
         await prisma.channel.deleteMany({ where: { id: channelId } });
         await prisma.$disconnect();
     });
@@ -124,6 +150,103 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
     beforeEach(() => {
         __resetNotificationBusForTests();
         enqueueMock.mockClear();
+    });
+
+    /**
+     * #3065 — a BLOCK suppresses the interruption, in both directions.
+     *
+     * "Channels are public" settles VISIBILITY and answers nothing here: the
+     * repo separates the axes and P5.2b names them, so a public channel makes
+     * the post readable either way while CONTACT stays bidirectional because
+     * blocking is mutual silence. A push reaches the blocker's phone at the
+     * blocked person's choosing, which is contact.
+     *
+     * EVERY case here is paired with an innocent mention in the SAME post.
+     * Without that pairing "nobody was notified" passes just as well against a
+     * `reachableTargets` that returns an empty set for everyone — which is how
+     * P8.1's request rule shipped green while enforcing nothing, and how my
+     * own #3042 mute test first asserted `SELECT 1 AS count`.
+     */
+    describe('a person block (#3065)', () => {
+        it('does NOT interrupt somebody who blocked the author', async () => {
+            const them = listen(BLOCKER);
+            const control = listen(MENTIONED);
+            try {
+                await postToChannel(ctxFor(AUTHOR), channelId, {
+                    body: 'Споменавам двама',
+                    mentionUserIds: [BLOCKER, MENTIONED],
+                });
+            } finally {
+                them.stop();
+                control.stop();
+            }
+
+            // Suppressed on BOTH transports — the SSE frame and the push.
+            expect(them.got).toHaveLength(0);
+            expect(pushesFor(BLOCKER)).toHaveLength(0);
+
+            // THE CONTROL, in the same post: the rule suppressed one person
+            // rather than the function returning nothing.
+            expect(control.got).toHaveLength(1);
+            expect(pushesFor(MENTIONED)).toHaveLength(1);
+        }, 60_000);
+
+        it('does NOT interrupt somebody the author blocked — the other direction', async () => {
+            const them = listen(BLOCKED_BY_AUTHOR);
+            const control = listen(MENTIONED);
+            try {
+                await postToChannel(ctxFor(AUTHOR), channelId, {
+                    body: 'И пак двама',
+                    mentionUserIds: [BLOCKED_BY_AUTHOR, MENTIONED],
+                });
+            } finally {
+                them.stop();
+                control.stop();
+            }
+
+            // The direction that a one-directional check would miss: here the
+            // AUTHOR is the blocker, so `amIBlockedByAnyOf` would answer "no"
+            // and the mention would go through. `blockedAmong` is
+            // bidirectional for exactly this.
+            expect(them.got).toHaveLength(0);
+            expect(pushesFor(BLOCKED_BY_AUTHOR)).toHaveLength(0);
+            expect(control.got).toHaveLength(1);
+        }, 60_000);
+
+        it('still WRITES the mention row, which is a record rather than an interruption', async () => {
+            const before = await prisma.channelPostMention.count({
+                where: { userId: BLOCKER },
+            });
+            await postToChannel(ctxFor(AUTHOR), channelId, {
+                body: 'Записано, но без прекъсване',
+                mentionUserIds: [BLOCKER],
+            });
+            // The row survives on purpose: it records that the mention
+            // happened and it feeds the Art 15 export. P9.1's reason for the
+            // table standing apart from body text is unchanged — what #3065
+            // removes is the interruption, not the record.
+            expect(await prisma.channelPostMention.count({
+                where: { userId: BLOCKER },
+            })).toBe(before + 1);
+        }, 60_000);
+
+        it('suppresses a REPLY notification to a blocker too, not just a mention', async () => {
+            // The reply path reaches `reachableTargets` through
+            // `parentAuthorUserId` rather than through `mentionedUserIds`, so
+            // it is a second entry into the same choke point — and a filter
+            // applied to the mention list alone would leave it open.
+            const parent = await postToChannel(ctxFor(BLOCKER), channelId, {
+                body: 'Публикация на блокиращия',
+            });
+            const them = listen(BLOCKER);
+            try {
+                await replyToPost(ctxFor(AUTHOR), parent.postId, { body: 'Отговор' });
+            } finally {
+                them.stop();
+            }
+            expect(them.got).toHaveLength(0);
+            expect(pushesFor(BLOCKER)).toHaveLength(0);
+        }, 60_000);
     });
 
     /** Every `person-push-send` payload enqueued for one person. */

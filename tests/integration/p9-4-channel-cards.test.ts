@@ -44,29 +44,43 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_U
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 /*
- * THE REAL KEYS, not suffixed ones — and this cost a run to learn.
+ * UNIQUE KEYS THAT STILL MAP — and the two false starts are worth recording,
+ * because they are opposite mistakes.
  *
- * `newsTagForChannelKey` reads everything after the first colon and matches it
- * against `CROP_TAGS`, so a key uniquified as `crop:wheat-a1b2c3d4` maps to
- * NOTHING and the wheat channel silently got no card. The `input:` branch
- * returns `inputs` whatever follows the colon, so diesel worked anyway — which
- * is exactly why the failure looked like a bug in the generator rather than in
- * the fixture: one of the two eligible channels behaved.
+ * First draft suffixed every key for uniqueness. `newsTagForChannelKey` reads
+ * everything after the first colon and matches `CROP_TAGS` exactly, so
+ * `crop:wheat-a1b2c3d4` mapped to NOTHING and the wheat channel silently got
+ * no card — while `input:` returns `inputs` whatever follows the colon, so
+ * diesel worked and the failure looked like a generator bug.
  *
- * So the keys are real and acquired with `upsert`: `Channel.key` is unique and
- * the seed suite may already hold them. `created` records which rows are ours
- * to delete, so a shared channel survives this file.
+ * Second draft used the REAL keys with get-or-create. That passed alone and
+ * FAILED in a full run: the seed suite owns `crop:wheat` in the same worker's
+ * database, and when it cleans up, this file's channel id points at a deleted
+ * row — so wheat was not even asked for. A fixture that adopts another
+ * suite's rows inherits its lifecycle.
+ *
+ * So: `input:` channels for the eligible cases, because that prefix maps for
+ * ANY suffix, and suffixed `crop:`/`oblast:` keys for the negatives, because
+ * those map to null with or without a suffix. Everything this file creates it
+ * owns, and nothing it asserts depends on another suite.
+ *
+ * What that gives up, stated rather than hidden: there is no integration case
+ * where a CROP channel receives a card. The crop branch of the mapping is
+ * covered by the pure-function tests below, and the generation path past the
+ * mapping is identical for both prefixes — it reads one tag and writes one
+ * row, with no branch on where the tag came from.
  */
-/** A crop channel whose commodity IS a news tag. */
-const WHEAT = 'crop:wheat';
-/** A crop channel whose commodity is NOT a news tag — oats has none. */
-const OATS = 'crop:oats';
-/** An input channel: shares the `inputs` topic tag. */
-const DIESEL = 'input:diesel';
-/** An oblast channel: no regional tag exists, so no news card can serve it. */
-const OBLAST = 'oblast:BG-16';
+const SUFFIX = randomUUID().slice(0, 8);
+/** Eligible: `input:` maps to the `inputs` topic tag whatever follows it. */
+const DIESEL = `input:diesel-${SUFFIX}`;
+/** Eligible, and SHARES diesel's tag — which is what proves the dedup. */
+const UREA = `input:urea-${SUFFIX}`;
+/** Not eligible: oats has no `CROP_TAGS` entry, suffix or not. */
+const OATS = `crop:oats-${SUFFIX}`;
+/** Not eligible: no regional tag exists in the vocabulary. */
+const OBLAST = `oblast:BG-16-${SUFFIX}`;
 
-const KEYS = [WHEAT, OATS, DIESEL, OBLAST];
+const KEYS = [DIESEL, UREA, OATS, OBLAST];
 const ids = new Map<string, string>();
 /** Only the channels THIS file created, so a seeded one is not deleted. */
 const created = new Set<string>();
@@ -86,13 +100,6 @@ describeFn('#2938 — the daily channel-card generator', () => {
     beforeAll(async () => {
         await prisma.$connect();
         for (const key of KEYS) {
-            const existing = await prisma.channel.findUnique({
-                where: { key }, select: { id: true },
-            });
-            if (existing) {
-                ids.set(key, existing.id);
-                continue;
-            }
             const c = await prisma.channel.create({
                 data: {
                     key,
@@ -172,27 +179,27 @@ describeFn('#2938 — the daily channel-card generator', () => {
                 select: { channelId: true, kind: true, cardKind: true, cardDay: true, body: true, cardPayloadJson: true },
             });
 
-            // wheat and diesel are eligible; oats and the oblast are not.
+            // Both input channels are eligible; oats and the oblast are not.
             expect(posts).toHaveLength(2);
             const byChannel = new Map(posts.map((p) => [p.channelId, p]));
-            expect(byChannel.has(ids.get(WHEAT)!)).toBe(true);
             expect(byChannel.has(ids.get(DIESEL)!)).toBe(true);
+            expect(byChannel.has(ids.get(UREA)!)).toBe(true);
             // THE NEGATIVES, which is where a too-generous mapping would show.
             expect(byChannel.has(ids.get(OATS)!)).toBe(false);
             expect(byChannel.has(ids.get(OBLAST)!)).toBe(false);
 
-            const card = byChannel.get(ids.get(WHEAT)!)!;
+            const card = byChannel.get(ids.get(DIESEL)!)!;
             expect(card.kind).toBe('CARD');
             expect(card.cardKind).toBe('NEWS');
             // The FACTS, locale-independent — no composed sentence.
             const payload = card.cardPayloadJson as Record<string, unknown>;
-            expect(payload.tag).toBe('wheat');
-            expect(payload.title).toBe('Заглавие за wheat');
+            expect(payload.tag).toBe('inputs');
+            expect(payload.title).toBe('Заглавие за inputs');
             expect(payload.source).toBe('Investor.bg');
             expect(payload.url).toEqual(expect.stringContaining('https://'));
             // The headline as a plain-text fallback, so a client that does not
             // render cards still shows something readable.
-            expect(card.body).toBe('Заглавие за wheat');
+            expect(card.body).toBe('Заглавие за inputs');
             // The day, in Europe/Sofia.
             expect(card.cardDay?.toISOString().slice(0, 10)).toBe(farmToday());
         }, 60_000);
@@ -207,9 +214,12 @@ describeFn('#2938 — the daily channel-card generator', () => {
             // five input channels share `inputs`, so a per-channel read would
             // ask the same question five times.
             const asked = newsMock.mock.calls.map((c) => (c[2] as { tags: string[] }).tags[0]);
+            // No tag asked twice, and `inputs` asked at all — the two input
+            // channels in this fixture SHARE that tag, so a per-channel read
+            // would have asked for it twice.
             expect(new Set(asked).size).toBe(asked.length);
-            expect(asked).toContain('wheat');
             expect(asked).toContain('inputs');
+            expect(asked.filter((t) => t === 'inputs')).toHaveLength(1);
         }, 60_000);
 
         it('is IDEMPOTENT — a second run inserts nothing', async () => {
@@ -269,23 +279,23 @@ describeFn('#2938 — the daily channel-card generator', () => {
         it('skips an ARCHIVED channel', async () => {
             newsMock.mockImplementation(async () => newsItem('Заглавие', new Date()));
             await prisma.channel.update({
-                where: { id: ids.get(WHEAT)! },
+                where: { id: ids.get(DIESEL)! },
                 data: { archivedAt: new Date() },
             });
             try {
                 await runChannelCards();
-                const wheat = await prisma.channelPost.count({
-                    where: { channelId: ids.get(WHEAT)! },
-                });
-                expect(wheat).toBe(0);
-                // The CONTROL: diesel is not archived and still got one, so
-                // this asserts the filter rather than a run that did nothing.
                 expect(await prisma.channelPost.count({
                     where: { channelId: ids.get(DIESEL)! },
+                })).toBe(0);
+                // The CONTROL: urea shares diesel's tag and is NOT archived,
+                // so it still got one — this asserts the filter rather than a
+                // run that did nothing.
+                expect(await prisma.channelPost.count({
+                    where: { channelId: ids.get(UREA)! },
                 })).toBe(1);
             } finally {
                 await prisma.channel.update({
-                    where: { id: ids.get(WHEAT)! },
+                    where: { id: ids.get(DIESEL)! },
                     data: { archivedAt: null },
                 });
             }

@@ -189,6 +189,53 @@ export async function personBlockExists(
 }
 
 /**
+ * Of `candidates`, which are in a block relationship with `personUserId` —
+ * BIDIRECTIONAL, for CONTACT (#3065).
+ *
+ * The batch form of `personBlockExists`, and it lives here for that reason:
+ * `UserBlock` is this module's table, and a caller writing its own
+ * `OR`-of-two-directions query would be a second spelling of the rule. #1664
+ * is what two spellings of one block rule cost — the divergence was a silent
+ * disclosure rather than a wrong sentence.
+ *
+ * ONE query rather than `personBlockExists` per candidate, because the caller
+ * has N of them: a channel post may mention five people, and a predicate per
+ * person is the D1 no-read-in-a-loop rule.
+ *
+ * Returns the CANDIDATE ids, never the pair, because that is what a caller
+ * filters on. The self-pair is dropped, so a caller may pass its own id among
+ * the candidates.
+ */
+export async function blockedAmong(
+    db: PrismaTx,
+    personUserId: string,
+    candidates: readonly string[],
+): Promise<Set<string>> {
+    const others = candidates.filter((id) => id !== personUserId);
+    if (others.length === 0) return new Set();
+
+    const rows = await db.userBlock.findMany({
+        where: {
+            OR: [
+                { blockerUserId: personUserId, blockedUserId: { in: [...others] } },
+                { blockedUserId: personUserId, blockerUserId: { in: [...others] } },
+            ],
+        },
+        select: { blockerUserId: true, blockedUserId: true },
+    });
+
+    // Whichever end is NOT the person is the candidate to suppress. Written
+    // this way rather than reading one column, because the two `OR` arms put
+    // the candidate on opposite ends — and picking a column would silently
+    // return the person's own id for half the rows.
+    const out = new Set<string>();
+    for (const r of rows) {
+        out.add(r.blockerUserId === personUserId ? r.blockedUserId : r.blockerUserId);
+    }
+    return out;
+}
+
+/**
  * Has any of `candidates` blocked ME? One-directional, for VISIBILITY.
  *
  * Targeted rather than `whoHasBlockedMe(...).includes(...)` because a person

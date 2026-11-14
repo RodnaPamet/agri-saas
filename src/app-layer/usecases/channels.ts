@@ -72,6 +72,7 @@ import { publishChannelActivityEvent } from '@/lib/notifications/notification-bu
 import { enqueue } from '@/app-layer/jobs/queue';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { translateFor } from '@/lib/i18n/server-messages';
+import { blockedAmong } from '@/app-layer/usecases/person-blocks';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { UserContext } from '@/app-layer/types';
@@ -1854,28 +1855,72 @@ async function reachableTargets(args: ChannelActivityTargets): Promise<ChannelTa
     const candidates = [...reasons.keys()];
     if (candidates.length === 0) return [];
 
-    const rows = await prisma.channelMembership.findMany({
-        where: {
-            channelId: args.channelId,
-            userId: { in: candidates },
-            mutedAt: null,
-            bannedAt: null,
-        },
-        select: { userId: true },
-    });
+    /*
+     * TWO independent questions, asked in parallel because neither answer
+     * feeds the other:
+     *
+     *   - is this person a reachable MEMBER (joined, not muted, not banned);
+     *   - is this person in a BLOCK relationship with the author (#3065).
+     *
+     * Both read through the global client, which is already how this function
+     * reads membership: `superuser_bypass` applies, so neither read depends on
+     * a session variable. That matters because `UserBlock` carries arms for
+     * BOTH `app.user_id` and `app.actor_user_id` (#1664), and a
+     * context-scoped read through the wrong one returns zero rows with no
+     * error — which here would look exactly like "nobody is blocked".
+     */
+    const [rows, blocked] = await Promise.all([
+        prisma.channelMembership.findMany({
+            where: {
+                channelId: args.channelId,
+                userId: { in: candidates },
+                mutedAt: null,
+                bannedAt: null,
+            },
+            select: { userId: true },
+        }),
+        blockedAmong(prisma, args.authorUserId, candidates),
+    ]);
+
+    /*
+     * A BLOCK SUPPRESSES THE INTERRUPTION — #3065.
+     *
+     * "Channels are public" settles VISIBILITY and says nothing about this.
+     * The repo separates the two axes and P5.2b names them: visibility is
+     * one-directional and a public channel makes the post readable either
+     * way, while CONTACT is bidirectional because "blocking is mutual
+     * silence". A push notification is contact — it reaches the blocker's
+     * phone, at the blocked person's choosing, with their chosen trigger.
+     *
+     * So the predicate is `blockedAmong` (bidirectional) and not
+     * `amIBlockedByAnyOf` (one-directional): a one-way check would still let
+     * the blocker be interrupted by the person they blocked, which is the
+     * case this closes.
+     *
+     * The mention ROW is still written by `recordMentions`. It is a record
+     * that the mention happened and it feeds the Art 15 export; what must not
+     * happen is the interruption.
+     */
+    const reachable = rows.filter((r) => !blocked.has(r.userId));
 
     // The DENOMINATOR beside the answer, because `notified=0` is otherwise
     // ambiguous between "nobody was addressed" and "everybody addressed is
     // muted" — and the defect this closes was a mechanism whose absence was
     // invisible for exactly that kind of reason.
+    //
+    // SPLIT BY CAUSE since #3065: one `suppressed` total cannot tell a muted
+    // channel from a block, and those are different facts about different
+    // decisions — a mute is the recipient's preference, a block is a refusal
+    // of contact.
     logger.info('channel.activity_targets', {
         component: 'channels',
         channelId: args.channelId,
         candidates: candidates.length,
-        reachable: rows.length,
-        suppressed: candidates.length - rows.length,
+        reachable: reachable.length,
+        suppressedByMembership: candidates.length - rows.length,
+        suppressedByBlock: rows.length - reachable.length,
     });
-    return rows.map((r) => ({ userId: r.userId, reason: reasons.get(r.userId)! }));
+    return reachable.map((r) => ({ userId: r.userId, reason: reasons.get(r.userId)! }));
 }
 
 /**
