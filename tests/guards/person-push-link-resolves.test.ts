@@ -417,9 +417,28 @@ describe('a notification destination resolves to a page', () => {
         // An interpolation standing where a literal segment belongs.
         expect(resolves(['*', 'threads'], patterns)).toBe(false);
 
-        // #3030 — the permalink agrent-ios will parse, deliberately not
-        // emitted until the page exists. This flips to true when it does.
-        expect(resolves(['channels', '*', 'posts', '*'], patterns)).toBe(false);
+        /*
+         * #3030 — the channel-post permalink, and the SECOND entry to cross
+         * this line rather than be deleted (see `machines` above).
+         *
+         * It sat on the FALSE side deliberately, with a comment saying it
+         * would flip when the page existed, and that is what this guard is
+         * for: it refused the five-segment path for as long as nothing served
+         * it, so the link upgrade could not land before the page. #3030 built
+         * the page; the push emits this shape now, and the real assertion
+         * covering it is the derived population above, which grades the
+         * emitted literal rather than this hand-written example.
+         *
+         * Keeping it as a POSITIVE is what stops the control rotting into a
+         * list of paths that happen to be dead today.
+         */
+        expect(resolves(['channels', '*', 'posts', '*'], patterns)).toBe(true);
+
+        // A still-dead nested shape, so the FALSE side keeps a nested case
+        // after the one above crossed over. Nothing serves a per-post reply
+        // page: threads are one level deep (P9.3b) and the permalink renders
+        // the replies inline, so there is no `…/posts/{id}/replies` surface.
+        expect(resolves(['channels', '*', 'posts', '*', 'replies'], patterns)).toBe(false);
     });
 
     it('parses the shapes that actually occur', () => {

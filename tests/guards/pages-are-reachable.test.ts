@@ -345,9 +345,22 @@ const SUBTREE_HREF_HELPERS =
  */
 function linkPatterns(route: string, prefix: string | null): RegExp[] {
     const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const firstDynamic = route.indexOf('/[');
-    const body = escape(firstDynamic === -1 ? route : route.slice(0, firstDynamic + 1));
-    const tail = firstDynamic === -1 ? `['"\`]` : `(?:\\$\\{|['"\`])`;
+    // An INTERMEDIATE dynamic segment matches either an interpolation or a
+    // literal segment, and stops at the next `/` — so it cannot run past its
+    // own segment into the rest of the path. See "a nested route" below.
+    const INTERP = `(?:\\$\\{[^}]*\\}|[^/'\"\`]+)`;
+    const segments = route.split('/').filter(Boolean);
+    const isDynamic = (s: string): boolean => s.startsWith('[');
+    // A TRAILING dynamic segment is dropped and answered by the tail, because
+    // the id itself never appears in source. An intermediate one stays, as
+    // INTERP, because the path CONTINUES past it and that continuation is the
+    // only thing telling this route from its parent.
+    const trailingDynamic = segments.length > 0 && isDynamic(segments[segments.length - 1]!);
+    const kept = trailingDynamic ? segments.slice(0, -1) : segments;
+    const body = kept.length === 0
+        ? '/'
+        : `/${kept.map((s) => (isDynamic(s) ? INTERP : escape(s))).join('/')}${trailingDynamic ? '/' : ''}`;
+    const tail = trailingDynamic ? `(?:\\$\\{|['"\`])` : `['"\`]`;
     if (prefix === null) {
         // The app root has no prefix, so the relative shape is all there is —
         // and it must additionally refuse a SUBTREE HELPER's argument. See
@@ -521,6 +534,77 @@ describe('every page is reachable from inside the product (#2844, #3037)', () =>
         expect(dynamic.source).toContain('q1\\.summary');
         expect(dynamic.test('`/reports/q1.summary/${x}`')).toBe(true);
         expect(dynamic.test('`/reports/q1Xsummary/${x}`')).toBe(false);
+    });
+
+    it('tells a route BELOW a dynamic segment from its parent (#3030)', () => {
+        // The population this covers was EMPTY until #3030, and that is why
+        // the hole was latent rather than visible: measured 2026-11-14, zero
+        // of the 111 routes had any path after their first dynamic segment,
+        // so truncating at the first `[` was lossless for every one of them.
+        //
+        // `/channels/[channelId]/posts/[postId]` is the first, and under the
+        // truncating form its pattern was `'/channels/` + `${` — which the
+        // EXISTING feed link already satisfies. The permalink page would have
+        // read as linked before anything linked it, which is the one
+        // direction this guard must never fail in.
+        const [nested] = linkPatterns('/channels/[channelId]/posts/[postId]', null);
+
+        // The parent's link is not a way in to the child.
+        expect(nested.test('`/channels/${channel.id}`')).toBe(false);
+        // Nor is the query-string form the push used before the page existed.
+        expect(nested.test('`/channels/${channelId}?post=${postId}`')).toBe(false);
+        // The real link is.
+        expect(nested.test('`/channels/${channelId}/posts/${postId}`')).toBe(true);
+        // An INTERMEDIATE id spelled literally counts — INTERP accepts a bare
+        // segment as well as an interpolation. The TRAILING one does not, and
+        // that is pre-existing rather than new: the tail has always required
+        // `${` or a quote, because widening it to accept a literal id would
+        // make `'/channels/` match `'/channels/anything'` and give the parent
+        // its child's link back.
+        expect(nested.test('`/channels/abc/posts/${id}`')).toBe(true);
+
+        // INTERP stops at its own segment: an interpolation cannot swallow the
+        // rest of the path and make the `/posts/` requirement vacuous.
+        expect(nested.test('`/channels/${a}/${b}`')).toBe(false);
+
+        // And the parent is still matched by its own link, so tightening the
+        // child did not break the ancestor.
+        const [parent] = linkPatterns('/channels/[channelId]', null);
+        expect(parent.test('`/channels/${channel.id}`')).toBe(true);
+    });
+
+    it('builds today\'s routes exactly as the truncating form did', () => {
+        // The REGRESSION control for the rewrite. Every route whose only
+        // dynamic segment is trailing (or which has none) must produce the
+        // identical pattern, because that is all 111 of them — so this change
+        // is provably confined to the new population above.
+        // Built through `new RegExp` so the comparison is against a SOURCE,
+        // not a raw string: `RegExp` normalises `/` to `\/`, and comparing a
+        // string to a source would differ on every route for that reason
+        // alone. The `/t/` prefix is used because the app-root branch adds a
+        // negative lookbehind, and restating that constant here would make
+        // this control a second copy of the thing it grades.
+        const truncating = (route: string): string => {
+            const escape = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const firstDynamic = route.indexOf('/[');
+            const body = escape(firstDynamic === -1 ? route : route.slice(0, firstDynamic + 1));
+            const tail = firstDynamic === -1 ? `['"\`]` : `(?:\\$\\{|['"\`])`;
+            return new RegExp(`['"\`]${body}${tail}`).source;
+        };
+
+        let compared = 0;
+        for (const page of pages) {
+            const route = page.route;
+            const i = route.indexOf('/[');
+            // Skip the new population — it is SUPPOSED to differ, and the
+            // case above is what grades it.
+            if (i !== -1 && route.slice(i + 1).includes('/')) continue;
+            const [mine] = linkPatterns(route, '/t/');
+            expect(mine.source).toBe(truncating(route));
+            compared += 1;
+        }
+        // A floor, so an extraction that selected nothing cannot pass here.
+        expect(compared).toBeGreaterThanOrEqual(100);
     });
 
     it('refuses a path that does not START the literal', () => {

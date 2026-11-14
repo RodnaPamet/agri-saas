@@ -68,6 +68,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Heading } from '@/components/ui/typography';
 import { apiGet, apiPost } from '@/lib/api-client';
+import { makeAuthorLabel } from '@/lib/channels/author-label';
 
 import { DisplayNamePrompt } from './DisplayNamePrompt';
 
@@ -87,31 +88,6 @@ interface PostWire {
     deleted: boolean;
     resolvedAt: string | null;
     replyCount: number;
-}
-
-/**
- * «Иван Петров, ЗК Победа», or whichever half exists — #2989.
- *
- * Four states, and three of them are normal rather than degraded. The comma
- * is the only formatting decision here and it belongs to the catalogue
- * (`channels.authorNameAndFarm`), because a locale that joins the two
- * differently must not need a code change.
- *
- * `null` for the both-absent case rather than an empty string: the timeline
- * treats `null` as "no label" and renders nothing, while an empty string is a
- * deliberate withholding it also honours. Either works; null is the honest
- * one for "we have nothing to show".
- */
-function makeAuthorLabel(
-    joinNameAndFarm: (vars: { name: string; farm: string }) => string,
-): (author: PostWire['author']) => string | null {
-    return (author) => {
-        if (!author) return null;
-        const name = author.displayName?.trim() || null;
-        const farm = author.farmName?.trim() || null;
-        if (name && farm) return joinNameAndFarm({ name, farm });
-        return name ?? farm;
-    };
 }
 
 interface FeedWire {

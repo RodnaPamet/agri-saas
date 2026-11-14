@@ -755,6 +755,38 @@ async function resolveAuthors(
 }
 
 /**
+ * The columns `toPostView` needs — spelled ONCE, for THREE readers.
+ *
+ * Extracted by #3030, which added the third: the feed, a thread, and now a
+ * single post by id for the permalink. It was two inline copies before, and
+ * P9.6 had already had to add its four `attachment*` columns to both — the
+ * note it left on them says why that matters: *"a shape that differed between
+ * the feed and a thread is how the collapse rule drifts (#2961)."*
+ *
+ * The failure mode a third hand-written copy invites is the one the other
+ * backend session named while P9.6 was in flight: a select of your own
+ * COMPILES and then yields `attachment: null` for every post. Nothing errors,
+ * nothing is missing from the type, and the posts simply lose their
+ * attachments. One constant makes that impossible rather than careful.
+ *
+ * `_count.replies` is in here because every reader wants it and Prisma folds
+ * it into the same statement — the N+1 the D1 guardrail refuses, avoided by
+ * construction rather than by remembering. `@@index([parentPostId])` serves
+ * it.
+ */
+const POST_VIEW_SELECT = {
+    id: true, authorUserId: true, authorTenantId: true,
+    channelId: true, parentPostId: true,
+    body: true, kind: true,
+    createdAt: true, deletedAt: true,
+    removedByModerationAt: true, autoHiddenAt: true,
+    resolvedAt: true,
+    attachmentKey: true, attachmentMime: true,
+    attachmentBytes: true, attachmentDurationMs: true,
+    _count: { select: { replies: true } },
+} as const;
+
+/**
  * The ONE place a `ChannelPost` row becomes a `ChannelPostView`.
  *
  * Shared by the feed and by `readPostReplies` deliberately. The collapse of
@@ -886,22 +918,7 @@ export async function readChannelFeed(
             // query for that reason — a post-filter would shrink the page and
             // make `hasMore` wrong, which P8.5 shipped once and corrected.
             take: limit + 1,
-            select: {
-                id: true, authorUserId: true, authorTenantId: true,
-                body: true, kind: true,
-                createdAt: true, deletedAt: true,
-                removedByModerationAt: true, autoHiddenAt: true,
-                resolvedAt: true,
-                // P9.6 — selected on BOTH read paths, because `toPostView` is
-                // the one mapper and a shape that differed between the feed
-                // and a thread is how the collapse rule drifts (#2961).
-                attachmentKey: true, attachmentMime: true,
-                attachmentBytes: true, attachmentDurationMs: true,
-                // ONE aggregate for the page, not a query per post — the N+1
-                // the D1 guardrail refuses. Prisma folds this into the same
-                // statement, and `@@index([parentPostId])` serves it.
-                _count: { select: { replies: true } },
-            },
+            select: POST_VIEW_SELECT,
         });
         const hasMore = rows.length > limit;
         const page = rows.slice(0, limit);
@@ -1054,6 +1071,74 @@ export async function assertMayPost(
  * gain nothing measures yet. Revisit if a real thread ever grows past a few
  * hundred replies.
  */
+/**
+ * ONE post, for the permalink — #3030.
+ *
+ * ## Why this did not already exist
+ *
+ * #3030 says "the read path is built; this is a page over it", and measured
+ * that is not quite true. `readPostReplies` reads the parent only to VALIDATE
+ * it — that it exists and is not itself a reply — and returns the replies
+ * alone. The feed returns top-level posts for a CHANNEL. So nothing returned a
+ * single post by id, and a permalink is exactly a single post by id.
+ *
+ * ## It is the same mapper, deliberately
+ *
+ * `toPostView` collapses the three removal columns into `deleted` and nulls
+ * the author with the body. A permalink reading rows directly would be a
+ * THIRD spelling of that collapse, and #2961 drifted with two — a thread read
+ * that served text the feed hid. So this goes through the same function, which
+ * means a removed post at a permalink answers the same shape it answers in the
+ * feed: present, empty, attributed to nobody, with its timestamp.
+ *
+ * **That is the behaviour rather than an oversight.** A permalink to a removed
+ * post must not 404: the link may be in somebody's push notification from
+ * before the removal, and a 404 would read as "that never existed" rather than
+ * "that is gone". The row's existence is not the secret — its content is.
+ *
+ * ## A REPLY is readable by its own id
+ *
+ * Unlike `readPostReplies`, which refuses a reply as a parent because a thread
+ * is one level deep (P9.3b). A permalink to a reply is a legitimate thing to
+ * hold — the push for a reply names the reply — so this returns it, and the
+ * page shows its parent for context by following `parentPostId`.
+ *
+ * ## The handle resolution sits outside the transaction
+ *
+ * For `resolveFarmHandles`' two reasons: `FarmBrand` is tenant-scoped and
+ * invisible in a user context, and a privileged read inside an open
+ * transaction takes a second pool connection (#1191).
+ */
+export async function readPost(
+    ctx: UserContext,
+    postId: string,
+): Promise<{ post: ChannelPostView; channelId: string; parentPostId: string | null }> {
+    const inner = await runInUserContext(ctx, async (tx) => {
+        const row = await tx.channelPost.findUnique({
+            where: { id: postId },
+            select: POST_VIEW_SELECT,
+        });
+        // `channel_post_select` admits any authenticated caller, so a null here
+        // is a genuinely absent row rather than a policy refusal — which is
+        // why this is a 404 and not a 403.
+        if (!row) {
+            throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
+        }
+        const authors = await resolveAuthors(tx, [row]);
+        return { row, authors };
+    });
+
+    const handles = await resolveFarmHandles(
+        inner.row.authorTenantId ? [inner.row.authorTenantId] : [],
+    );
+    const authors = { ...inner.authors, handles };
+    return {
+        post: toPostView(inner.row, authors),
+        channelId: inner.row.channelId,
+        parentPostId: inner.row.parentPostId,
+    };
+}
+
 export async function readPostReplies(
     ctx: UserContext,
     postId: string,
@@ -1091,22 +1176,11 @@ export async function readPostReplies(
             // a post-filter would shrink the page and make `hasMore` wrong,
             // which P8.5 shipped once and corrected.
             take: limit + 1,
-            select: {
-                id: true, authorUserId: true, authorTenantId: true,
-                body: true, kind: true,
-                createdAt: true, deletedAt: true,
-                removedByModerationAt: true, autoHiddenAt: true,
-                resolvedAt: true,
-                // P9.6 — selected on BOTH read paths, because `toPostView` is
-                // the one mapper and a shape that differed between the feed
-                // and a thread is how the collapse rule drifts (#2961).
-                attachmentKey: true, attachmentMime: true,
-                attachmentBytes: true, attachmentDurationMs: true,
-                // Always 0 for a reply — a thread is one level deep — and
-                // selected anyway because `toPostView` is the ONE mapper and
-                // a second shape for replies is how the collapse rule drifts.
-                _count: { select: { replies: true } },
-            },
+            // `_count.replies` is always 0 here — a thread is one level deep —
+            // and comes along because the shape is shared. That is the point:
+            // a reply-specific select would be a second shape, which is how
+            // the collapse rule drifts (#2961).
+            select: POST_VIEW_SELECT,
         });
         const hasMore = rows.length > limit;
         const page = rows.slice(0, limit);
@@ -1639,9 +1713,10 @@ interface ChannelActivityTargets {
      * Not used by the SSE half, which deliberately carries the CHANNEL id
      * (`StreamFrame`: a client with a message id still has to work out where
      * to put it, and `readConversation`'s sibling here is keyed by channel).
-     * It is the push DESTINATION: agrent-ios honours `?post={postId}` on
-     * builds that are already shipped, so the push can open the post itself
-     * rather than the channel — see the link literal below and #3030.
+     * It is the push DESTINATION: since #3030 the link is the five-segment
+     * permalink `/channels/{channelId}/posts/{postId}`, which agrent-ios has
+     * parsed since their #591 and which the web now answers with a page — so
+     * the push opens the post itself rather than the channel it sits in.
      */
     postId: string;
     authorUserId: string;
@@ -1883,17 +1958,23 @@ function queueChannelActivityNotify(args: ChannelActivityTargets): void {
                 // `person-push-send` resolves one for the RECIPIENT and
                 // composes the link. A bare path is what #2932 cost.
                 //
-                // The post rides in the QUERY, which is the one of three
-                // agreed shapes that works today. agrent-ios honours all
-                // three: this one (agreed with the other backend session
-                // 2026-11-12), the four-segment `/channels/{id}`, and
-                // `/channels/{id}/posts/{postId}` from agrent-ios #591. The
-                // last needs a page this repo does not have — emitting it
-                // would be #2932 again — and the four-segment form loses the
-                // post. So: a path that resolves, carrying an identifier the
-                // phone can act on and the web currently ignores. #3030
-                // settles which shape wins once the permalink page exists.
-                farmRelativePath: `/channels/${args.channelId}?post=${args.postId}`,
+                // THE FIVE-SEGMENT PERMALINK, since #3030 built the page it
+                // needs. Of the three shapes agrent-ios honours, this is the
+                // only one that is a DESTINATION on both clients: the
+                // four-segment `/channels/{id}` loses the post, and the
+                // `?post={postId}` query form this carried until now resolved
+                // on the web to the top of a channel feed that ignored the
+                // parameter — so a farmer tapping a notification about their
+                // own mention arrived at a search rather than an answer.
+                //
+                // The ORDER was the safe part and is worth keeping in mind
+                // for the next one of these: the page landed first, because
+                // `person-push-link-resolves` grades every notification
+                // destination against the real `(app)` page routes and
+                // refuses a path that resolves to nothing. Emitting the
+                // longer path first would have been #2932 again — a link in
+                // somebody's notification tray pointing at a 404.
+                farmRelativePath: `/channels/${args.channelId}/posts/${args.postId}`,
                 // Per CHANNEL rather than per post, deliberately: a busy
                 // channel should supersede its own banner rather than stack a
                 // column of them. The reason is in the key so a mention does
