@@ -89,6 +89,17 @@ const EXEMPT_BY_RULE: readonly { readonly test: RegExp; readonly why: string }[]
             + 'than about a person.',
     },
     {
+        test: /^card(?:Kind|Day|PayloadJson)$/,
+        why:
+            'P9.4 card metadata (#2938), and on a PERSON\'s post it is always '
+            + 'NULL — only a machine-written card carries it. The export selects '
+            + 'the rows this person authored, so these three columns would add a '
+            + 'column of nulls per row. A CARD is the platform\'s row, not '
+            + 'theirs: its `authorUserId` is the platform system user, so it is '
+            + 'not in their export at all and there is nothing about them to '
+            + 'withhold.',
+    },
+    {
         test: /^updatedAt$/,
         why:
             'Row bookkeeping. `createdAt` is exported everywhere because when '

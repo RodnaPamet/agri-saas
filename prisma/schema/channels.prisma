@@ -87,6 +87,36 @@ enum ChannelKind {
 /// A post's kind. `QUESTION` is «Въпрос» and is the only kind `resolvedAt` may
 /// be set on; `CARD` is P9.4's generated content, which shares the feed and so
 /// shares the table — it is moderatable and reportable for free that way.
+/// Which machine-written card a `ChannelPost` is (P9.4, #2938).
+///
+/// Separate from `ChannelPostKind`, which answers "is this a card at all". The
+/// two are not merged because the identity index needs the card's own kind:
+/// `@@unique([channelId, cardKind, cardDay])` must let one channel have a NEWS
+/// card and a LISTING card on the same day.
+///
+/// Each value's REACH is measured and uneven, which is the thing to know before
+/// adding a fifth (measured 2026-11-14 across the 43 seeded channels):
+///
+///   NEWS     — 10 channels. 5 crop channels have a matching `CROP_TAGS` entry
+///              (wheat, maize, barley, sunflower, rapeseed) and the 5 input
+///              channels share the `inputs` topic tag. The other 5 crops have
+///              no tag, and the 28 OBLAST channels have none either: the news
+///              vocabulary carries no regional tag, and pushing national
+///              weather or subsidy news into 28 channels would be the same
+///              card 28 times in surfaces that exist to be local.
+///   LISTING  — potentially all 43, and the ONLY kind that can reach an oblast
+///              channel, because `ExchangeListing` carries both `commodity`
+///              and `regionCode`. Dormant in practice: 1 ACTIVE listing in
+///              production.
+///   SCHEME   — national rather than per-channel, and 2 rows exist.
+///   EVENT    — the sparsest; see the generator.
+enum ChannelCardKind {
+  NEWS
+  LISTING
+  SCHEME
+  EVENT
+}
+
 enum ChannelPostKind {
   POST
   QUESTION
@@ -320,6 +350,41 @@ model ChannelPost {
   /// downloading the file. Validated, never trusted as evidence.
   attachmentDurationMs Int?
 
+  /// Which KIND of card this is, or NULL for a post somebody wrote (P9.4,
+  /// #2938). Separate from `kind`, which only says CARD: one channel gets one
+  /// NEWS card and one LISTING card on the same day, so the identity needs the
+  /// card's own kind.
+  cardKind ChannelCardKind?
+  /// The card's DATA, locale-independent, or NULL for a written post.
+  ///
+  /// A card cannot put its text in `body` alone and be correct, and that is
+  /// the reason this column exists rather than a convenience. One channel is
+  /// read in both languages — `Channel.nameBg`/`nameEn` exist for exactly
+  /// that — so a single composed sentence would pick a language at GENERATION
+  /// time for every future reader. P9.4's checklist asks for «bg + en copy for
+  /// every card kind», which a text column structurally cannot hold.
+  ///
+  /// So the split is: this holds the facts (a headline and its URL, a
+  /// listing's commodity and price, a scheme's authority), the FRAMING copy
+  /// lives in the catalogue keyed by `cardKind`, and the reader composes. The
+  /// same rule `DueItem.reason` was changed to follow — a value shown to a
+  /// recipient must not be a pre-rendered sentence when the recipient's
+  /// language is not knowable where it is built.
+  ///
+  /// A third-party HEADLINE is data, not copy: it arrives in one language from
+  /// a feed and is reproduced, not authored. `body` carries it too, as a
+  /// plain-text fallback, so a client that does not yet know about cards still
+  /// renders something a person can read rather than an empty bubble.
+  cardPayloadJson Json?
+  /// The day this card is FOR, in `Europe/Sofia`, or NULL for a written post.
+  ///
+  /// A DATE column and not a derivation from `createdAt`: Prisma cannot declare
+  /// a unique index on an expression, so `date(createdAt)` is not expressible —
+  /// and the uniqueness is the whole point. With it, a retry cannot double-post
+  /// and there is no `generated` flag for anything to forget to set, which is
+  /// the P5.5b pattern (`NoticeScore.reportId`).
+  cardDay DateTime? @db.Date
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -328,6 +393,10 @@ model ChannelPost {
   mentions  ChannelPostMention[]
 
   /// The feed: a channel's top-level posts, newest first.
+  /// ONE card per channel per kind per day. Postgres treats NULLs as DISTINCT
+  /// in a unique index, so every POST and QUESTION row — which carry NULL in
+  /// both columns — is unconstrained by this and needs no exemption.
+  @@unique([channelId, cardKind, cardDay])
   @@index([channelId, createdAt])
   /// A thread's replies.
   @@index([parentPostId])

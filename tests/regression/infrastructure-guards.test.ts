@@ -223,7 +223,11 @@ describe('Infrastructure Regression Guards', () => {
             // increments above landed within hours of each other on separate
             // branches, and each side pinned 36 — so this line exists because
             // the MERGE is where the arithmetic was wrong, not either branch.
-            expect(SCHEDULED_JOBS).toHaveLength(37);
+            // 37 -> 38 by #2938: `channel-cards`, P9.4's daily card
+            // generation at 03:00 UTC. A scheduled job is a thing that runs
+            // unattended against production data, so it lands as a visible
+            // line here by design.
+            expect(SCHEDULED_JOBS).toHaveLength(38);
         });
 
         test('scheduled job names match expected set', () => {
@@ -248,6 +252,9 @@ describe('Infrastructure Regression Guards', () => {
                 // owner ruling: production has no verified farm, so it hides
                 // nothing and says so in its reading.
                 'channel-auto-hide',
+                // #2938 — P9.4's daily cards. Named rather than counted only,
+                // so a RENAME is as visible as an addition.
+                'channel-cards',
                 // 'compliance-digest' removed in GRC teardown phase 2.
                 'compliance-snapshot',
                 // Grain fulfilment — daily 07:30 UTC sweep firing

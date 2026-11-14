@@ -317,6 +317,8 @@ const TRENDS_CALLER_EXEMPT: Readonly<Record<string, string>> = {
         'getMarketReferences values grain the farm ALREADY HOLDS — its own net worth, not the market surface. "Read what you have" is explicitly preserved by the ruling, and the figure is one column of a report about the farm itself.',
     'src/app-layer/usecases/contract.ts':
         'getMarketReferences decorates contracts the farm ALREADY SIGNED, so the same reasoning applies. Withholding it would blank a column of the tenant\'s own contract list rather than close a market surface.',
+    'src/app-layer/jobs/channel-cards.ts':
+        'P9.4\'s daily card generation (#2938) has NO tenant and no ctx to gate with: a channel is tenantless by design, so `assertNotPastDueRestricted(ctx, \'trends\')` has no argument to take. The reading is not "this caller is excused" but "the question does not apply" — a card is platform content written into a surface every farm shares, so there is no account whose standing could withhold it. Note the asymmetry it creates and why it is correct: a PAST_DUE farm cannot open /trends, and can still read a news card in a channel. That matches the ruling\'s own scope, which withholds the market SURFACES a tenant navigates to rather than every sentence derived from market data — the same reason `grain-net-worth` above keeps its figure.',
 };
 
 /** Files importing one of the tenant-independent trends exports. */

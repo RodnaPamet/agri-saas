@@ -282,7 +282,13 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // deferral is written by one job and settled by another, and a single
         // module doing both would put a write on the request-path side of a
         // boundary that has no request path.
-        expect(callers.length).toBeLessThanOrEqual(12);
+        // 12 -> 13 by #2938: `jobs/channel-cards.ts`. A channel is TENANTLESS,
+        // so there is no tenant context to enter with — a card is generated
+        // for a surface every farm shares, by a job with no farm of its own.
+        // Its own reason (`channel-card-generation`) rather than borrowing
+        // `channel-author-farm-handle`: that bypass RESOLVES a published
+        // handle for display, and this one WRITES posts.
+        expect(callers.length).toBeLessThanOrEqual(13);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -381,7 +387,12 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // The `User` read in that file is NOT a third site: it goes through
         // the plain client, as `push-summary` reads the same column, because
         // `User` carries no `tenantId` for RLS to scope.
-        expect(sites.length).toBeLessThanOrEqual(22);
+        // 22 -> 24 by #2938: TWO sites in `jobs/channel-cards.ts` — the
+        // channel list, and the `createMany`. Not one: the news reads happen
+        // between them and go through `getMarketNews`, which owns its own
+        // access, so holding a bypass across them would widen it for no
+        // reason.
+        expect(sites.length).toBeLessThanOrEqual(24);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

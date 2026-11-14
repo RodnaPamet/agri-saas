@@ -6761,6 +6761,20 @@
         "signOut": "Sign out"
     },
     "channels": {
+
+        "card": {
+
+            "news": {
+
+                "heading": "News",
+
+                "source": "Source: {source}"
+
+            },
+
+            "open": "Open"
+
+        },
         "title": "Channels",
         "intro": "Crop, region and input channels. You choose which to join — nothing joins you automatically.",
         "breadcrumbDashboard": "Dashboard",

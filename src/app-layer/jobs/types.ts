@@ -996,6 +996,20 @@ export interface FarmRecordPdfPayload {
  * Exchange EXPIRED sweep — flip ACTIVE listings past their `expiresAt` to
  * EXPIRED. System-wide (Exchange tables are global, no tenant axis).
  */
+/**
+ * channel-cards — P9.4's daily card generation (#2938).
+ *
+ * No arguments: the run derives its own day in `Europe/Sofia` and ranges over
+ * every non-archived channel. A `dayKey` on the payload was considered and
+ * left off — it would let a caller re-target an old day, and the unique index
+ * means the second write for that day is a no-op anyway, so the parameter
+ * would only create a way to be confused about which day a run was for.
+ */
+export interface ChannelCardsPayload {
+    /** Reserved: no field is read today. */
+    readonly _?: never;
+}
+
 export interface ExchangeExpirySweepPayload {
     /** Optional cap on rows flipped per run. */
     batchSize?: number;
@@ -1122,6 +1136,7 @@ export interface JobPayloadMap {
     'spatial-import': SpatialImportJobPayload;
     'cadastre-import': CadastreImportJobPayload;
     'farm-record-pdf': FarmRecordPdfPayload;
+    'channel-cards': ChannelCardsPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'mail-canary': MailCanaryPayload;
@@ -1277,6 +1292,20 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 500,
+    },
+    'channel-cards': {
+        // MORE than one attempt, unlike its P5 neighbours, and the index is
+        // why: `statement-dispatch` uses 1 because a retry would re-SEND and
+        // `notice-score` because a retry would re-SPEND, while here
+        // `@@unique([channelId, cardKind, cardDay])` with
+        // `skipDuplicates: true` means a retry re-inserts NOTHING. So a
+        // transient database or feed error is worth retrying rather than
+        // losing a day's cards.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30000 },
+        // Daily, so the tail is a month of history either way.
+        removeOnComplete: 50,
+        removeOnFail: 100,
     },
     'process-outbox': {
         // One attempt. A failed sweep is retried by the NEXT tick five minutes
