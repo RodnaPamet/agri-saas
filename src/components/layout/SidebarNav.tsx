@@ -30,6 +30,7 @@ import {
     LineChart,
     LogOut,
     MapPin,
+    AtSign,
     MessagesSquare,
     Newspaper,
     NotebookPen,
@@ -277,6 +278,27 @@ export function useNavSections(): NavSectionDef[] {
                     href: tenantHref('/channels'),
                     label: t('channels'),
                     icon: MessagesSquare,
+                    visible: channelsEnabled,
+                },
+                // «За Вас» (#2941) — replies to your posts and mentions of
+                // you, across every channel. Directly under «Канали» because
+                // it is only reachable once somebody is in one, and gated on
+                // the SAME flag: a surface that listed channel activity while
+                // channels were off would be a window into a feature with no
+                // door.
+                //
+                // The noun is «За Вас» and NOT «Активност» (owner ruling
+                // 2026-11-14): that word already labels two entity-scoped
+                // tabs and a dashboard chart, all meaning "this record's
+                // history", so registering it here would have made one word
+                // name three unrelated destinations. `nav-vocabulary.md`
+                // carries the row with «Активност» in its `Never` list.
+                //
+                // `pages-are-reachable` counts THIS line as the way in.
+                {
+                    href: tenantHref('/channels/for-you'),
+                    label: t('forYou'),
+                    icon: AtSign,
                     visible: channelsEnabled,
                 },
                 // «Вдъхновение» (#2980) — the book library. THE ONLY ITEM IN

@@ -947,6 +947,132 @@ function toPostView(
  * dangle — the DM precedent, where `deleteDirectMessage` writes `''` and keeps
  * the row.
  */
+/** One thing that happened to the caller, with why it concerns them. */
+export interface ActivityItem {
+    readonly post: ChannelPostView;
+    readonly channelId: string;
+    readonly channelNameBg: string;
+    readonly channelNameEn: string;
+    /**
+     * A DESCRIPTOR, never a sentence. P9.7's rule, and the same correction
+     * `DueItem.reason` took: the item is produced here and the reader's
+     * language is chosen later, so a composed phrase would pick one now.
+     */
+    readonly reason: 'mention' | 'reply';
+    /** Set when the item is a reply, so the client can open the thread. */
+    readonly parentPostId: string | null;
+}
+
+/**
+ * «За Вас» — what happened to the caller across every channel (P9.7, #2941).
+ *
+ * ## ONE query, not a merge
+ *
+ * Both halves are `ChannelPost` rows: a mention is a post that names me, a
+ * reply is a post whose parent is mine. So this is a single `OR` over one
+ * table with one `ORDER BY`, and NOT the two-source merge `listInbox` needs —
+ * that function merges because a direct message and an exchange thread live in
+ * different tables, and it pays for it with a hand-written total order and a
+ * cursor that both sides must agree on.
+ *
+ * Avoiding the merge avoids its whole failure mode: two sources with equal
+ * `createdAt` can skip or repeat a row across a page boundary, which is why
+ * the inbox keys on `(at, id)`. Here the ordering is the table's own.
+ *
+ * ## The DISCRIMINATOR comes back from the same query
+ *
+ * `mentions: { where: { userId } }` is selected, so "is this a mention or a
+ * reply" is answered by the row rather than by a second read — and a post that
+ * BOTH mentions me and replies to mine reports `mention`, which is the more
+ * specific description of what happened. That precedence matches
+ * `reachableTargets`, deliberately: the notification and this surface must not
+ * disagree about what an event was.
+ *
+ * ## My own posts are excluded, and that is the `authorUserId` clause
+ *
+ * Replying to yourself, or mentioning yourself, is not something that happened
+ * TO you. `reachableTargets` deletes the author from its target set for the
+ * same reason, and a surface that disagreed would show a person their own
+ * activity as if somebody else had done it.
+ *
+ * ## A BLOCKED person's mention still appears here, deliberately
+ *
+ * #3065 stopped a blocked person from INTERRUPTING the blocker — no push, no
+ * SSE frame. It did not make their posts invisible, and this surface is a PULL:
+ * the reader opens it. P5.2b's axes are what decide it — visibility is
+ * one-directional and a public channel makes the post readable either way,
+ * while contact is what a block refuses. Filtering here would also be a
+ * half-measure: the post is still in the channel feed, so hiding it from this
+ * list protects nobody and makes two reads of the same row disagree.
+ */
+export async function readMyActivity(
+    ctx: UserContext,
+    opts?: { limit?: number; before?: Date },
+): Promise<{ items: ActivityItem[]; hasMore: boolean }> {
+    const limit = Math.min(
+        Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
+        CHANNEL_FEED_MAX_PAGE_SIZE,
+    );
+
+    const inner = await runInUserContext(ctx, async (tx) => {
+        const rows = await tx.channelPost.findMany({
+            where: {
+                // `AND`, never sibling keys: the cursor clause and the
+                // `OR` below would otherwise be two `OR`/`createdAt` keys in
+                // one object literal, and the later one SILENTLY REPLACES the
+                // former. P8.5 shipped that once — every page returned page
+                // one.
+                AND: [
+                    ...(opts?.before ? [{ createdAt: { lt: opts.before } }] : []),
+                    // Never my own act — see the docblock.
+                    { authorUserId: { not: ctx.userId } },
+                    {
+                        OR: [
+                            { mentions: { some: { userId: ctx.userId } } },
+                            { parentPost: { authorUserId: ctx.userId } },
+                        ],
+                    },
+                ],
+            },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            // `limit + 1` is the hasMore probe, so NOTHING may be filtered
+            // after this query: a post-filter would shrink the page and make
+            // `hasMore` wrong.
+            take: limit + 1,
+            select: {
+                ...POST_VIEW_SELECT,
+                // The discriminator, from this same row.
+                mentions: { where: { userId: ctx.userId }, select: { id: true } },
+                channel: { select: { id: true, nameBg: true, nameEn: true } },
+            },
+        });
+
+        const hasMore = rows.length > limit;
+        const page = rows.slice(0, limit);
+        const authors = await resolveAuthors(tx, page);
+        return { page, authors, hasMore };
+    });
+
+    const handles = await resolveFarmHandles(
+        inner.page.map((r) => r.authorTenantId).filter((t): t is string => t !== null),
+    );
+    const authors = { ...inner.authors, handles };
+
+    return {
+        items: inner.page.map((r) => ({
+            post: toPostView(r, authors),
+            channelId: r.channel.id,
+            channelNameBg: r.channel.nameBg,
+            channelNameEn: r.channel.nameEn,
+            // MENTION WINS over reply — the more specific description, and the
+            // same precedence `reachableTargets` applies.
+            reason: r.mentions.length > 0 ? ('mention' as const) : ('reply' as const),
+            parentPostId: r.parentPostId,
+        })),
+        hasMore: inner.hasMore,
+    };
+}
+
 export async function readChannelFeed(
     ctx: UserContext,
     channelId: string,

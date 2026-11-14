@@ -48,9 +48,48 @@ The guard reads this table. Keep the column order and one row per concept.
 | parcels | Парцели | Parcels | ag.parcelHistory.breadcrumbParcels, locations.colParcels, locations.detail.overviewParcels, locations.detail.parcelsAccordion |  |  |
 | channel | Канал | Channel | channels.breadcrumbChannel | Общност, Група, Форум, Разговор | channels., sidebarNav. |
 | channels | Канали | Channels | channels.title, channels.breadcrumbCurrent | Общности, Групи, Форум, Разговори | channels. |
+| forYou | За Вас | For you | sidebarNav.forYou, channels.forYou.title, channels.forYou.breadcrumbCurrent | Активност, Активността | sidebarNav., channels.forYou. |
 | channelNav | Канали | Channel | sidebarNav.channels |  |  |
 | library | Вдъхновение | Inspiration | library.title, sidebarNav.library | Библиотека, Книги, Четене | library. |
 
+
+### «За Вас» — and why NOT «Активност» (owner ruling 2026-11-14)
+
+P9.7 (#2941) asked for a person-scoped social surface called «Активност», and
+registering that word here would have been wrong. Measured before writing the
+row: «Активност» / "Activity" is ALREADY the exact label of two entity-scoped
+tabs — `assets.tabActivity` and `tasks.detail.tabActivity` — plus a dashboard
+chart titled «Активност по задачи».
+
+Both existing uses mean *"this record's history"*: a tab inside one asset, a tab
+inside one task. P9.7's surface is the opposite shape — top-level, person-scoped,
+and about other people's posts.
+
+**That is this file's problem inverted.** It exists because the exchange was
+«Борса» in one place and «Пазар» in another: one destination with several names,
+every locale internally consistent, every guard green. Registering «Активност»
+here would have been **one name for three unrelated destinations**, which a
+reader arrives at the same confusion from the other direction — somebody who
+sees «Активност» in the sidebar and «Активност» on a task reasonably expects
+them to relate.
+
+The owner's ruling was to leave the two tabs alone and give the social surface
+its own noun. «Споменавания» (Mentions) was the runner-up and was rejected as
+too narrow: the surface carries replies as well, and a name describing half of
+what a surface holds is how it acquires a second name later.
+
+«Активност» is in this row's **Never** list for that reason — so a future PR
+reaching for the obvious word fails loudly rather than quietly creating the
+third use.
+
+**The list is deliberately only that word, and the first draft was wrong.** It
+also reserved «Новини», «Известия» and «Събития» as plausible alternative names
+for this surface, and the guard refused it: `sidebarNav.news` is already
+«Новини» and `sidebarNav.events` is already «Събития». Reserving those for
+«За Вас» would have claimed two other surfaces' legitimate names — the same
+one-word-two-surfaces confusion this file exists to prevent, arrived at from the
+other direction. A **Never** entry belongs here only when the word is not
+already somebody else's name.
 ## Channels: «Канали», and the recommendation that lost to a measurement
 
 Owner ruling 2026-11-10 (#2939): the surface is **«Канали»**, a sidebar item in

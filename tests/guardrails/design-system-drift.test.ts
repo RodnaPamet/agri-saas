@@ -522,6 +522,24 @@ describe('New page token discipline', () => {
         //
         // MEASURED from the failing assertion (99), not computed as 97+2 — a
         // shared ratchet stays honest only if the number comes from the run.
+        // 99 -> 101 (+2, #2941): «За Вас» —
+        // `channels/for-you/page.tsx` + `ForYouClient.tsx`. A genuinely new
+        // route, so it enters the tally like every unpromoted route above,
+        // and the +2 is the same page-and-client shape as #1587 and #3030.
+        //
+        // Not drift, checked rather than asserted: no raw colour scale in
+        // either file, and the vocabulary is semantic throughout —
+        // `border-border-subtle`, `text-content-muted`, `space-y-section`,
+        // `space-y-default`, `p-default`, `pt-tight`.
+        //
+        // Deliberately NOT promoted to MIGRATED_PAGES: this is a flat list of
+        // activity rows, not an EntityListPage — it has no filter toolbar, no
+        // DataTable and no columns, so there is no shape for that shell to
+        // carry. Promoting it to dodge a +2 would put a mislabel in the one
+        // list a reader consults to see what "migrated" means.
+        //
+        // MEASURED from the failing assertion (101), for the reason the line
+        // above gives.
         // THE DENOMINATOR, BEFORE THE CAP — #2377.
         //
         // `unmigrated` derives from `allPages`, so a walk that found nothing
@@ -538,11 +556,11 @@ describe('New page token discipline', () => {
         // does not move it, and far above zero so an emptied walk fails.
         console.log(
             `[design-system-drift] ${allPages.length} page-ish file(s) under the tenant tree, `
-                + `${unmigrated.length} unmigrated (cap 99)`,
+                + `${unmigrated.length} unmigrated (cap 101)`,
         );
         expect(allPages.length).toBeGreaterThanOrEqual(80);
 
-        expect(unmigrated.length).toBeLessThanOrEqual(99);
+        expect(unmigrated.length).toBeLessThanOrEqual(101);
     });
 
     it('migrated page count is at least 4', () => {
