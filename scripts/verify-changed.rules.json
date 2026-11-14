@@ -139,6 +139,13 @@
             "why": "Rendered tests, the design-system drift guardrail and the public-surface guards all range over components rather than over the file you edited."
         },
         {
+            "when": "^src\\/app-layer\\/",
+            "run": [
+                "tests/integration"
+            ],
+            "why": "A usecase or job is what the integration suites EXECUTE, and nothing mapped `src/app-layer/**` to `tests/integration` until #3057. Measured on main 2026-11-14: 442 files under `src/app-layer`, 312 of them reaching at least one integration suite, and ZERO edges — so editing a usecase derived `tests/unit` alone and ran none of the suites written to exercise it. #2531 is this same gap from the other side and its fix was scoped to the harness (`tests/integration/db-helper.ts`); the symmetric case, a change to the APPLICATION code, was left uncovered. It has now cost two CI cycles in opposite directions, most recently #3030/PR 3056, where a push-link literal in `usecases/channels.ts` is asserted exactly by `channel-mention-notifies.test.ts`: verify:changed derived 2,248 suites across five roots, none of them that one, every root green, and `Test (shard 2/6)` red on the single assertion. A green run reads as \"this change is verified\", which is the reading the script's own success message invites. DIRECTORY-LEVEL and deliberately broad, for the reason the `tests/helpers` rule already settled: the alternative is a rule per file, and 27 rules go stale one at a time. The cost was MEASURED rather than assumed before merging — the root is 278 suites / 2,523 tests in 406s against a real database, so an app-layer change pays about 7 minutes. That is less than one wasted CI cycle, which is what the gap costs when it fires. If it ever stops being worth it, the next option is an import-graph derivation (run only the suites that transitively import the changed module) — strictly better coverage per second and strictly more machinery. Not a per-file allowlist. `tests/guards/verify-changed-covers-app-layer.test.ts` RE-DERIVES the importers on every run, so the claim is held true rather than written down once."
+        },
+        {
             "when": "^src\\/app-layer\\/jobs\\/",
             "run": [
                 "tests/unit",
