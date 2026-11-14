@@ -100,6 +100,35 @@ describe('buildGoogleAuthorizeUrl', () => {
         expect(granted).not.toContain('https://www.googleapis.com/auth/calendar');
         expect(granted.length).toBeGreaterThan(0);
     });
+
+    it('asks for a calendar scope that calendars.insert actually ACCEPTS (#3053)', () => {
+        // The integration CREATES a dedicated farm calendar
+        // (`ensureFarmCalendar` → `POST /calendars`) and reads it back by id.
+        // Google accepts `calendars.insert` under only these three, and
+        // `calendars.get` likewise rejects `calendar.events`:
+        const INSERT_ACCEPTS = [
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/calendar.app.created',
+            'https://www.googleapis.com/auth/calendar.calendars',
+        ];
+        expect(INSERT_ACCEPTS).toContain(GOOGLE_CALENDAR_SCOPE);
+
+        // …and `calendar` (unqualified) is restricted, so of the three only
+        // two are available to us. Asserted as the INTERSECTION rather than as
+        // a single equality, so the reason survives if Google adds a fourth.
+        const usable = INSERT_ACCEPTS.filter(
+            (sc) => sc !== 'https://www.googleapis.com/auth/calendar',
+        );
+        expect(usable).toContain(GOOGLE_CALENDAR_SCOPE);
+
+        // The specific regression: `calendar.events` reads and writes events
+        // on every calendar the person owns and still cannot create one, so it
+        // is both wider AND insufficient. It shipped, and the first real sync
+        // would have answered 403 `insufficientPermissions`.
+        expect(GOOGLE_CALENDAR_SCOPE).not.toBe(
+            'https://www.googleapis.com/auth/calendar.events',
+        );
+    });
 });
 
 describe('exchangeCodeForGoogleToken', () => {
@@ -138,6 +167,11 @@ describe('exchangeCodeForGoogleToken', () => {
             access_token: 'at',
             refresh_token: 'rt',
             expires_in: 3600,
+            // `calendar.events` ON PURPOSE, and it is no longer a scope this
+            // app requests (#3053 moved to `calendar.app.created`). That makes
+            // the case stronger rather than stale: granted scopes are recorded
+            // VERBATIM, including ones we never asked for and ones left over
+            // from an earlier release's consent screen.
             scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events',
         });
         const out = await exchangeCodeForGoogleToken({ code: 'c', redirectUri: REDIRECT }, { fetchImpl, env: ENV });
@@ -146,6 +180,9 @@ describe('exchangeCodeForGoogleToken', () => {
             'https://www.googleapis.com/auth/drive.file',
             'https://www.googleapis.com/auth/calendar.events',
         ]);
+        // And the recorded scope is NOT what we now request, which is the
+        // property this fixture is really about.
+        expect(out.grantedScopes).not.toContain(GOOGLE_CALENDAR_SCOPE);
     });
 
     it('REFUSES a grant with no refresh token rather than creating a connection that dies in an hour', async () => {
@@ -275,6 +312,21 @@ describe('grantedProducts', () => {
 
     it('reports a partial grant the other way round', () => {
         expect(grantedProducts([GOOGLE_DRIVE_SCOPE])).toEqual({ drive: true, calendar: false });
+    });
+
+    it('an OLD calendar.events grant does not count as calendar (#3053)', () => {
+        // The migration consequence, and it is correct rather than a
+        // regression: such a grant cannot create the farm calendar, so the
+        // person must be told to reconnect instead of meeting a 403 at use
+        // time — which is the whole reason this function exists. No working
+        // calendar connection can be broken by it, because creating one under
+        // `calendar.events` was impossible.
+        expect(
+            grantedProducts([
+                GOOGLE_DRIVE_SCOPE,
+                'https://www.googleapis.com/auth/calendar.events',
+            ]),
+        ).toEqual({ drive: true, calendar: false });
     });
 
     it('reports both when both were granted', () => {
