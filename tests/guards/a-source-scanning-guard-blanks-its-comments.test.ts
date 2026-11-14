@@ -49,7 +49,6 @@ import {
     readsSourceText,
     routesThroughBlankNonCode,
 } from '../helpers/source-text-scanners';
-import { blankNonCode } from '../helpers/blank-non-code';
 
 /**
  * Guards that still read source text without blanking it (#1774).
