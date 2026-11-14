@@ -478,12 +478,20 @@ describeFn('#2987 — a mention and a reply notify somebody', () => {
             // `person-push-send` resolves the recipient's and prefixes
             // `/t/{slug}`. #2932 is what a bare path cost.
             //
-            // The post rides in the QUERY — the one of three agreed shapes
-            // that works on shipped phones AND resolves to a page this repo
-            // has. The id is asserted because it is the whole point of the
-            // query: a mention should open the post, not the channel.
+            // THE FIVE-SEGMENT PERMALINK, since #3030 built the page it needs.
+            // This asserted `/channels/{id}?post={postId}` until then, which
+            // was the only one of three agreed shapes that both ran on shipped
+            // phones and resolved to a page this repo had — and the web
+            // ignored the parameter, so a mention opened the top of a feed.
+            //
+            // The postId is asserted because it is the whole point of the
+            // link: a mention should open the POST, not the channel. The
+            // ordering that made changing it safe is in
+            // `person-push-link-resolves`, which grades this destination
+            // against the real `(app)` page routes and refused the longer path
+            // while nothing served it.
             expect(push.farmRelativePath).toBe(
-                `/channels/${channelId}?post=${postId}`,
+                `/channels/${channelId}/posts/${postId}`,
             );
             expect(push.collapseKey).toBe(`channel-${channelId}-mention`);
         }, 60_000);
