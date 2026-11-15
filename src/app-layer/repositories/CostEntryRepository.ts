@@ -358,4 +358,34 @@ export class CostEntryRepository {
             select: { id: true },
         });
     }
+
+    /**
+     * Soft-delete EVERY live cost entry for the tenant — the calculator reset
+     * (agrent-ios #610, owner ruling 2026-11-15).
+     *
+     * ONE statement, so it cannot stop halfway. That is the whole reason the
+     * route exists: looping the per-row delete from a phone over hundreds of
+     * rows can fail in the middle and leave a half-reset calculator, which is
+     * worse than either outcome.
+     *
+     * `deletedAt: null` in the `where` is not decoration — without it a repeat
+     * reset would re-stamp rows already deleted, moving a timestamp somebody
+     * may be reading as "when was this removed", and the returned count would
+     * claim to have deleted rows it only touched again.
+     *
+     * Invoice files are left ALONE, matching `softDelete` above. The single
+     * delete has never removed them, and the owner's ruling is that the bulk
+     * form matches it — so a mistaken reset is recoverable by clearing the
+     * column, and nothing irreversible happens.
+     *
+     * The tenant bound comes from `runInTenantContext`'s RLS, as everywhere
+     * else here; `tenantId` is written into the clause as well, which is the
+     * defence-in-depth the repository layer applies to every query.
+     */
+    static async softDeleteAllForTenant(db: PrismaTx, ctx: RequestContext) {
+        return db.costEntry.updateMany({
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            data: { deletedAt: new Date(), deletedByUserId: ctx.userId ?? null },
+        });
+    }
 }

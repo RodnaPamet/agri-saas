@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
-import { listCostEntries, createCostEntry } from '@/app-layer/usecases/cost-entry';
+import { listCostEntries, createCostEntry, resetCostRegister } from '@/app-layer/usecases/cost-entry';
 import { CreateCostEntrySchema, CostCategorySchema } from '@/app-layer/schemas/grain.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
@@ -89,4 +89,28 @@ export const POST = withApiErrorHandling(
             return jsonResponse(record, { status: 201 });
         },
     ),
+);
+
+/**
+ * `DELETE /api/t/{tenantSlug}/grain/costs` — reset the cost register
+ * (agrent-ios #610, owner ruling 2026-11-15).
+ *
+ * On the COLLECTION rather than a `/reset` verb, because that is what it is:
+ * the collection, emptied. A verb route would also sit outside the shape every
+ * other method here takes.
+ *
+ * OWNER/ADMIN only — the usecase asserts it, and the gate is deliberately
+ * stricter than the per-row delete's. See `resetCostRegister` for why soft
+ * semantics make the phone's 5-second undo proportionate.
+ */
+export const DELETE = withApiErrorHandling(
+    async (
+        req: NextRequest,
+        { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
+    ) => {
+        const params = await paramsPromise;
+        const ctx = await getTenantCtx(params, req);
+        await assertModuleEnabled(ctx, 'GRAIN');
+        return jsonResponse(await resetCostRegister(ctx));
+    },
 );
