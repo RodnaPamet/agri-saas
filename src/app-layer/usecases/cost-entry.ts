@@ -3,7 +3,7 @@ import { withDeleted } from '@/lib/soft-delete';
 import { RequestContext } from '../types';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -1011,6 +1011,76 @@ export async function updateCostEntry(
     });
 
     return toDto(row);
+}
+
+/**
+ * Reset the farm's cost register — every live entry soft-deleted at once
+ * (agrent-ios #610, owner ruling 2026-11-15).
+ *
+ * ## Why a bulk route exists at all
+ *
+ * The phone's «Нулирай» would otherwise loop `DELETE /grain/costs/{id}` over
+ * hundreds of rows, and a loop that fails in the middle leaves a HALF-reset
+ * calculator — a state neither the farmer nor the next read can make sense of.
+ * One `updateMany` in one transaction cannot do that.
+ *
+ * ## SOFT, and the invoice files are untouched
+ *
+ * Identical semantics to `deleteCostEntry`, which has never removed an
+ * invoice: it stamps `deletedAt` and leaves `invoiceFileId` and the file
+ * alone. The owner ruled the bulk form match it (2026-11-15), against a true
+ * hard delete, so a mistaken reset is recoverable by clearing the column.
+ *
+ * That is worth stating because the PHONE's protection is a 5-second undo, and
+ * a 5-second window is not what this repo asks for before irreversible
+ * destruction — `docs/destructive-actions.md` reserves typed confirmation for
+ * that class. Soft semantics are what make the short window proportionate.
+ *
+ * ## ADMIN, not WRITE
+ *
+ * `deleteCostEntry` asserts `assertCanWrite`, because removing one row you can
+ * see is ordinary editing. Emptying the whole register is not, so this asserts
+ * `assertCanAdmin` — OWNER and ADMIN only, which the owner specified and which
+ * is deliberately stricter than its per-row sibling. An EDITOR keeps the
+ * ability to delete entries one at a time.
+ *
+ * ## ONE audit row for the batch, naming the count
+ *
+ * Not N rows: the act was one decision, and N rows would bury it. A DOMAIN
+ * verb rather than `DELETE`, because the row-level shape understates it —
+ * `detailsJson.operation` is `'deleted'` for one entry and for all of them, so
+ * the verb is the only field a SIEM filter can separate them on. That is the
+ * rule CLAUDE.md states for `InventoryLot`'s blend.
+ */
+export async function resetCostRegister(
+    ctx: RequestContext,
+): Promise<{ deleted: number }> {
+    assertCanAdmin(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const { count } = await CostEntryRepository.softDeleteAllForTenant(db, ctx);
+
+        // Logged even when the count is ZERO. A reset that found nothing is
+        // still a decision somebody took, and a trail that records only the
+        // non-empty ones cannot answer "did anybody try".
+        await logEvent(db, ctx, {
+            action: 'COST_REGISTER_RESET',
+            entityType: 'CostEntry',
+            // No single entity — the act is about the register, and the tenant
+            // is already the audit row's scope.
+            entityId: ctx.tenantId,
+            details: `Reset the cost register (${count} entries)`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'CostEntry',
+                operation: 'deleted',
+                summary: 'Soft-deleted every live cost entry',
+                count,
+            },
+        });
+
+        return { deleted: count };
+    });
 }
 
 export async function deleteCostEntry(ctx: RequestContext, id: string) {

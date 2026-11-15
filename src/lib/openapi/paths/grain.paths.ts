@@ -456,6 +456,50 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/grain/costs',
+        operationId: 'resetCostRegister',
+        summary: 'Reset the cost register — soft-delete every live entry',
+        description:
+            'For the phone\'s «Нулирай» in the calculator (agrent-ios #610, owner '
+            + 'ruling 2026-11-15), so the register can be emptied in ONE call.\n\n'
+            + 'The route exists because looping `DELETE /grain/costs/{costEntryId}` '
+            + 'over hundreds of rows from a phone can stop halfway and leave a '
+            + 'half-reset calculator. This is one statement in one transaction.\n\n'
+            + 'SOFT, and the invoice files are untouched — identical semantics to '
+            + 'the per-row delete, which has never removed an invoice: it stamps '
+            + '`deletedAt` and leaves `invoiceFileId` and the file alone. So a '
+            + 'mistaken reset is recoverable by clearing the column, which is what '
+            + 'makes a short client-side undo window proportionate; this repo '
+            + 'reserves typed confirmation for irreversible destruction.\n\n'
+            + 'OWNER/ADMIN only, which is STRICTER than the per-row delete\'s write '
+            + 'permission: removing one row you can see is ordinary editing, and '
+            + 'emptying the register is not. An EDITOR keeps the per-row delete.\n\n'
+            + 'Repeat calls are safe and report `deleted: 0` — rows already deleted '
+            + 'are excluded, so a second reset neither re-stamps a timestamp '
+            + 'somebody may read as "when was this removed" nor counts rows it only '
+            + 'touched again.\n\n'
+            + 'For an exact confirmation before calling, sum `count` and '
+            + '`totalMinor` from `GET /api/t/{tenantSlug}/grain/costs/summary`.',
+        tags: ['Grain'],
+        extraResponses: codedErrorResponses({
+            403: 'ADMIN_FORBIDDEN_FOR_ROLE — the caller is not OWNER or ADMIN.',
+            404: 'The GRAIN module is not enabled for this farm.',
+        }),
+        success: {
+            status: 200,
+            description: 'How many live entries were soft-deleted.',
+            schema: z.object({
+                deleted: z.number().int().openapi({
+                    description:
+                        'Live entries soft-deleted by THIS call. Zero on a repeat, '
+                        + 'and zero when the register was already empty.',
+                }),
+            }),
+        },
+    });
+
+    op(registry, {
         method: 'post',
         path: '/api/t/{tenantSlug}/grain/costs',
         operationId: 'createCostEntry',
