@@ -219,6 +219,32 @@ export const PUBLIC_PATH_PREFIXES = [
     '/_next',            // Next.js internals
 ];
 
+/**
+ * The policy pages, in ONE place — #3085.
+ *
+ * Two different gates have to admit these, and until now each enumerated them
+ * separately: `PUBLIC_PATH_EXACT` below (may a visitor with no session read
+ * it?) and `isTermsAllowedPath` (may a signed-in person with an outstanding
+ * terms acceptance read it?). `/cookies` was added to the first and not the
+ * second, so it was publicly readable and yet bounced a user held at
+ * `/accept-terms` back to the gate.
+ *
+ * That is the FOURTH time this file has had the two-list bug — the comment on
+ * `/start` above counts three — and the first three were all fixed by adding
+ * the missing entry, which is what left the fourth available. So this is
+ * derived rather than enumerated: a new policy page added here is admitted by
+ * both gates at once, and one added to neither is caught by
+ * `legal-paths-pass-both-gates` in `tests/unit/terms-consent-gate.test.ts`.
+ *
+ * The reason the two gates agree is not a coincidence to be tidied away: a
+ * person deciding whether to accept the terms must be able to read what they
+ * are agreeing to, and the cookie policy is part of that same disclosure set.
+ * `/dsa-contact` is deliberately NOT here — it is a legal CONTACT POINT rather
+ * than a policy, it has no equivalent on the sign-up path, and it carries its
+ * own entry in both lists.
+ */
+export const LEGAL_POLICY_PATHS: readonly string[] = ['/terms', '/privacy', '/cookies'];
+
 export const PUBLIC_PATH_EXACT = new Set([
     // The Google consent RETURN (#2495). EXACT, not a prefix: it is one path,
     // and a prefix would open everything added under `/api/integrations/google/`
@@ -315,7 +341,8 @@ export const PUBLIC_PATH_EXACT = new Set([
     // `ALLOWED_ROOT_PAGES` in tenant-isolation-structural, and satisfying one
     // looks identical to being finished.
     '/start',
-    '/terms',
+    // Every policy page, from the one list both gates read.
+    ...LEGAL_POLICY_PATHS,
     '/dsa-contact',
     '/favicon.ico',
     '/robots.txt',
@@ -416,8 +443,6 @@ export const PUBLIC_PATH_EXACT = new Set([
     // consent box links to it before a request is submitted, and a
     // prospective user has to be able to read it before signing up. It
     // renders no tenant data, so there is nothing to gate.
-    '/privacy',
-    '/cookies', // Cookie policy — public by the same duty as /privacy (#3070)
 
     // ── probes and sinks, anonymous by design ──
     '/api/health', // Health check (no auth) — deprecated alias
@@ -845,7 +870,7 @@ export function isTermsAllowedPath(pathname: string): boolean {
     // lets you escape.
     if (pathname === '/api/account/deletion') return true;
     if (pathname === '/api/account/export') return true;
-    if (pathname === '/terms' || pathname === '/privacy') return true;
+    if (LEGAL_POLICY_PATHS.includes(pathname)) return true;
     if (pathname === '/dsa-contact') return true;
     if (pathname.startsWith('/api/auth/')) return true;
     // MFA first — see the ordering note above.
