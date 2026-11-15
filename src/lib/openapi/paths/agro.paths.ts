@@ -51,6 +51,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { IngestReadingsSchema, CreateDataStreamSchema } from '@/lib/schemas';
 import { op } from './helpers';
+import { MAX_SIGNAL_DAYS } from '@/lib/agro/signal-window';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -238,4 +239,77 @@ export function registerAgroPaths(registry: OpenAPIRegistry): void {
                 }),
         },
     });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/agro/signals',
+        operationId: 'listAgroSignals',
+        summary: "The farm's agro warnings for a date range",
+        description:
+            'Frost, spray-window and disease-risk signals for the farm, per BLOCK and per day. Built for a client that has to decide whether to show sowing advice on a given day.' +
+            '\n\n**The rows are per BLOCK, and that is why this returns rows rather than a verdict.** `AgroSignal` is keyed `(tenantId, locationId, kind, signalDate)`, so a farm with twelve blocks can have frost on two. A day-level boolean computed on the server would either over-suppress the whole farm or say nothing about which block, so the client composes the answer where it holds the location — «Предупреждение за слана в 2 блока».' +
+            '\n\n**`horizon` is the field that keeps you honest, and you must read it.** It is the last day a FORECAST actually informed. BEYOND IT, AN ABSENT SIGNAL MEANS *NOT KNOWABLE*, NOT *CLEAR* — nobody can forecast frost three weeks out, so a clean-looking day a month ahead must never be rendered as "checked, nothing found". It is derived from the newest observation the farm holds rather than from the configured forecast length, so a pull that partially failed reports the shorter truth, and a client that hard-coded the window instead would drift silently the day that setting changes. `null` means this farm has no weather at all.' +
+            '\n\nIt is ONE value for the farm, deliberately: a block whose own pull failed can have a shorter horizon than this, so treat it as the best case rather than a guarantee per block.' +
+            '\n\n**`FROST_RISK` rows are about days that have NOT happened, unlike the other two kinds**, which describe a day already observed. A forecast changes, so a future frost row the next pull no longer supports is REMOVED — but only while it is un-notified, and a past row is never touched. So treat this as the current truth for upcoming days rather than an append-only log: REPLACE a cached day-to-blocks map on refetch, never merge into it.' +
+            '\n\n`level` is a free severity label per kind — `UNSUITABLE` for spray, `HIGH` for disease, `FROST` for frost, which has one level by ruling rather than a WARN/SEVERE split.' +
+            '\n\n**ETagged, but not deterministic** — unlike `GET /api/lunar`, whose answer is astronomy and never changes. Send `If-None-Match` as a conditional-GET optimisation; do not read a 304 as a promise that the data is immutable.' +
+            `\n\nThe range is at most ${MAX_SIGNAL_DAYS} days, the same window as \`GET /api/lunar\`, so one client-side window serves both reads.`,
+        tags: ['Agro'],
+        params: z.object({
+            tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' } }),
+        }),
+        query: z.object({
+            from: z.string().openapi({
+                param: { name: 'from', in: 'query', required: true },
+                description: 'First day, inclusive. `YYYY-MM-DD`.',
+                example: '2026-04-01',
+            }),
+            to: z.string().openapi({
+                param: { name: 'to', in: 'query', required: true },
+                description:
+                    `Last day, inclusive. \`YYYY-MM-DD\`. At most ${MAX_SIGNAL_DAYS} days after \`from\`; a wider span is a 400, as is a date that does not exist.`,
+                example: '2026-04-30',
+            }),
+        }),
+        success: {
+            status: 200,
+            description:
+                'The farm\'s signals in the range, oldest first. An empty array inside the horizon means no warnings; beyond the horizon it means nothing is known.',
+            schema: z
+                .object({
+                    signals: z.array(
+                        z.object({
+                            locationId: z.string().openapi({
+                                description:
+                                    'The BLOCK this warning is about. Join it against `GET /api/t/{tenantSlug}/locations`.',
+                            }),
+                            kind: z
+                                .enum(['SPRAY_WINDOW', 'DISEASE_RISK', 'FROST_RISK'])
+                                .openapi({
+                                    description:
+                                        '`SPRAY_WINDOW` is claimed only when the window is UNSUITABLE, so its presence is a warning rather than a good window — the name reads the other way. A growing union: treat an unrecognised kind as a warning of unknown type rather than ignoring it.',
+                                }),
+                            level: z.string().nullable(),
+                            signalDate: z.string().openapi({ example: '2026-04-12' }),
+                        }),
+                    ),
+                    horizon: z.string().nullable().openapi({
+                        description:
+                            'Last day a forecast informed, `YYYY-MM-DD`. Read the description above before rendering anything beyond it.',
+                        example: '2026-04-14',
+                    }),
+                    frostThresholdC: z.number().openapi({
+                        description:
+                            'The 2 m air minimum at or below which a frost warning is claimed. Sent so a client can explain the warning without hard-coding the rule. Owner ruling 2026-11-15: 2 °C rather than 0 °C, because ground frost forms while the screen reading is still above zero.',
+                        example: 2,
+                    }),
+                    truncated: z.boolean().openapi({
+                        description:
+                            'True when the row cap was hit and the list is INCOMPLETE. Reported rather than silently trimmed: a block whose warning was cut off would be the exact failure this endpoint exists to prevent.',
+                    }),
+                })
+                .openapi('AgroSignals'),
+        },
+    });
+
 }

@@ -114,6 +114,10 @@ export const CALENDAR_EVENT_TYPES = [
     // mis-toned dot.
     'agro-signal-spray-window',
     'agro-signal-disease-risk',
+    // #3077. A FORECAST day rather than one that has happened, unlike its two
+    // siblings — the calendar renders it the same way, but a consumer deciding
+    // whether to trust it should know the difference.
+    'agro-signal-frost-risk',
     // agri-event — mirrors AgriEvent.category, which is a free string on
     // the model. Enumerating the four curated values here is deliberate:
     // an unmapped value becomes a compile error at the mapper rather than

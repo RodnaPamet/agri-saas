@@ -896,6 +896,12 @@ enum DataStreamStatus {
 enum AgroSignalKind {
   SPRAY_WINDOW
   DISEASE_RISK
+  /// #3077 — frost expected on a FORECAST day, so the lunar calendar can
+  /// refuse to advise sowing. Unlike its two siblings, which describe a day
+  /// that has happened, a FROST_RISK row is about a day that has not — which
+  /// is why future-dated un-notified rows are retractable (see
+  /// `usecases/agro-signals.ts`).
+  FROST_RISK
 }
 
 /// Lot genealogy edge kind (OFBiz lot-genealogy concept, reimplemented).

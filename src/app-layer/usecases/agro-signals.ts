@@ -30,13 +30,16 @@ import { assertCanWrite } from '../policies/common';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { createAgroSignalNotification } from '../notifications/agro';
-import { renderDiseaseReason, renderSprayReason } from '@/lib/agro/reason-label';
+import { renderDiseaseReason, renderFrostReason, renderSprayReason } from '@/lib/agro/reason-label';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 import {
     evaluateSprayWindow,
     evaluateDiseaseRisk,
     type SprayWeather,
     type DiseaseDay,
+    evaluateFrostRisk,
+    DEFAULT_FROST_THRESHOLDS,
 } from '@/lib/agro/rules';
 import { logger } from '@/lib/observability/logger';
 import { enqueue } from '../jobs/queue';
@@ -47,10 +50,26 @@ import { isLlmConfigured } from '../ai/llm-client';
 /** Lookback window (days) for the disease-pressure streak. */
 const DISEASE_LOOKBACK_DAYS = 10;
 
+/**
+ * The frost notification's detail line, which carries a DATE.
+ *
+ * Its two siblings need none: a spray or disease signal is about today, so the
+ * reason alone is the whole story. A frost warning is about a day that has not
+ * happened, and «очаква се слана» with no date tells a farmer nothing they can
+ * act on — so the date is interpolated here rather than left to the reader.
+ */
+export const FROST_DETAIL_KEY = 'notifications.agro.frostRisk.detailOn';
+
 export interface EvaluateLocationSignalsResult {
     created: number;
     spray: { fired: boolean; status: string | null };
     disease: { fired: boolean; level: string | null };
+    /**
+     * Frost is reported as DAYS, not a boolean, because one run claims one row
+     * per warned forecast day rather than a single row for today (#3077).
+     * `retracted` counts future rows a changed forecast no longer supports.
+     */
+    frost: { fired: boolean; days: string[]; retracted: number };
     /**
      * When a NEW spray-window warning fired, the Web Push payload for the
      * caller (weather-pull job) to deliver AFTER the tx commits — so the
@@ -100,6 +119,7 @@ export async function evaluateLocationSignals(
         created: 0,
         spray: { fired: false, status: null },
         disease: { fired: false, level: null },
+        frost: { fired: false, days: [], retracted: 0 },
     };
 
     // ── Phase 1 — load weather, evaluate, claim signals (one tx). ──
@@ -147,6 +167,9 @@ export async function evaluateLocationSignals(
             return {
                 location, sprayNew: false, diseaseNew: false, sprayStatus: null,
                 diseaseLevel: null, diseaseDetail: null, recipientLocale,
+                // No observations at all is NOT "no frost" — it is nothing
+                // known, and nothing is claimed or retracted on that basis.
+                frostDays: [], frostRetracted: 0, frostDetail: null,
             };
         }
 
@@ -215,6 +238,88 @@ export async function evaluateLocationSignals(
             diseaseNew = claim.count > 0;
         }
 
+        // ── Claim FROST_RISK per FORECAST day, and retract what expired ──
+        //
+        // Unlike its two siblings this is not one row for today. The rule is
+        // «no "sow" on a frost day» (owner, 2026-11-15) and the farmer is
+        // looking at a calendar, so the question is asked of every day the
+        // forecast reaches — `obs` is already unbounded above and
+        // `weather-pull` upserts forecast rows, so those days are in hand
+        // without a second query.
+        const frostDays: string[] = [];
+        const frostWarranted = new Set<string>();
+        let frostDetail: string | null = null;
+        for (const o of obs) {
+            // Today and forward only. A frost that already happened is not a
+            // reason to refuse to sow NEXT week, and back-filling warnings
+            // for history would suppress advice on days already past.
+            if (o.obsDate.getTime() < signalDate.getTime()) continue;
+            const dayKey = o.obsDate.toISOString().slice(0, 10);
+            const frost = evaluateFrostRisk({ date: dayKey, tempMinC: num(o.tempMinC) });
+            if (!frost.atRisk) continue;
+            frostWarranted.add(dayKey);
+            const claim = await db.agroSignal.createMany({
+                data: [
+                    {
+                        tenantId: ctx.tenantId,
+                        locationId,
+                        kind: 'FROST_RISK',
+                        // One level by ruling — 2 degrees C catches ground
+                        // frost, chosen over a WARN/SEVERE split — so there is
+                        // no second value to name here.
+                        level: 'FROST',
+                        signalDate: o.obsDate,
+                        notified: false,
+                        detailsJson: {
+                            reasons: frost.reasons,
+                            tempMinC: frost.tempMinC,
+                            thresholdC: DEFAULT_FROST_THRESHOLDS.tempMinC,
+                        },
+                    },
+                ],
+                skipDuplicates: true,
+            });
+            if (claim.count > 0) {
+                frostDays.push(dayKey);
+                // The NEAREST new day decides the notification's sentence, so
+                // render from the first one claimed — `obs` is ascending.
+                frostDetail ??= await translateFor(recipientLocale, FROST_DETAIL_KEY, {
+                    date: dayKey,
+                    reason: (await renderFrostReason(recipientLocale, frost.reasonCodes[0])) ?? '',
+                });
+            }
+        }
+
+        // Retract a FUTURE, UN-NOTIFIED row the forecast no longer supports.
+        //
+        // The asymmetry is the design. A forecast changes, so a row claimed
+        // for Thursday can stop being warranted, and leaving it would suppress
+        // sowing advice on a day that turned out fine. But a row somebody has
+        // already been TOLD about stands whatever the forecast now says —
+        // withdrawing a warning a farmer may have acted on is worse than
+        // leaving it, and because a notified row is never deleted it can never
+        // be re-created, which makes "never notify twice about the same day" a
+        // property of the data rather than of a flag somebody has to check.
+        // Past rows are a record and are never touched.
+        //
+        // It also leans the way the threshold ruling leans: an extra warning
+        // costs a day, a missed frost costs a sowing.
+        const horizon = obs[obs.length - 1].obsDate;
+        const retraction = await db.agroSignal.deleteMany({
+            where: {
+                tenantId: ctx.tenantId,
+                locationId,
+                kind: 'FROST_RISK',
+                notified: false,
+                // Strictly after today, and no further than the forecast we
+                // actually hold: a row beyond the horizon is unverifiable
+                // rather than unwarranted, and deleting it would be a claim
+                // about a day we know nothing about.
+                signalDate: { gt: signalDate, lte: horizon },
+                NOT: { signalDate: { in: [...frostWarranted].map((d) => new Date(`${d}T00:00:00.000Z`)) } },
+            },
+        });
+
         // ── Spray notification + audit, inside this tx (no own-tx call). ──
         // Web Push is fanned out by the CALLER after this tx commits (so the
         // network send never holds the tx) — capture its payload here.
@@ -271,6 +376,9 @@ export async function evaluateLocationSignals(
             diseaseDetail: await renderDiseaseReason(recipientLocale, disease.reasonCodes[0]),
             sprayNotification,
             sprayRecipientUserId,
+            frostDays,
+            frostRetracted: retraction.count,
+            frostDetail,
         };
     });
 
@@ -322,6 +430,62 @@ export async function evaluateLocationSignals(
                 component: 'agro-signals',
                 tenantId: ctx.tenantId,
                 locationId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+
+    // ── Phase 3 — frost signal side effects. ──
+    //
+    // One notification per run, naming the NEAREST newly-claimed day, rather
+    // than one per warned day: a three-day cold snap is one thing a farmer
+    // needs to know, and three pushes about it is how somebody turns
+    // notifications off. The per-day rows still exist for the calendar to
+    // suppress each day individually — the bell row is a summary of them, not
+    // a substitute.
+    //
+    // Re-notification is impossible by construction rather than by a check
+    // here: only a NEW claim lands in `frostDays`, a claim is new once per
+    // (location, day), and the retraction above never deletes a notified row.
+    result.frost.retracted = phase1.frostRetracted;
+    if (phase1.frostDays.length > 0) {
+        result.created += phase1.frostDays.length;
+        result.frost.fired = true;
+        result.frost.days = phase1.frostDays;
+        try {
+            await runInTenantContext(ctx, async (db: PrismaTx) => {
+                await db.agroSignal.updateMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        locationId,
+                        kind: 'FROST_RISK',
+                        signalDate: {
+                            in: phase1.frostDays.map((d) => new Date(`${d}T00:00:00.000Z`)),
+                        },
+                    },
+                    data: { notified: true },
+                });
+                const recipient = phase1.location.ownerUserId ?? ctx.userId;
+                await createAgroSignalNotification(db, 'FROST_RISK_WARNING', {
+                    tenantId: ctx.tenantId,
+                    recipientUserId: recipient,
+                    locationId,
+                    locationLabel: phase1.location.name,
+                    tenantSlug: ctx.tenantSlug ?? '',
+                    detail: phase1.frostDetail,
+                    locale: phase1.recipientLocale,
+                }, now);
+            });
+        } catch (err) {
+            // Same posture as the disease branch: the rows are committed and
+            // idempotent, so a failed notification is logged rather than
+            // fatal. It does mean a farmer can miss a frost alert while the
+            // calendar still suppresses the day, which is the safe direction.
+            logger.warn('agro-signals: frost signal notification failed', {
+                component: 'agro-signals',
+                tenantId: ctx.tenantId,
+                locationId,
+                days: phase1.frostDays.length,
                 error: err instanceof Error ? err.message : String(err),
             });
         }

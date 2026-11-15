@@ -1382,6 +1382,74 @@ exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AgroSignals 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "string",
+            "description": "The BLOCK this warning is about. Join it against \`GET /api/t/{tenantSlug}/locations\`."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SPRAY_WINDOW",
+              "DISEASE_RISK",
+              "FROST_RISK"
+            ],
+            "description": "\`SPRAY_WINDOW\` is claimed only when the window is UNSUITABLE, so its presence is a warning rather than a good window — the name reads the other way. A growing union: treat an unrecognised kind as a warning of unknown type rather than ignoring it."
+          },
+          "level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signalDate": {
+            "type": "string",
+            "example": "2026-04-12"
+          }
+        },
+        "required": [
+          "locationId",
+          "kind",
+          "level",
+          "signalDate"
+        ]
+      }
+    },
+    "horizon": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Last day a forecast informed, \`YYYY-MM-DD\`. Read the description above before rendering anything beyond it.",
+      "example": "2026-04-14"
+    },
+    "frostThresholdC": {
+      "type": "number",
+      "description": "The 2 m air minimum at or below which a frost warning is claimed. Sent so a client can explain the warning without hard-coding the rule. Owner ruling 2026-11-15: 2 °C rather than 0 °C, because ground frost forms while the screen reading is still above zero.",
+      "example": 2
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the row cap was hit and the list is INCOMPLETE. Reported rather than silently trimmed: a block whose warning was cut off would be the exact failure this endpoint exists to prevent."
+    }
+  },
+  "required": [
+    "signals",
+    "horizon",
+    "frostThresholdC",
+    "truncated"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AppleMfaRequired 1`] = `
 "{
   "type": "object",
