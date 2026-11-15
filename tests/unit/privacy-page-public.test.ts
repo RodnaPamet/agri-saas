@@ -16,12 +16,18 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
+import { isPublicPath } from '../../src/lib/auth/guard';
+
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 describe('the privacy notice is publicly reachable', () => {
     it('is in the middleware public-path allowlist', () => {
-        const guard = read('src/lib/auth/guard.ts');
-        expect(guard).toMatch(/^\s*'\/privacy',/m);
+        // Through the real predicate rather than a regex over `guard.ts` —
+        // see the note in `legal-pages-public.test.ts`. The policy paths are
+        // derived from one constant since #3085, so the literal no longer
+        // appears as its own list line while the page is MORE certainly
+        // public than before.
+        expect(isPublicPath('/privacy')).toBe(true);
     });
 
     it('is also allowed to live outside /t/[tenantSlug]', () => {

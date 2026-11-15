@@ -33,6 +33,27 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
+import { isPublicPath } from '../../src/lib/auth/guard';
+
+/**
+ * Membership is asserted through the REAL `isPublicPath`, not a regex over
+ * `guard.ts` — changed in #3085.
+ *
+ * It used to match `^\s*'/terms',` against the file, which answers "does this
+ * literal appear as its own list line" rather than "is this path public". The
+ * two came apart the moment the policy paths were DERIVED from one
+ * `LEGAL_POLICY_PATHS` constant instead of written out three times: the
+ * property became MORE true and the needle went blind, which is the
+ * "a needle loses the thread at a rename" shape.
+ *
+ * Calling the function is strictly stronger in both directions. It resolves
+ * the `Set` and the prefix rules, so a path made public by a prefix now passes
+ * where the regex could never see it; and a literal sitting in a COMMENT can
+ * no longer satisfy it, which is the false positive the old regex was anchored
+ * to avoid in the first place. `cookieless-auth-routes-are-edge-reachable`
+ * already made this argument — a regex over `PUBLIC_PATH_EXACT` truncated at
+ * 25 of ~50 entries and dropped `/api/auth`.
+ */
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
 const PAGES = [
@@ -49,10 +70,7 @@ const PAGES = [
 
 describe('the legal pages are publicly reachable', () => {
     it.each(PAGES)('$route is in the middleware public-path allowlist', ({ route }) => {
-        const guard = read('src/lib/auth/guard.ts');
-        // EXACT entry, matched as its own list line — a substring match would
-        // also be satisfied by the path appearing inside a comment.
-        expect(guard).toMatch(new RegExp(`^\\s*'${route}',`, 'm'));
+        expect(isPublicPath(route)).toBe(true);
     });
 
     it.each(PAGES)('$route is also allowed to live outside /t/[tenantSlug]', ({ name }) => {
@@ -194,7 +212,7 @@ describe('every page allowed outside /t/ is EITHER public or session-gated on pu
         '%s is in BOTH lists',
         (root) => {
             expect(allowedRoots).toContain(root);
-            expect(guard).toMatch(new RegExp(`^\\s*'/${root}',`, 'm'));
+            expect(isPublicPath(`/${root}`)).toBe(true);
         },
     );
 
@@ -202,7 +220,7 @@ describe('every page allowed outside /t/ is EITHER public or session-gated on pu
         const unclassified = allowedRoots.filter(
             (root) =>
                 !SESSION_GATED[root] &&
-                !new RegExp(`^\\s*'/${root}',`, 'm').test(guard),
+                !isPublicPath(`/${root}`),
         );
         expect(unclassified).toEqual([]);
     });
