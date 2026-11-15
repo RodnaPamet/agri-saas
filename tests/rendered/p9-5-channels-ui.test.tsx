@@ -410,8 +410,15 @@ describe('the feed', () => {
         // afterwards records where they ended up rather than where the prepend
         // has to put them back.
         expect(calls).toEqual(['anchor']);
+        // The cursor carries BOTH the instant and the id. `createdAt` is
+        // `timestamp(3)` and Postgres `now()` is transaction-stable, so rows
+        // written by one `createMany` share a timestamp — P9.4 writes up to
+        // ten cards that way — and a cursor on the instant alone drops every
+        // row tied with the boundary. Asserting the whole URL here is what
+        // caught this client when the tie-break landed, so it keeps asserting
+        // the whole URL.
         expect(apiGet).toHaveBeenCalledWith(
-            '/api/social/channels/c1?before=2026-11-10T10%3A00%3A00.000Z',
+            '/api/social/channels/c1?before=2026-11-10T10%3A00%3A00.000Z&beforeId=p2',
         );
 
         resolveFetch({ posts: [post({ id: 'p1', createdAt: '2026-11-10T08:00:00.000Z' })], hasMore: false });

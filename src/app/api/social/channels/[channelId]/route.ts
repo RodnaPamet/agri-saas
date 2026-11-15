@@ -57,7 +57,16 @@ export const GET = withApiErrorHandling(
             }
         }
 
-        const feed = await readChannelFeed(ctx, channelId, { limit, before });
+        // The TIE-BREAK, optional. `createdAt` is `timestamp(3)` and Postgres
+        // `now()` is transaction-stable, so rows written by one `createMany`
+        // share a timestamp — P9.4's card generator writes up to ten that way,
+        // and a cursor on `createdAt` alone drops every row tied with the
+        // boundary. Optional because callers already in the wild send `before`
+        // alone, and refusing them would turn a silent row loss into an
+        // outage.
+        const beforeId = url.searchParams.get('beforeId') ?? undefined;
+
+        const feed = await readChannelFeed(ctx, channelId, { limit, before, beforeId });
         return jsonResponse(feed);
     },
 );

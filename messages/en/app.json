@@ -6986,6 +6986,8 @@
         }
     },
     "errors": {
+        "SEARCH_TOO_SHORT": "Type at least 2 characters.",
+        "INVALID_SCOPE": "That search scope is not valid.",
         "CHANNEL_NOT_A_QUESTION": "Only a question can be marked answered.",
         "CHANNEL_NOT_THE_ASKER": "Only the person who asked can mark a question answered.",
         "CHANNEL_POST_DELETED": "That post was removed, so it cannot be replied to.",
