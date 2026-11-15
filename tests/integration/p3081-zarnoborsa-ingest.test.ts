@@ -21,7 +21,7 @@ import {
     ingestZarnoBorsaRows,
     ZARNOBORSA_SOURCE,
     ZARNOBORSA_SOURCE_URL,
-} from '@/app-layer/usecases/zarnoborsa-ingest';
+} from '@/app-layer/jobs/zarnoborsa-ingest';
 import { ZARNOBORSA_EXW_BG, ZARNOBORSA_FOB_BG } from '@/lib/market/zarnoborsa-markets';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });

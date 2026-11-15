@@ -1,6 +1,19 @@
 /**
  * Storing ZarnoBorsa rows as `MarketPriceSeries` + `MarketPricePoint` (#3081).
  *
+ * ## In `jobs/` and not `usecases/`, which a guard settled
+ *
+ * The first draft sat in `usecases/` and `no-direct-prisma` refused it:
+ * usecases and repositories may not import the global client, because a
+ * usecase takes a `RequestContext` and its queries must filter by tenant.
+ *
+ * This has no `RequestContext`, no tenant and no policy check to make — it is
+ * unattended machinery over a global catalogue, exactly like
+ * `market-prices-pull`, which has written these same two tables since the EC
+ * feed shipped and lives here. So the guard was not an obstacle to route
+ * around with an allowlist entry; it was pointing out that the file was in the
+ * wrong layer.
+ *
  * ## Separate from the fetch, because only one half needs a browser
  *
  * A plain fetch cannot hold their session, so the pages are read by a headless
