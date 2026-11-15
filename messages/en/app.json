@@ -5249,8 +5249,8 @@
                 "consecutiveWarmWetDays": "Consecutive warm-wet days: {days} — favourable for foliar disease"
             },
             "frostReason": {
-            "frostExpected": "Frost expected: minimum {temp}\u00b0C, at or below the {threshold}\u00b0C threshold",
-            "noFrostExpected": "No frost expected: minimum {temp}\u00b0C, above the {threshold}\u00b0C threshold",
+            "frostExpected": "Frost expected: minimum {temp}°C, at or below the {threshold}°C threshold",
+            "noFrostExpected": "No frost expected: minimum {temp}°C exceeds the {threshold}°C threshold",
             "noForecast": "No minimum temperature forecast for this day"
             },
             "soilReason": {
