@@ -695,10 +695,9 @@ executorRegistry.register('channel-cards', async () => {
     const startMs = performance.now();
     const { runChannelCards } = await import('./channel-cards');
     const r = await runChannelCards();
-    // scanned = channels considered for the one kind that exists today,
-    // actioned = cards inserted, skipped = the difference. The PER-KIND
-    // arithmetic is in the job's own log line, because a single triple cannot
-    // say which kind was dormant — which is the whole point of the reading.
+    // The PER-KIND arithmetic stays in the job's own log line, because a
+    // single triple cannot say WHICH kind was dormant — the whole point of
+    // that reading.
     /*
      * scanned is the sum of ELIGIBLE channels across every kind — the card
      * OPPORTUNITIES this run had — not the channel count.
