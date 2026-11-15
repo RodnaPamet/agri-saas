@@ -93,8 +93,25 @@ const argv = process.argv.slice(2);
 const explainOnly = argv.includes('--explain');
 const baseArg = argv.find((a) => a.startsWith('--base='));
 
+/**
+ * `maxBuffer` is EXPLICIT, because the default kills this on a large diff.
+ *
+ * `execFileSync` defaults to 1 MB of stdout and throws `ENOBUFS` past it —
+ * measured 2026-11-15 by diffing against git's empty tree, which is what a
+ * test needs for a deterministic base and is also what a long-lived branch
+ * eventually looks like. The failure is a thrown Error rather than a short
+ * read, so it is loud rather than silent; it is still a tool that stops
+ * working exactly when the diff is big enough to need it most.
+ *
+ * 256 MB because the biggest consumer is `git diff` CONTENT for the content
+ * rules, which scales with the diff rather than with the file count.
+ */
 function git(...args) {
-    return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+    return execFileSync('git', args, {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        maxBuffer: 256 * 1024 * 1024,
+    }).trim();
 }
 
 /**

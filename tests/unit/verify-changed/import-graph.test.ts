@@ -218,33 +218,56 @@ describe('the SEAM is wired, not just the module', () => {
      * tree, which is the half a behavioural test cannot reach.
      */
     it('verify:changed runs the import graph and reports its cost', () => {
-        const r = spawnSync('node', [path.join(ROOT, 'scripts/verify-changed.mjs'), '--explain'], {
-            cwd: ROOT,
-            encoding: 'utf8',
-            maxBuffer: 64 * 1024 * 1024,
-        });
-        // `--explain` runs no tests, so a non-zero status is the script
-        // refusing (an empty population) rather than a test failing.
-        expect(r.status).toBe(0);
+        /*
+         * Against git's EMPTY TREE, not the ambient diff.
+         *
+         * The first version ran the script with no `--base` and asserted exit
+         * 0. That passed locally and failed in CI with status 1, because the
+         * assertion was about the git environment rather than about the seam:
+         * CI checks out at depth 1 with a blob-filtered base fetch, so what
+         * `resolveBase` finds and whether the population is empty are both
+         * properties of the runner.
+         *
+         * `4b825dc6…` is git's empty tree — a constant in every repository.
+         * Diffing against it makes every tracked file "changed", which is
+         * deterministic anywhere and needs only the blobs of HEAD, which a
+         * depth-1 checkout has.
+         *
+         * It also found a real bug: `git()` used `execFileSync`'s default 1 MB
+         * stdout and threw `ENOBUFS` on a diff that size. That is a tool which
+         * stops working exactly when the diff is big enough to need it, so the
+         * buffer is now explicit.
+         */
+        const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+        const run = (extra: string[] = []) =>
+            spawnSync(
+                'node',
+                [path.join(ROOT, 'scripts/verify-changed.mjs'), '--explain', `--base=${EMPTY_TREE}`, ...extra],
+                { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 },
+            );
 
+        const r = run();
         const reading = (r.stdout ?? '')
             .split('\n')
             .find((l) => l.includes('[verify:changed] import graph:'));
+        // The reading is the assertion, not the exit status: it is the only
+        // observable that says `unreachedSuitesFor` was CALLED.
         expect(reading).toBeDefined();
         console.log(`[import-graph] seam: ${reading?.trim()}`);
 
-        // A real tree was walked. The floor is what separates "the axis ran"
-        // from "it ran over nothing and selected nothing", which is the one
-        // way this could fail toward green.
+        // Floors on both numbers in it, because "ran over nothing" and "ran"
+        // print the same line otherwise — the one way this fails toward green.
         const scanned = Number(/import graph: (\d+) file/.exec(reading as string)?.[1] ?? 0);
+        const sources = Number(/, (\d+) changed source file/.exec(reading as string)?.[1] ?? 0);
         expect(scanned).toBeGreaterThanOrEqual(2000);
+        expect(sources).toBeGreaterThanOrEqual(1000);
 
-        // And the escape hatch exists, so the axis's cost stays measurable.
-        const off = spawnSync(
-            'node',
-            [path.join(ROOT, 'scripts/verify-changed.mjs'), '--explain', '--no-graph'],
-            { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-        );
+        // `--explain` runs no tests, and against the empty tree the population
+        // is never empty, so the script cannot take its refusal path here.
+        expect(r.status).toBe(0);
+
+        // And the escape hatch works, so the axis's cost stays measurable.
+        const off = run(['--no-graph']);
         expect(off.status).toBe(0);
         expect(off.stdout).not.toContain('[verify:changed] import graph:');
     });
