@@ -378,7 +378,21 @@ const ROOT = path.resolve(__dirname, '../..');
 // not hold — the person then never receives a digest and has no reason to
 // suspect why. Both directions are asserted, so a hard-coded
 // `setOptIn(false)` in the catch cannot satisfy the case.
-const RENDERED_TEST_FLOOR = 284;
+// 284 -> 285 (#3081): `zarnoborsa-parser.test.tsx` — the price parser, run
+// under jsdom because `extractZarnoBorsaRows` is written against the DOM and
+// is stringified into a headless Chromium by the job. So this sits in the
+// rendered population for a reason unlike every entry above it: not because a
+// component renders, but because the BROWSER is the runtime, and running the
+// function here means the tests exercise what the page executes rather than a
+// Node-side twin that can drift from it.
+//
+// Banked for two cases in particular. The paywall gate, which cannot be a
+// date check — the fixtures carry a legitimately old row on a logged-in page,
+// so "old date" is true both when locked out and when a market has not
+// traded. And the thousands-comma parse, where blind stripping would read a
+// European decimal comma as a HUNDREDFOLD larger price, silently, in a figure
+// the grain calculator uses.
+const RENDERED_TEST_FLOOR = 285;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
