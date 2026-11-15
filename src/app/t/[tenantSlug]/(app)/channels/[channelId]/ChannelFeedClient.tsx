@@ -192,7 +192,8 @@ export function ChannelFeedClient({
         setLoadingOlder(true);
         try {
             const page = await apiGet<FeedWire>(
-                `${feedPath}?before=${encodeURIComponent(oldest.createdAt)}`,
+                `${feedPath}?before=${encodeURIComponent(oldest.createdAt)}`
+                + `&beforeId=${encodeURIComponent(oldest.id)}`,
             );
             setOlder((prev) => {
                 const kept = prev && prev.for === channelId ? prev.rows : [];
