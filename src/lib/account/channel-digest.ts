@@ -26,17 +26,33 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
 /**
- * `{ optIn: boolean }`, and the key is REQUIRED.
+ * `{ optIn: boolean }`, and THE KEY IS REQUIRED — which is the whole control.
  *
- * `.strict()` so a client that sends `{ optin: true }` or a stale field name
- * is refused rather than silently writing nothing and answering 200 — a
- * switch that reports success and changes no column is the worst available
- * outcome for a notification setting, because the person then believes they
- * opted in and simply never hears anything.
+ * A misspelled key is what this guards against. `{ optin: true }` would, under
+ * an optional or defaulted field, parse to `{}`, read `undefined`, write
+ * `false` and answer 200 — so the person is told their opt-in was saved and
+ * then never hears anything. That is the worst available outcome for a
+ * notification setting, because an opt-in that silently means "off" produces
+ * exactly the observable of a working feature nobody has enabled.
+ *
+ * Requiring the key is SUFFICIENT for that, because zod strips unknown keys:
+ * `{ optin: true }` becomes `{}` and fails as missing. This was `.strict()`
+ * first, on the stated reasoning that strictness is what catches the
+ * misspelling — and a mutation proved otherwise: removing `.strict()` left
+ * every case green, because the refusal was always coming from the required
+ * key. So the claim was true and its mechanism was not.
+ *
+ * It is now deliberately NOT strict, and that is a forward-compatibility
+ * choice rather than laziness. An unknown key is IGNORED, so a newer client
+ * that starts sending `{ optIn, source }` keeps working against an older
+ * server — the same posture `bottom-tabs` takes toward tab ids it has never
+ * heard of, for the same reason: the web and native release cycles are not
+ * coupled, and a 400 on a field the server merely does not know about turns
+ * an additive client change into an outage.
  */
 export const ChannelDigestOptInSchema = z.object({
     optIn: z.boolean(),
-}).strict();
+});
 
 export type ChannelDigestOptIn = z.infer<typeof ChannelDigestOptInSchema>;
 
