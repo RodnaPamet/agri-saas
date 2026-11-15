@@ -493,6 +493,14 @@ export async function bulkDeleteTask(
                 'Some of the selected tasks are shares of recorded treatments, so none '
                     + 'were deleted. Delete those treatments whole instead.',
                 { refused: shares.length, selected: rows.length },
+                // WHICH shares, so a client can untick exactly them (#3063).
+                // Its sibling refusal in `assertCanDeleteTasks` carries the
+                // same key for the same reason — one spelling, because a
+                // client handling two refusals should not need two parsers.
+                // No `treatmentGroupId`: the remedy is "delete that treatment
+                // whole", which the farmer reaches from the task, so the group
+                // id would be an identifier with no screen behind it.
+                { refusedTaskIds: shares.map((r) => r.id) },
             );
         }
 

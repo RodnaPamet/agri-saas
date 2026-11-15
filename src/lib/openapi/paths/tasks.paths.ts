@@ -49,6 +49,7 @@ import {
     AssignTaskSchema,
     AddTaskCommentSchema,
     AddTaskLinkSchema,
+    BulkTaskDeleteSchema,
 } from '@/lib/schemas';
 import { CreateTaskWeedObservationSchema } from '@/app-layer/schemas/parcel-history.schemas';
 
@@ -455,6 +456,58 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The task\'s links, newest first.',
             schema: z.array(TaskLinkDTOSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/bulk/delete',
+        operationId: 'bulkDeleteTasks',
+        summary: 'Delete several tasks at once',
+        description:
+            'Backs the tasks table\'s multi-select. It has existed since #2187 and was '
+            + '**live but undocumented** until now, which is how the iOS client came to miss it and '
+            + 'propose building a second one (#3063) — the same way a spec gap cost that client twice '
+            + 'before.'
+            + '\n\n**ALL-OR-NOTHING, by owner ruling.** A refusal deletes NOTHING: every selected '
+            + 'row stays intact. The reason recorded in `task.policies.ts` is that a partial success '
+            + 'leaves the farmer working out which of twenty selected rows actually went, and the ones '
+            + 'that went took ДНЕВНИК register lines with them. Do not design a client around partial '
+            + 'results here.'
+            + '\n\n**It is a SOFT delete.** `Task` is soft-deleted, so this stamps `deletedAt` rather '
+            + 'than destroying rows, and task COMMENTS are untouched — no row is removed, so no cascade '
+            + 'runs. Permanent removal happens later through retention. A client must not describe this '
+            + 'action as permanent or irreversible.'
+            + '\n\n**Authorisation is per task, not per call**, and reads the stored rows: a caller who '
+            + 'is not a farm admin may delete only tasks it created. Ids the tenant does not own are '
+            + 'filtered out rather than refused, so they are not something to fail over.'
+            + '\n\n**Idempotent.** A repeat is harmless: already-deleted or unowned ids simply do not '
+            + 'match, and an empty match returns `{ deleted: 0 }`.',
+        tags: ['Tasks'],
+        params: TenantParams,
+        body: BulkTaskDeleteSchema,
+        extraResponses: codedErrorResponses({
+            403:
+                'Signed in, but not permitted to delete one or more of the SELECTED tasks — so none '
+                + 'were deleted.\n\n'
+                + '- `TASK_DELETE_NOT_PERMITTED` — at least one selected task was created by somebody '
+                + 'else and this caller is not a farm admin. `params` carries `{ refused, selected }` '
+                + 'for the sentence, and **`details.refusedTaskIds` carries WHICH ids were refused** so '
+                + 'a client can untick exactly those rather than make the farmer find them.\n'
+                + '- `WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            409:
+                '`TASK_BELONGS_TO_TREATMENT` — at least one selected task is a share of a recorded '
+                + 'treatment, so none were deleted; delete those treatments whole instead. Carries the '
+                + 'same `params` `{ refused, selected }` and the same `details.refusedTaskIds` as the '
+                + '403 above, deliberately one spelling so a client needs one parser for both '
+                + 'refusals.',
+        }),
+        success: {
+            status: 200,
+            description:
+                'How many tasks were soft-deleted. Equals the number of SELECTED ids that existed and '
+                + 'belonged to this tenant, which may be fewer than were sent.',
+            schema: z.object({ deleted: z.number().int() }),
         },
     });
 
