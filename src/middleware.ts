@@ -46,10 +46,14 @@ import { isPublicSurface, PUBLIC_SURFACE_HEADER } from '@/lib/i18n/public-surfac
 import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
-import { LOCALE_COOKIE, DEFAULT_LOCALE, isLocale } from '@/lib/i18n/locales';
+import {
+    LOCALE_COOKIE,
+    LOCALE_COOKIE_MAX_AGE_SECONDS,
+    DEFAULT_LOCALE,
+    isLocale,
+} from '@/lib/i18n/locales';
 
 /** One year, in seconds — the locale-cookie lifetime. */
-const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
  * T00 — seed the `NEXT_LOCALE` cookie from the authenticated user's
@@ -71,7 +75,7 @@ function seedLocaleCookie(
     const pref = isLocale(uiLanguage) ? uiLanguage : DEFAULT_LOCALE;
     res.cookies.set(LOCALE_COOKIE, pref, {
         path: '/',
-        maxAge: LOCALE_COOKIE_MAX_AGE,
+        maxAge: LOCALE_COOKIE_MAX_AGE_SECONDS,
         sameSite: 'lax',
         httpOnly: false,
     });

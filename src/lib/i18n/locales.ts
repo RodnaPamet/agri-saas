@@ -37,6 +37,17 @@ export const DEFAULT_LOCALE: Locale = 'en';
  */
 export const LOCALE_COOKIE = 'NEXT_LOCALE';
 
+/**
+ * How long the locale cookie lives, in seconds.
+ *
+ * Here rather than at the two set sites, because it was declared TWICE —
+ * `middleware.ts` and `api/account/language/route.ts` each had their own copy
+ * of `60 * 60 * 24 * 365`. Two spellings of one lifetime drift silently, and
+ * the cookie policy at `/cookies` renders this number: a page citing one copy
+ * while the other sets the cookie is worse than a page with no number on it.
+ */
+export const LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
 /** Narrow an untrusted value (cookie, DB column, JWT claim) to a Locale. */
 export function isLocale(v: unknown): v is Locale {
     return typeof v === 'string' && (LOCALES as readonly string[]).includes(v);

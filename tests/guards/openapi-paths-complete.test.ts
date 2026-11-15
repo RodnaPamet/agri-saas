@@ -200,7 +200,13 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted — the instruction this block gives after
 // #2578, and the reason the previous value was once one too high.
-const UNDOCUMENTED_CEILING = 210;
+// Lowered 210 -> 209 by #3063: `POST /api/t/{tenantSlug}/tasks/bulk/delete` is
+// described now. It had been live since #2187 and undocumented throughout,
+// which is how the iOS client came to miss it and propose building a second
+// bulk-delete route — the third time this spec's silence has cost that client
+// (after `beforeId` and `channel-search`). Documenting a path is the only
+// direction this number moves on its own.
+const UNDOCUMENTED_CEILING = 209;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

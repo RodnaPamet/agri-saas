@@ -42,6 +42,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function PrivacyPage() {
     const t = await getTranslations('privacy');
     const contact = env.PRIVACY_CONTACT_EMAIL;
+    const controllerName = env.PRIVACY_CONTROLLER_NAME;
+    const controllerAddress = env.PRIVACY_CONTROLLER_ADDRESS;
+    const controllerPhone = env.PRIVACY_CONTROLLER_PHONE;
 
     const sections = [
         // `collectUsage` added with #493. Product-usage telemetry is personal
@@ -74,6 +77,36 @@ export default async function PrivacyPage() {
         // a reader would reasonably infer the other does not happen.
         { key: 'use', body: ['useOperate', 'useSuppliers', 'useExchange'] },
         { key: 'protect', body: ['protectEncryption', 'protectIsolation', 'protectConsent'] },
+        // Google user data — required by Google's OAuth consent-screen review
+        // for the `drive.file` and `calendar.app.created` scopes (#3070).
+        //
+        // Every line here was checked against the code rather than against the
+        // feature description, because this page's rule is "only what the code
+        // implements". Two corrections came out of that: the per-person
+        // calendar sync did not exist; and Drive is write-only apart from one
+        // metadata read of our own folder, which is what makes "no Google
+        // content enters our systems" true rather than aspirational.
+        //
+        // The calendar line is GONE as of 2026-11-15: the owner scrapped the
+        // sync, so `GOOGLE_SCOPES` no longer asks for a calendar scope and the
+        // page must not describe access we do not request. `googleCalendar`
+        // was deleted from both catalogues in the same change rather than left
+        // unused, because an orphaned key is a sentence waiting to be
+        // re-rendered by someone who assumes it is still true.
+        //
+        // `googleLimitedUse` is Google's REQUIRED sentence and is deliberately
+        // identical in both catalogues — it must appear verbatim in English.
+        {
+            key: 'google',
+            body: [
+                'googleIntro',
+                'googleDrive',
+                'googleStorage',
+                'googleNoSharing',
+                'googleDisconnect',
+                'googleLimitedUse',
+            ],
+        },
         { key: 'rights', body: ['rightsList'] },
         // P5.6 (#1597). The export and the deletion flow, and — in
         // `deleteIncomplete` — the fact that erasure is INCOMPLETE.
@@ -152,6 +185,20 @@ export default async function PrivacyPage() {
 
             <section className="space-y-default">
                 <Heading level={2}>{t('controllerTitle')}</Heading>
+                {/* The NAMED controller, when configured. Google's consent
+                    review requires the policy to identify who it is; the
+                    generic sentence below stays for a self-hosted deployment,
+                    which is a different controller and must not be given this
+                    one's name. */}
+                {controllerName ? (
+                    <p className="font-[560]">{controllerName}</p>
+                ) : null}
+                {controllerAddress ? (
+                    <p className="text-content-muted">{controllerAddress}</p>
+                ) : null}
+                {controllerPhone ? (
+                    <p className="text-content-muted">{controllerPhone}</p>
+                ) : null}
                 <p className="text-content-muted">{t('controllerBody')}</p>
                 {/* Rendered only when the operator has configured a real
                     address — an unconfigured deployment shows no contact rather

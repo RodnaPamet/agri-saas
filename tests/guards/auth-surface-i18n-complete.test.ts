@@ -40,7 +40,7 @@ import { join } from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { REPO_ROOT } from '../helpers/collect-files';
 import { AUTH_SURFACE_NAMESPACES, isAuthSurface } from '@/lib/i18n/auth-surface';
-import { bundleFor, bundlesFor } from '@/lib/i18n/bundles';
+import { bundleFor, bundlesFor, SHARED_NAMESPACES } from '@/lib/i18n/bundles';
 
 /** Namespaces a file reads, comments blanked so prose cannot add one. */
 function namespacesIn(src: string): string[] {
@@ -128,9 +128,24 @@ describe('the auth i18n payload covers what the auth surface reads (#2011)', () 
     it('every namespace the surface READS is listed', () => {
         // The direction that breaks the page. An unlisted namespace renders
         // raw keys with a 200 status, so nothing else in the suite notices.
-        const unlisted = [...walk.namespaces]
-            .filter((ns) => !(AUTH_SURFACE_NAMESPACES as readonly string[]).includes(ns))
-            .sort();
+        // SHARED namespaces count as listed, and that is not a loosening: the
+        // property this defends is "every namespace the auth surface reads is
+        // LOADED for it", and `bundlesFor('auth')` returns ['auth', 'shared'].
+        // Requiring a shared namespace here would force it into
+        // AUTH_SURFACE_NAMESPACES, and the test below then pins it to the
+        // `auth` bundle — which removes it from `shared` and breaks the OTHER
+        // surface that reads it.
+        //
+        // `legal` is the first shared namespace the auth surface reads, which
+        // is why this gap went unnoticed: `notFound` is shared too, but no
+        // auth entry point walks into it. It arrived with the public legal
+        // footer (#3070), whose three link labels are read by both `/login`
+        // and `/` and so can live in neither surface's own bundle.
+        const listed = new Set<string>([
+            ...(AUTH_SURFACE_NAMESPACES as readonly string[]),
+            ...SHARED_NAMESPACES,
+        ]);
+        const unlisted = [...walk.namespaces].filter((ns) => !listed.has(ns)).sort();
         expect(unlisted.join(', ')).toBe('');
     });
 
@@ -138,6 +153,9 @@ describe('the auth i18n payload covers what the auth surface reads (#2011)', () 
         // The other direction. A listed namespace nobody reads is dead weight
         // in the payload this change exists to shrink, and it rots quietly
         // once the page that used it stops.
+        // Only the AUTH list is checked for deadness: a shared namespace is
+        // shared precisely because another surface reads it, so "the auth
+        // walk never reaches it" is not evidence that it is dead weight.
         const unread = (AUTH_SURFACE_NAMESPACES as readonly string[])
             .filter((ns) => !walk.namespaces.has(ns))
             .sort();

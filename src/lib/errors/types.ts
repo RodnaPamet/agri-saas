@@ -119,8 +119,29 @@ export class UnsupportedMediaTypeError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-    constructor(message: string = 'Forbidden', code = 'FORBIDDEN', params?: ErrorParams) {
-        super(message, code, 403, true, undefined, params);
+    /**
+     * `details` is the STRUCTURED half, and it exists because `params` cannot
+     * carry a list.
+     *
+     * `ErrorParams` is `Record<string, string | number>` by design — named
+     * values a client interpolates into its own TRANSLATED sentence — so a
+     * refusal that needs to say WHICH of twenty ids it refused has nowhere to
+     * put them. A comma-joined string would fit the type and be the wrong
+     * thing: it is not interpolatable copy, and the client would have to parse
+     * a sentence fragment back into a list.
+     *
+     * So the two channels divide by purpose: `params` carries the counts the
+     * translation interpolates, `details` carries the ids the client acts on.
+     * `codedBadRequest` and `codedConflict` already had exactly this pair;
+     * this is the third.
+     */
+    constructor(
+        message: string = 'Forbidden',
+        code = 'FORBIDDEN',
+        params?: ErrorParams,
+        details?: unknown,
+    ) {
+        super(message, code, 403, true, details, params);
         this.name = 'ForbiddenError';
     }
 }
@@ -237,8 +258,12 @@ export const codedBadRequest = (
 export const codedNotFound = (code: string, message: string, params?: ErrorParams) =>
     new NotFoundError(message, code, params);
 
-export const codedForbidden = (code: string, message: string, params?: ErrorParams) =>
-    new ForbiddenError(message, code, params);
+export const codedForbidden = (
+    code: string,
+    message: string,
+    params?: ErrorParams,
+    details?: unknown,
+) => new ForbiddenError(message, code, params, details);
 
 export const codedUnsupportedMediaType = (
     code: string,

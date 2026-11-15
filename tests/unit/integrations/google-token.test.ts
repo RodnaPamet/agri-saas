@@ -78,11 +78,16 @@ describe('buildGoogleAuthorizeUrl', () => {
         expect(url.searchParams.get('client_id')).toBe('cid-test');
     });
 
-    it('asks for BOTH products in one consent', () => {
+    it('asks for DRIVE ONLY — the calendar sync was scrapped (2026-11-15)', () => {
         const scope =
             new URL(buildGoogleAuthorizeUrl({ redirectUri: REDIRECT, state: 's', env: ENV }))
                 .searchParams.get('scope') ?? '';
-        expect(scope.split(' ')).toEqual([GOOGLE_DRIVE_SCOPE, GOOGLE_CALENDAR_SCOPE]);
+        // Drive only. Asking for a scope with no feature behind it is the
+        // opposite of least privilege, and a reviewer asks for each sensitive
+        // scope to be DEMONSTRATED — a calendar scope with no sync has
+        // nothing to show, which is a rejection rather than a tidy-up.
+        expect(scope.split(' ')).toEqual([GOOGLE_DRIVE_SCOPE]);
+        expect(scope).not.toContain(GOOGLE_CALENDAR_SCOPE);
     });
 
     it('never asks for a RESTRICTED scope', () => {
@@ -101,7 +106,12 @@ describe('buildGoogleAuthorizeUrl', () => {
         expect(granted.length).toBeGreaterThan(0);
     });
 
-    it('asks for a calendar scope that calendars.insert actually ACCEPTS (#3053)', () => {
+    it('keeps a calendar scope that calendars.insert would ACCEPT (#3053)', () => {
+        // Not requested any more (the sync was scrapped), but the CONSTANT
+        // still governs what a stored grant means and is what the sync would
+        // ask for if it returns. #3053's lesson survives the scrapping: the
+        // value that shipped, `calendar.events`, cannot create a calendar at
+        // all, so restoring the sync with it would 403 on the first run.
         // The integration CREATES a dedicated farm calendar
         // (`ensureFarmCalendar` → `POST /calendars`) and reads it back by id.
         // Google accepts `calendars.insert` under only these three, and
@@ -112,6 +122,8 @@ describe('buildGoogleAuthorizeUrl', () => {
             'https://www.googleapis.com/auth/calendar.calendars',
         ];
         expect(INSERT_ACCEPTS).toContain(GOOGLE_CALENDAR_SCOPE);
+        // And it is genuinely not in today's consent.
+        expect(GOOGLE_SCOPES).not.toContain(GOOGLE_CALENDAR_SCOPE);
 
         // …and `calendar` (unqualified) is restricted, so of the three only
         // two are available to us. Asserted as the INTERSECTION rather than as
@@ -330,7 +342,14 @@ describe('grantedProducts', () => {
     });
 
     it('reports both when both were granted', () => {
-        expect(grantedProducts([...GOOGLE_SCOPES])).toEqual({ drive: true, calendar: true });
+        // The two scopes NAMED, not `GOOGLE_SCOPES` — which no longer
+        // contains the calendar one. This models a connection made BEFORE
+        // the sync was scrapped, and asserting it still reads as
+        // calendar-granted is the point: `grantedProducts` describes a stored
+        // grant, not today's request, and the dormant farm sync reads it.
+        expect(
+            grantedProducts([GOOGLE_DRIVE_SCOPE, GOOGLE_CALENDAR_SCOPE]),
+        ).toEqual({ drive: true, calendar: true });
     });
 
     it('reports neither for an empty grant, rather than defaulting to available', () => {
