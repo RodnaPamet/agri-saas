@@ -43,6 +43,7 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/account",
     "/account/profile",
     "/account/security",
+    "/cookies",
     "/dashboard",
     "/dsa-contact",
     "/f/[handle]",

@@ -63,6 +63,17 @@ function isAllCaps(w: string): boolean {
 
 /** bg values that are Latin ON PURPOSE. Each needs a reason. */
 const LATIN_KEY_ALLOWLIST = new Map<string, string>([
+    [
+        'privacy.googleLimitedUse',
+        'Google REQUIRES this sentence verbatim in English on the privacy '
+            + 'policy, as a condition of the API Services User Data Policy — '
+            + 'the Limited Use declaration. Translating it would fail the '
+            + 'OAuth consent-screen review for `drive.file` and '
+            + '`calendar.app.created` (#3070). The surrounding Bulgarian '
+            + 'section explains the same thing in plain language, so a reader '
+            + 'is not left with only English; this one value is a legal '
+            + 'formula rather than copy.',
+    ],
     ['admin.integrations.googleDrive', 'Google product name — Bulgarian UIs say "Drive" untranslated (#2005)'],
     ['admin.billing.pro', 'billing plan tier — product name kept in English'],
     ['admin.billing.enterprise', 'billing plan tier — product name kept in English'],

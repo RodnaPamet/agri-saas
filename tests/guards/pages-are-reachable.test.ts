@@ -199,6 +199,7 @@ const ROOT_PAGE_SENDERS: Readonly<Record<string, string>> = {
     '/f/[handle]': 'EXTERNAL: a search engine or a link the farm pasted elsewhere. `sitemap.ts` offers it to crawlers and each profile decides its own `noindex`. Also linked in-app from `PublicProfileClient` as a preview of the operator\'s own page.',
     '/library': '«Вдъхновение» (#2980). Linked from the «Пазар» section of `SidebarNav`. Non-tenant by owner ruling, and the page whose addition found this guard\'s blind spot — it was linked, and nothing would have failed had it not been.',
     '/library/[slug]': 'Linked from the library directory at `/library`, which is the only way in — a book has no other surface that names it.',
+    '/cookies': 'Linked from `PublicLegalFooter`, which `/` and `/login` mount — the footer added for Google\'s consent review, which requires the homepage on the verified domain to link the policy. Public by the same duty as `/privacy`.',
     '/privacy': 'Linked from the consent checkbox, `/terms`, `/dsa-contact` and the offer modal. Public by legal duty.',
     '/terms': 'Linked from the shared consent control, which is why it must stay public: a login wall there would mean the only way to read the terms is to already hold the account you need them for.',
     '/dsa-contact': 'Linked from `/terms`. DSA Art 11/12 wants the contact point FINDABLE by an authority or a court — none of whom are signed in.',
