@@ -44,11 +44,12 @@ function series(opts: {
     commodity?: string;
     unit?: string;
     currency?: string;
+    source?: string;
 }) {
     return {
         id: opts.id,
         commodity: opts.commodity ?? 'wheat',
-        source: 'ec-agrifood',
+        source: opts.source ?? 'ec-agrifood',
         currency: opts.currency ?? 'EUR',
         unit: opts.unit ?? 'EUR/t',
         stage: opts.stage,
@@ -320,5 +321,91 @@ describe('the override query asks for the right rows', () => {
         // And a re-typed series is live again while its previous run's points
         // stay stamped — which only the POINT filter can express.
         expect(overrideCall.select.points.where).toEqual({ clearedAt: null });
+    });
+});
+
+describe('#3081 — ZarnoBorsa LEADS the benchmark set', () => {
+    it('beats an EC national average, which it loses to on stage alone', () => {
+        /*
+         * The case the whole change turns on. ZarnoBorsa quotes EXW and FOB —
+         * neither is `NATIONAL_AVERAGE_STAGE` — so under the previous order
+         * every EC national figure won on stage and the owner's ruling would
+         * have had NO effect: the series would be stored, shown in
+         * «Тенденции», and silently never used as the reference.
+         */
+        feedRows([
+            series({ id: 'ec', stage: NATIONAL, price: 170, source: 'ec-agrifood' }),
+            series({ id: 'zb', stage: 'EXW', price: 188.65, source: 'zarnoborsa' }),
+        ]);
+        return getMarketReferences(['wheat']).then((refs) => {
+            expect(refs.get('wheat')?.source).toBe('zarnoborsa');
+            expect(refs.get('wheat')?.pricePerTonne).toBe(188.65);
+        });
+    });
+
+    it('wins even when the EC figure is NEWER', () => {
+        // Source outranks recency, not merely stage — otherwise a weekly EC
+        // quote published after a daily ZarnoBorsa read would take the
+        // reference back.
+        feedRows([
+            series({ id: 'ec', stage: NATIONAL, price: 170, date: '2026-11-15', source: 'ec-agrifood' }),
+            series({ id: 'zb', stage: 'EXW', price: 188.65, date: '2026-11-14', source: 'zarnoborsa' }),
+        ]);
+        return getMarketReferences(['wheat']).then((refs) => {
+            expect(refs.get('wheat')?.source).toBe('zarnoborsa');
+        });
+    });
+
+    it('prefers the NATIONAL stage WITHIN ZarnoBorsa, so the old rule still bites', () => {
+        // Stage did not stop mattering; it was demoted to a tie-break inside a
+        // source. Two ZarnoBorsa rows must still rank by stage.
+        feedRows([
+            series({ id: 'zb-exw', stage: 'EXW', price: 188.65, source: 'zarnoborsa' }),
+            series({ id: 'zb-nat', stage: NATIONAL, price: 191, source: 'zarnoborsa' }),
+        ]);
+        return getMarketReferences(['wheat']).then((refs) => {
+            expect(refs.get('wheat')?.pricePerTonne).toBe(191);
+        });
+    });
+
+    it('falls back to the EC average when ZarnoBorsa has no row for the crop', () => {
+        // The point of (c): ZarnoBorsa FILLS what is not typed, it does not
+        // replace the feed. A crop it does not quote must still resolve.
+        feedRows([
+            series({ id: 'ec-oats', stage: NATIONAL, price: 150, commodity: 'oats', source: 'ec-agrifood' }),
+            series({ id: 'zb-wheat', stage: 'EXW', price: 188.65, source: 'zarnoborsa' }),
+        ]);
+        return getMarketReferences(['wheat', 'oats']).then((refs) => {
+            expect(refs.get('wheat')?.source).toBe('zarnoborsa');
+            expect(refs.get('oats')?.source).toBe('ec-agrifood');
+        });
+    });
+
+    it('a TYPED platform price still beats it (#1587 §4, owner ruling (c))', () => {
+        feedRows(
+            [series({ id: 'zb', stage: 'EXW', price: 188.65, source: 'zarnoborsa' })],
+            [series({ id: 'ov', stage: null, price: 205, source: 'platform' })],
+        );
+        return getMarketReferences(['wheat']).then((refs) => {
+            // The override SUPPRESSES rather than outranks — a stronger
+            // relationship than winning a comparison, which is why the typed
+            // price is not in `sourceRank` at all.
+            expect(refs.get('wheat')?.source).toBe('platform');
+            expect(refs.get('wheat')?.pricePerTonne).toBe(205);
+        });
+    });
+
+    it('asks the database for the ZarnoBorsa source too', () => {
+        // A rank that leads a set the query never selects is inert.
+        feedRows([series({ id: 'ec', stage: NATIONAL, price: 170 })]);
+        return getMarketReferences(['wheat']).then(() => {
+            const call = mockFindMany.mock.calls.find(
+                (c) => Array.isArray((c[0] as { where?: { source?: { in?: string[] } } })?.where?.source?.in),
+            );
+            const sources = (call?.[0] as { where: { source: { in: string[] } } }).where.source.in;
+            expect(sources).toContain('zarnoborsa');
+            // And still never our own noticeboard.
+            expect(sources).not.toContain('exchange');
+        });
     });
 });
