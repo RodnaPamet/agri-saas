@@ -385,7 +385,14 @@ services:
   # app is recreated, which is when it should be.
   zarnoborsa:
     logging: *logging
-    image: mcr.microsoft.com/playwright:v1.64.1-jammy
+    # Built locally like `agrent-db`, not pulled: the base image ships the
+    # BROWSERS and no `playwright` npm package, so the bundle cannot run
+    # against it unmodified. Measured on the VM — a bare run fails with
+    # `Cannot find package 'playwright'`, which would have been a silent
+    # no-prices failure three times a day. See deploy/zarnoborsa/Dockerfile.
+    build:
+      context: ./deploy/zarnoborsa
+    image: agrent-zarnoborsa:local
     container_name: agrent-zarnoborsa
     restart: always
     # Not `always`-on-crash-loop: a failed read must not hammer a subscriber
@@ -413,7 +420,7 @@ services:
         if [ "$$(date +%H)" != "08" ] && [ "$$(date +%H)" != "13" ] && [ "$$(date +%H)" != "18" ]; then
           sleep $$(( $$(date -d "tomorrow 08:00" +%s) - $$(date +%s) ));
         fi;
-        node /opt/share/dist/zarnoborsa-fetch.mjs --out /var/lib/agrent/zarnoborsa/latest.json || true;
+        cd /opt/zarnoborsa && node /opt/share/dist/zarnoborsa-fetch.mjs --out /var/lib/agrent/zarnoborsa/latest.json || true;
         sleep 60;
       done'
     networks:

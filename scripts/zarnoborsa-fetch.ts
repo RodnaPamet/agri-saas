@@ -44,7 +44,21 @@ import {
 } from '../src/lib/market/zarnoborsa-extract';
 import { parseZarnoBorsaRows } from '../src/lib/market/zarnoborsa-parse';
 
-const LOGIN_URL = 'https://zarnoborsa.com/?c=SFForms&a=SiteLogin&FH=loginForm';
+/*
+ * THE PAGE THAT HOLDS THE FORM, not the form's action.
+ *
+ * `/?c=SFForms&a=SiteLogin&FH=loginForm` is where the form POSTS — it is the
+ * endpoint, and loading it serves no form at all. The first live run failed
+ * with `page.fill: Timeout 30000ms exceeded — waiting for locator('#loginForm
+ * input[name=email]')`, which is what a missing form looks like rather than a
+ * wrong selector.
+ *
+ * Measured on the VM 2026-11-16: `https://zarnoborsa.com/login` carries
+ * `#loginForm` with `input[name=email]`, `input[name=passwd]` and
+ * `#loginForm button[type=submit]`, one of each. The HOMEPAGE carries none of
+ * them, so it is not an alternative.
+ */
+const LOGIN_URL = 'https://zarnoborsa.com/login';
 const PAGES = [
     { stage: 'EXW', url: 'https://zarnoborsa.com/markets/exw' },
     { stage: 'FOB', url: 'https://zarnoborsa.com/markets/fob' },
@@ -91,7 +105,18 @@ async function main(): Promise<void> {
         const context = await browser.newContext();
         const page = await context.newPage();
 
-        await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+        /*
+         * `load`, NOT `domcontentloaded`, and this is the fix that made the
+         * whole thing work.
+         *
+         * `#loginForm` has NO `action` and NO `method` attribute — measured on
+         * the VM 2026-11-16 — so submission is entirely JS-driven. With
+         * `domcontentloaded` the scripts have not finished binding the submit
+         * handler, so the click lands on a button with nothing attached: no
+         * POST to `SiteLogin` appears at all, the page simply stays put, and
+         * every later symptom is indistinguishable from a wrong password.
+         */
+        await page.goto(LOGIN_URL, { waitUntil: 'load' });
         /*
          * Fill and submit the real form rather than POSTing its fields. The
          * session is only held when the browser performs the submission —
@@ -100,13 +125,83 @@ async function main(): Promise<void> {
          */
         await page.fill('#loginForm input[name=email]', email);
         await page.fill('#loginForm input[name=passwd]', password);
-        await Promise.all([
-            page.waitForLoadState('domcontentloaded'),
+
+        /*
+         * WAIT FOR THE LOGIN RESPONSE, not for a load state.
+         *
+         * The first version raced `waitForLoadState` against the click, which
+         * is meaningless — that reports on the navigation already in flight,
+         * so it resolved before the POST had landed and the next `goto`
+         * superseded an in-flight navigation with `net::ERR_ABORTED`.
+         *
+         * Waiting for the `SiteLogin` response is the definitive signal: it
+         * exists only if the JS handler actually fired, which is the thing
+         * that was silently not happening.
+         */
+        const [loginResponse] = await Promise.all([
+            page.waitForResponse((r) => /SiteLogin/i.test(r.url()), { timeout: 30_000 }),
             page.click('#loginForm button[type=submit]'),
         ]);
+        await page.waitForLoadState('load');
+
+        /*
+         * A POSITIVE CONTROL on the login, because every later symptom of
+         * failing it is indistinguishable from a quiet market: the price pages
+         * serve the paywalled markup, which parses perfectly.
+         *
+         * Catching it HERE says "the login failed" rather than "the pages were
+         * locked", and those want different responses — one is a credential to
+         * fix, the other a subscription to renew.
+         *
+         * Measured on a successful login: status 200, the browser lands on
+         * `?p=profile`, «Здравей» appears, and the form is gone. The form's
+         * ABSENCE is the check rather than the greeting, because a greeting is
+         * display copy that could be reworded, while a login page that still
+         * wants a password is unambiguous.
+         */
+        /*
+         * LET THE LOGIN'S OWN REDIRECT SETTLE before navigating anywhere.
+         *
+         * A successful login lands on `?p=profile` via a second hop, and that
+         * hop is still in flight when the first market `goto` fires. The
+         * symptoms walked through three different errors as this was
+         * tightened: `net::ERR_ABORTED`, then — once a retry was added —
+         * `Navigation to X is interrupted by another navigation to X`, which
+         * is the retry racing its own first attempt.
+         *
+         * `networkidle` is the explicit settle. It is the heavier wait and the
+         * right one here: it runs ONCE per session, not per page, and the
+         * alternative is a sleep chosen by guesswork.
+         */
+        await page.waitForLoadState('networkidle').catch(() => { /* settle is best-effort */ });
+
+        const stillOnForm = await page.locator('#loginForm input[name=passwd]').count();
+        if (stillOnForm > 0) {
+            throw new Error(
+                `login did not take (SiteLogin answered ${loginResponse.status()}): `
+                + 'the form is still present',
+            );
+        }
 
         for (const p of PAGES) {
-            await page.goto(p.url, { waitUntil: 'domcontentloaded' });
+            /*
+             * RETRIED ONCE, because the first navigation after the login
+             * reliably fails with `net::ERR_ABORTED` — the login's own
+             * navigation is still settling and supersedes it. Measured: the
+             * first attempt aborts, the second returns 200.
+             *
+             * Two attempts rather than a loop: if the second also fails the
+             * run should end and say so, not hammer a subscriber site.
+             */
+            let loaded = false;
+            for (let attempt = 0; attempt < 2 && !loaded; attempt += 1) {
+                try {
+                    await page.goto(p.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+                    loaded = true;
+                } catch (err) {
+                    if (attempt === 1) throw err;
+                }
+            }
             /*
              * Both of these run IN THE PAGE. `extractZarnoBorsaRows` is
              * written against the standard DOM API for exactly this, and
@@ -114,9 +209,35 @@ async function main(): Promise<void> {
              * outside its own body. The fixture tests run the same function
              * under jsdom, so what they exercise is what executes here.
              */
-            const locked = await page.evaluate(isZarnoBorsaLocked, undefined as never)
-                .catch(() => true);
-            const rows = await page.evaluate(extractZarnoBorsaRows, undefined as never);
+            // NO ARGUMENT: both functions default to the page's own
+            // `document`, because a live Document cannot cross the
+            // serialisation boundary. Passing one delivers `undefined`.
+            //
+            // A failed lock CHECK reads as locked, which is the safe
+            // direction: it refuses the read rather than storing prices from
+            // a page we could not inspect.
+            /*
+             * A THROWN check is reported, not silently treated as a paywall.
+             *
+             * It fails SAFE — an uninspectable page must not have its prices
+             * stored — but the first version returned a bare `true`, and that
+             * is how a `ReferenceError` inside the stringified function looked
+             * exactly like a locked page for a whole run: 110 rows read off
+             * two demonstrably unlocked pages and all of them discarded,
+             * with the reading saying `locked: true` and nothing saying why.
+             */
+            let locked: boolean;
+            try {
+                locked = await page.evaluate(isZarnoBorsaLocked);
+            } catch (err) {
+                locked = true;
+                console.error(JSON.stringify({
+                    event: 'zarnoborsa.fetch.lock_check_failed',
+                    stage: p.stage,
+                    message: err instanceof Error ? err.message.slice(0, 160) : 'unknown',
+                }));
+            }
+            const rows = await page.evaluate(extractZarnoBorsaRows);
 
             readings.push({ stage: p.stage, url: p.url, locked, rawRows: rows.length });
             if (locked) anyLocked = true;

@@ -86,7 +86,26 @@ export interface ZarnoBorsaRawRow {
  * credited with work it is not doing — a comment naming the wrong mechanism is
  * how the next reader deletes the one that matters.
  */
-export function extractZarnoBorsaRows(doc: Document): ZarnoBorsaRawRow[] {
+export function extractZarnoBorsaRows(
+    /*
+     * DEFAULTS to the page's own `document`, and that default is load-bearing
+     * rather than a convenience.
+     *
+     * Playwright STRINGIFIES this function into the page, so a live `Document`
+     * can never be passed as an argument — it is not serialisable. Calling
+     * `page.evaluate(extractZarnoBorsaRows, someDoc)` delivers `undefined` and
+     * the first line throws `Cannot read properties of undefined (reading
+     * 'querySelectorAll')`. Measured on the VM 2026-11-16: the signature took
+     * a required parameter, every jsdom test passed one explicitly, and the
+     * browser could not.
+     *
+     * With the default, `page.evaluate(extractZarnoBorsaRows)` resolves
+     * `globalThis.document` INSIDE the page, while the fixture tests keep
+     * passing a document explicitly — so both call paths work and the tests
+     * still exercise the body the browser runs.
+     */
+    doc: Document = globalThis.document,
+): ZarnoBorsaRawRow[] {
     const out: ZarnoBorsaRawRow[] = [];
     const rows = Array.from(doc.querySelectorAll('tr'));
 
@@ -167,9 +186,28 @@ export function extractZarnoBorsaRows(doc: Document): ZarnoBorsaRawRow[] {
  * restyled, while the sentence a paywall shows a non-subscriber is the part
  * least likely to change silently.
  */
+/**
+ * The paywall's own words. Exported for TESTS and for the fixtures to assert
+ * against — the function below inlines its own copy, because it executes in a
+ * page where this binding does not exist. The duplication is deliberate and
+ * `zarnoborsa-marker-is-inlined` holds the two in step.
+ */
 export const ZARNOBORSA_LOCKED_MARKER = 'ЗА ПЪЛЕН ДОСТЪП';
 
-export function isZarnoBorsaLocked(doc: Document): boolean {
+export function isZarnoBorsaLocked(doc: Document = globalThis.document): boolean {
+    /*
+     * THE MARKER IS INLINED, and the exported constant above is for tests
+     * only. This function is stringified into the page, so a module-scope
+     * reference is a `ReferenceError` there.
+     *
+     * That is not hypothetical: it used `ZARNOBORSA_LOCKED_MARKER` and threw
+     * exactly that in the browser, where the caller's fail-safe `.catch(() =>
+     * true)` dressed the broken function as a PAYWALL. Measured 2026-11-16 —
+     * 110 rows parsed off two pages that were demonstrably unlocked, and the
+     * run discarded all of them. The module docblock states this rule and this
+     * function broke it.
+     */
+    const marker = 'ЗА ПЪЛЕН ДОСТЪП';
     const text = doc.body ? doc.body.textContent || '' : '';
-    return text.indexOf(ZARNOBORSA_LOCKED_MARKER) !== -1;
+    return text.indexOf(marker) !== -1;
 }
