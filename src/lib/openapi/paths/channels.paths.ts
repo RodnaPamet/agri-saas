@@ -277,6 +277,18 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
                     + 'value is a 400, never ignored: silently returning page one reads to '
                     + 'a paging client as the end of the feed, then as duplicates.',
             }),
+            beforeId: z.string().optional().openapi({
+                description:
+                    'The id of that SAME row, breaking a `createdAt` tie. '
+                    + '`createdAt` is `timestamp(3)` and Postgres `now()` is '
+                    + 'transaction-stable, so rows written by one `createMany` share a '
+                    + 'timestamp — P9.4 writes up to ten cards that way. A cursor on '
+                    + '`createdAt` alone drops EVERY row tied with the boundary: '
+                    + 'measured, five tied rows paged two at a time returned two. '
+                    + 'Optional, because callers already in the wild send `before` '
+                    + 'alone and refusing them would turn a silent row loss into an '
+                    + 'outage — but send it, or ties are still lost.',
+            }),
         }),
         extraResponses: codedErrorResponses({
             400: 'INVALID_LIMIT or INVALID_CURSOR (an unreadable `before`).',
@@ -494,6 +506,80 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'get',
+        path: '/api/social/channel-search',
+        operationId: 'searchChannelPosts',
+        summary: 'Search channel posts',
+        description:
+            'P9.7. Ordered by RECENCY, not relevance — there is deliberately no '
+            + 'relevance score in this product. #2868 removed `CONTENT_DEMOTED` '
+            + 'because there is no ranking here to demote within, so scoring would '
+            + 'introduce the first one and is a product decision rather than an '
+            + 'implementation detail. Do not build a UI implying "best match '
+            + 'first".\n\n'
+            + 'HIDDEN POSTS ARE EXCLUDED IN THE QUERY, not collapsed after it. The '
+            + 'three removal columns empty a post\'s body at read time while the '
+            + 'column still holds the text, so matching on `body` and then '
+            + 'collapsing would return an empty row that tells the searcher a post '
+            + 'containing their needle EXISTS — a disclosure channel for exactly '
+            + 'the content moderation removed.\n\n'
+            + 'MEMBERSHIP IS RELEVANCE, NOT SECURITY. Every channel post is '
+            + 'readable by every authenticated caller (`channel_post_select`), '
+            + 'there is no visibility column, and P9.1 states there is no private '
+            + 'channel in this design — so `scope` narrows for usefulness, not for '
+            + 'protection.',
+        tags: TAGS,
+        query: z.object({
+            q: z.string().openapi({
+                description:
+                    'The needle, case-insensitive. Shorter than 2 characters is a '
+                    + '400 `SEARCH_TOO_SHORT` rather than a scan of every post.',
+            }),
+            scope: z.enum(['joined', 'all']).optional().openapi({
+                description:
+                    'Default `joined`. An unrecognised value is a 400 '
+                    + '`INVALID_SCOPE`, never a silent fallback — defaulting would '
+                    + 'answer a narrower question than was asked and look like an '
+                    + 'empty result. The response ECHOES the scope it used, so a '
+                    + 'client renders from the answer rather than the request.',
+            }),
+            limit: z.string().optional().openapi({
+                description: 'Positive integer, clamped to 100. Default 50.',
+            }),
+            before: z.string().optional().openapi({
+                description:
+                    'ISO `createdAt` of the previous page\'s OLDEST hit. An '
+                    + 'unparseable value is a 400 `INVALID_CURSOR`, never ignored.',
+            }),
+            beforeId: z.string().optional().openapi({
+                description:
+                    'The id of that same row, breaking a `createdAt` tie. See the '
+                    + 'feed read for why ties are routine rather than rare.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'SEARCH_TOO_SHORT, INVALID_SCOPE, INVALID_LIMIT or INVALID_CURSOR.',
+            404: 'The flag is off.',
+        }),
+        success: {
+            status: 200,
+            description: 'One page of hits, newest first.',
+            schema: z.object({
+                hits: z.array(z.object({
+                    post: ChannelPostSchema,
+                    channelId: z.string(),
+                    channelNameBg: z.string(),
+                    channelNameEn: z.string(),
+                })),
+                hasMore: z.boolean(),
+                scope: z.enum(['joined', 'all']).openapi({
+                    description: 'The scope actually applied.',
+                }),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
         path: '/api/social/activity',
         operationId: 'readMyActivity',
         summary: '«За Вас» — replies to your posts and mentions of you',
@@ -531,6 +617,18 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
                     + 'unparseable value is a 400 (`INVALID_CURSOR`), never ignored: '
                     + 'ignoring returns page one, which a paging client reads as the '
                     + 'end and then as duplicates.',
+            }),
+            beforeId: z.string().optional().openapi({
+                description:
+                    'The id of that SAME row, breaking a `createdAt` tie. '
+                    + '`createdAt` is `timestamp(3)` and Postgres `now()` is '
+                    + 'transaction-stable, so rows written by one `createMany` share a '
+                    + 'timestamp — P9.4 writes up to ten cards that way. A cursor on '
+                    + '`createdAt` alone drops EVERY row tied with the boundary: '
+                    + 'measured, five tied rows paged two at a time returned two. '
+                    + 'Optional, because callers already in the wild send `before` '
+                    + 'alone and refusing them would turn a silent row loss into an '
+                    + 'outage — but send it, or ties are still lost.',
             }),
         }),
         extraResponses: codedErrorResponses({

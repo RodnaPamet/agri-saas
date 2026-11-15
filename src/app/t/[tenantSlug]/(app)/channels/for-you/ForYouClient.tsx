@@ -92,7 +92,8 @@ export function ForYouClient({ tenantSlug }: { tenantSlug: string }) {
         setLoadingOlder(true);
         try {
             const page = await apiGet<FeedWire>(
-                `${path}?before=${encodeURIComponent(oldest.post.createdAt)}`,
+                `${path}?before=${encodeURIComponent(oldest.post.createdAt)}`
+                + `&beforeId=${encodeURIComponent(oldest.post.id)}`,
             );
             // DEDUPED BY POST ID: the newest page is a moving window, so a page
             // boundary can overlap and a duplicate would get a duplicate React
