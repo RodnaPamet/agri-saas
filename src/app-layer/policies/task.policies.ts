@@ -166,15 +166,36 @@ export function assertCanDeleteTask(
  */
 export function assertCanDeleteTasks(
     ctx: RequestContext,
-    tasks: ReadonlyArray<{ createdByUserId: string }>,
+    tasks: ReadonlyArray<{ id: string; createdByUserId: string }>,
 ) {
     if (ctx.permissions.canAdmin) return;
-    const refused = tasks.filter((t) => t.createdByUserId !== ctx.userId).length;
-    if (refused === 0) return;
+    const refusedTasks = tasks.filter((t) => t.createdByUserId !== ctx.userId);
+    if (refusedTasks.length === 0) return;
     throw codedForbidden(
         'TASK_DELETE_NOT_PERMITTED',
         'Some of the selected tasks were created by somebody else, so none were deleted.',
-        { refused, selected: tasks.length },
+        { refused: refusedTasks.length, selected: tasks.length },
+        /*
+         * WHICH rows were refused, not just how many (#3063, raised by the
+         * agrent-ios session building the multi-select).
+         *
+         * The counts alone let a client say «three of twenty were refused» and
+         * leave the farmer to find the three themselves — on a screen where
+         * «Избери всички» may have ticked a hundred. Since the call is
+         * all-or-nothing, every row stays put, so the only way out is to
+         * untick exactly these.
+         *
+         * In `details` rather than `params` because `ErrorParams` cannot hold
+         * a list, and deliberately not a comma-joined string: that would fit
+         * the type while being neither interpolatable copy nor a list the
+         * client can use without re-parsing it.
+         *
+         * Task ids only — no `createdByUserId`. Naming the colleague who made
+         * each row would answer a question nobody asked and put a person into
+         * an error payload, which is the line the `ErrorParams` docblock draws
+         * for exactly this reason.
+         */
+        { refusedTaskIds: refusedTasks.map((t) => t.id) },
     );
 }
 

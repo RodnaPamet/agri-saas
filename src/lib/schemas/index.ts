@@ -339,6 +339,20 @@ export const BulkTaskStatusSchema = z.object({
     resolution: z.string().max(5000).optional(),
 }).strip();
 
+/**
+ * Bulk delete. It lived INLINE in its own route while its three siblings
+ * above were shared here — so the spec had nothing real to reference and the
+ * documented body could drift from the one the handler validates with, which
+ * is the drift `tasks.paths.ts` exists to prevent.
+ *
+ * The cap matches its siblings at 100 deliberately: all four back one
+ * multi-select on one screen, so a farmer who can assign a hundred rows and
+ * not delete a hundred would be meeting an arbitrary edge.
+ */
+export const BulkTaskDeleteSchema = z.object({
+    taskIds: z.array(z.string().min(1)).min(1).max(100),
+}).strip();
+
 export const BulkTaskDueDateSchema = z.object({
     taskIds: z.array(z.string().min(1)).min(1).max(100),
     dueAt: instantTimestamp().nullable(),
