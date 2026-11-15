@@ -420,7 +420,7 @@ export function evaluateFrostRisk(
     return {
         atRisk: false,
         tempMinC,
-        reasons: [`Minimum ${tempMinC}°C above the ${thresholds.tempMinC}°C frost threshold`],
+        reasons: [`Minimum ${tempMinC}°C exceeds the ${thresholds.tempMinC}°C frost threshold`],
         reasonCodes: [{ code: 'noFrostExpected', params: { temp: tempMinC, threshold: thresholds.tempMinC } }],
     };
 }
