@@ -28,6 +28,14 @@ import {
     isZarnoBorsaLocked,
 } from '@/lib/market/zarnoborsa-extract';
 import {
+    ZARNOBORSA_EXW_BG,
+    ZARNOBORSA_FOB_BG,
+    ZARNOBORSA_COMMODITY,
+    zarnoBorsaCommodity,
+    isZarnoBorsaKeptMarket,
+} from '@/lib/market/zarnoborsa-markets';
+import { CANONICAL_COMMODITIES } from '@/lib/market/commodity-vocabulary';
+import {
     parseZarnoBorsaRows,
     parseZarnoBorsaDate,
     parseZarnoBorsaPrice,
@@ -223,5 +231,71 @@ describe('#3081 — interpreting the printed strings', () => {
         const b = parseZarnoBorsaRows(extractZarnoBorsaRows(doc));
         expect(b.rows).toHaveLength(0);
         expect(b.skipped).toBe(17);
+    });
+});
+
+describe('#3081 — which rows we keep, and what they mean', () => {
+    it('keeps BULGARIA ONLY — the owner narrowed it from Black Sea FOB', () => {
+        expect(isZarnoBorsaKeptMarket(ZARNOBORSA_EXW_BG)).toBe(true);
+        expect(isZarnoBorsaKeptMarket(ZARNOBORSA_FOB_BG)).toBe(true);
+        // FOB RO / UA / RU are read off the page and discarded.
+        for (const dropped of [1051, 1054, 1055]) {
+            expect(isZarnoBorsaKeptMarket(dropped)).toBe(false);
+        }
+        // And the EXW regions that are not Bulgaria.
+        for (const dropped of [1045, 1050, 1121, 1122]) {
+            expect(isZarnoBorsaKeptMarket(dropped)).toBe(false);
+        }
+    });
+
+    it('every mapped commodity is a REAL canonical key', () => {
+        // The load-bearing check. A key that merely looks right resolves to
+        // nothing downstream, so the series would be written and never read —
+        // and nothing else would fail.
+        const canonical = new Set<string>(CANONICAL_COMMODITIES);
+        expect(ZARNOBORSA_COMMODITY.size).toBe(10);
+        for (const [pair, commodity] of ZARNOBORSA_COMMODITY) {
+            expect(canonical.has(commodity)).toBe(true);
+            // And every mapping is for a market we actually keep.
+            expect(isZarnoBorsaKeptMarket(Number(pair.split(':')[0]))).toBe(true);
+        }
+    });
+
+    it('wheat is a DIFFERENT product id on each page', () => {
+        // EXW prints «Пшеница» as 1007; FOB prints «Пшеница 11.5%» as 1032.
+        // One commodity, two ids — which is why both pages are spelled out
+        // rather than sharing a product table.
+        expect(zarnoBorsaCommodity(ZARNOBORSA_EXW_BG, 1007)).toBe('wheat');
+        expect(zarnoBorsaCommodity(ZARNOBORSA_FOB_BG, 1032)).toBe('wheat');
+        // And the other page's id must NOT resolve, or a row would be filed
+        // under a commodity its page never printed.
+        expect(zarnoBorsaCommodity(ZARNOBORSA_EXW_BG, 1032)).toBeNull();
+        expect(zarnoBorsaCommodity(ZARNOBORSA_FOB_BG, 1007)).toBeNull();
+    });
+
+    it('leaves the processed products UNMAPPED rather than nearly-mapped', () => {
+        // Oil at ~€1,100/t filed under `sunflower` would land in the same
+        // series as a ~€150/t seed price, and the grain calculator would then
+        // value a farm's sunflower at the oil price. Feed wheat is the same
+        // trap one step smaller.
+        for (const j of [1009, 1012, 1182, 1183]) {
+            expect(zarnoBorsaCommodity(ZARNOBORSA_EXW_BG, j)).toBeNull();
+        }
+        expect(zarnoBorsaCommodity(ZARNOBORSA_FOB_BG, 1011)).toBeNull();
+    });
+
+    it('the kept markets cover every Bulgarian row in the fixtures', () => {
+        // A denominator rather than a spot check: if the allow-list and the
+        // fixtures disagree, one of them is stale.
+        const exw = extractZarnoBorsaRows(load('exw.html'))
+            .filter((r) => isZarnoBorsaKeptMarket(r.marketId));
+        const fob = extractZarnoBorsaRows(load('fob.html'))
+            .filter((r) => isZarnoBorsaKeptMarket(r.marketId));
+        expect(exw).toHaveLength(9);
+        expect(fob).toHaveLength(3);
+        // Of those, the ones we can actually file under a commodity.
+        const mapped = [...exw, ...fob]
+            .filter((r) => zarnoBorsaCommodity(r.marketId, r.productId) !== null);
+        expect(mapped).toHaveLength(8);
     });
 });

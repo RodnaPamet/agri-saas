@@ -70,9 +70,21 @@ export interface ZarnoBorsaRawRow {
  *
  * The `colHidde` cell may hold a SECOND anchor, to
  * `/forwardcurves/<otherMarketId>/<productId>` — whose first path segment is a
- * DIFFERENT market id (1141 for FOB RU, 1215 for FOB RO). So the market link
- * is found by matching `p=graph`, never by taking the row's last anchor, which
- * would read the forward-curve ids as the market and product.
+ * DIFFERENT market id (1141 for FOB RU, 1215 for FOB RO). Reading that as the
+ * market would file one region's prices under another.
+ *
+ * **What prevents it is the QUERY-ANCHORED regexes, not the `p=graph`
+ * check.** Measured by mutation: reversing the anchor order AND deleting the
+ * `p=graph` filter leaves every test green, because `/forwardcurves/1141/1006`
+ * carries no `?m=` or `&m=` and so fails `[?&]m=` outright — the loop skips it
+ * and reaches the real link. Loosening those two regexes to match a bare path
+ * number is what reddens the suite.
+ *
+ * So the `p=graph` filter is DEFENSIVE AND UNPROVEN. It would earn its place
+ * only against a future anchor carrying `m=`/`j=` in a query while not being a
+ * market link. It is kept for that and recorded as unproven rather than
+ * credited with work it is not doing — a comment naming the wrong mechanism is
+ * how the next reader deletes the one that matters.
  */
 export function extractZarnoBorsaRows(doc: Document): ZarnoBorsaRawRow[] {
     const out: ZarnoBorsaRawRow[] = [];
