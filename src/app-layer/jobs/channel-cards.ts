@@ -50,6 +50,7 @@ import { CROP_TAGS } from '@/lib/news/categorize';
 import { dayKeyToInstant, farmDayRange, farmToday } from '@/lib/calendar-day-key';
 import { resolvePlatformSystemUserId } from '@/lib/auth/system-user';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
+import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
@@ -470,7 +471,16 @@ async function generateListingCards(
         return translateFor(loc, 'channels.card.listing.line', { commodity, quantity });
     };
 
-    const rows = [];
+    /*
+     * TYPED, because `const rows = []` is an implicit `any[]` and this file
+     * converted a `flatMap` into a loop — which is how the annotation was
+     * lost. `Prisma.ChannelPostCreateManyInput` rather than a hand-written
+     * interface, so a column renamed in the schema fails HERE rather than at
+     * runtime: an extended-client `createMany` shape is not caught by `tsc`
+     * when the array is `any`, which is the same class as P5.6a's five wrong
+     * `select` keys.
+     */
+    const rows: Prisma.ChannelPostCreateManyInput[] = [];
     for (const [channelId, region] of regionOf.entries()) {
         const l = newest.get(region);
         if (!l) continue;
