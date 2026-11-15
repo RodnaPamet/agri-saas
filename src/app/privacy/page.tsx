@@ -43,6 +43,8 @@ export default async function PrivacyPage() {
     const t = await getTranslations('privacy');
     const contact = env.PRIVACY_CONTACT_EMAIL;
     const controllerName = env.PRIVACY_CONTROLLER_NAME;
+    const controllerAddress = env.PRIVACY_CONTROLLER_ADDRESS;
+    const controllerPhone = env.PRIVACY_CONTROLLER_PHONE;
 
     const sections = [
         // `collectUsage` added with #493. Product-usage telemetry is personal
@@ -186,6 +188,12 @@ export default async function PrivacyPage() {
                     one's name. */}
                 {controllerName ? (
                     <p className="font-[560]">{controllerName}</p>
+                ) : null}
+                {controllerAddress ? (
+                    <p className="text-content-muted">{controllerAddress}</p>
+                ) : null}
+                {controllerPhone ? (
+                    <p className="text-content-muted">{controllerPhone}</p>
                 ) : null}
                 <p className="text-content-muted">{t('controllerBody')}</p>
                 {/* Rendered only when the operator has configured a real

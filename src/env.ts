@@ -681,6 +681,16 @@ export const env = createEnv({
         // company, and an unset value must leave the generic wording rather
         // than name somebody who is not the controller.
         PRIVACY_CONTROLLER_NAME: z.string().min(2).optional(),
+        // The registered seat and a phone number. Bulgarian e-commerce law
+        // (ЗЕТ чл. 4) expects a service provider to publish both, alongside
+        // the name — so these are not decoration, they are the other half of
+        // the same legal identification Google's review also wants.
+        //
+        // Config rather than source, and deliberately: the seat is a
+        // residential address and this repository is PUBLIC. Same rule that
+        // keeps the operator's personal mailbox out of `deploy/Caddyfile`.
+        PRIVACY_CONTROLLER_ADDRESS: z.string().min(5).optional(),
+        PRIVACY_CONTROLLER_PHONE: z.string().min(5).optional(),
 
         // P3.1 — the DSA Article 11/12 single point of contact, shown on
         // /dsa-contact and on the terms page. Configuration for the same
@@ -973,6 +983,8 @@ export const env = createEnv({
         PPP_ADVERTISING_SAFETY_BG: process.env.PPP_ADVERTISING_SAFETY_BG,
         PRIVACY_CONTACT_EMAIL: process.env.PRIVACY_CONTACT_EMAIL,
         PRIVACY_CONTROLLER_NAME: process.env.PRIVACY_CONTROLLER_NAME,
+        PRIVACY_CONTROLLER_ADDRESS: process.env.PRIVACY_CONTROLLER_ADDRESS,
+        PRIVACY_CONTROLLER_PHONE: process.env.PRIVACY_CONTROLLER_PHONE,
         DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
         APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
         APPLE_SERVICES_ID: process.env.APPLE_SERVICES_ID,

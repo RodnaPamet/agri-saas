@@ -163,6 +163,12 @@ export default async function CookiePolicyPage() {
                 {env.PRIVACY_CONTROLLER_NAME ? (
                     <p className="font-[560]">{env.PRIVACY_CONTROLLER_NAME}</p>
                 ) : null}
+                {env.PRIVACY_CONTROLLER_ADDRESS ? (
+                    <p className="text-content-muted">{env.PRIVACY_CONTROLLER_ADDRESS}</p>
+                ) : null}
+                {env.PRIVACY_CONTROLLER_PHONE ? (
+                    <p className="text-content-muted">{env.PRIVACY_CONTROLLER_PHONE}</p>
+                ) : null}
                 <p className="text-content-muted">{env.PRIVACY_CONTACT_EMAIL}</p>
                 <p className="text-content-muted">
                     <a className="underline" href="/privacy">
