@@ -663,6 +663,13 @@
                 "bodyWithDetail": "Установен е висок риск от болести в {label} — {detail}",
                 "pushBody": "Установен е висок риск от болести. Отворете за подробности."
             },
+            "frostRisk": {
+                "title": "Очаква се слана",
+                "body": "Очаква се слана в {label}.",
+                "bodyWithDetail": "Очаква се слана в {label} — {detail}",
+                "pushBody": "Очаква се слана. Отворете за блока и датата.",
+                "detailOn": "за {date}: {reason}"
+            },
             "copilot": {
                 "title": "Агрономско обяснение",
                 "body": "Готово е агрономско обяснение за {label}.",
@@ -3314,6 +3321,7 @@
             "plantingCycle": "Засаждане: {name}",
             "agroSignalSprayWindow": "Предупреждение за прозорец за пръскане: {name}",
             "agroSignalDiseaseRisk": "Сигнал за риск от болест: {name}",
+            "agroSignalFrostRisk": "Предупреждение за слана: {name}",
             "aiNewsSubsidyDeadline": "Предложен срок за субсидия: {name}",
             "aiNewsRegulationEffective": "Предложена дата на регламент: {name}"
         },
@@ -5232,6 +5240,11 @@
             "diseaseReason": {
                 "noSustainedWarmWet": "Няма продължителен топло-влажен период",
                 "consecutiveWarmWetDays": "Топло-влажни дни подред: {days} — благоприятни за листни болести"
+            },
+            "frostReason": {
+            "frostExpected": "Очаква се слана: минимум {temp}°C, на или под прага от {threshold}°C",
+            "noFrostExpected": "Не се очаква слана: минимум {temp}°C надвишава прага от {threshold}°C",
+            "noForecast": "Няма прогноза за минимална температура за този ден"
             },
             "soilReason": {
                 "noPreferences": "Няма записани изисквания към почвата за тази култура или почвеният анализ все още се изчислява",

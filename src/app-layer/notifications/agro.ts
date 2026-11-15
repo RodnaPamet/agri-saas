@@ -25,7 +25,11 @@ import { translateFor } from '@/lib/i18n/server-messages';
 import type { Locale } from '@/lib/i18n/locales';
 import { publishFreshNotifications } from './publish-fresh';
 
-export type AgroNotificationKind = 'SPRAY_WINDOW_WARNING' | 'DISEASE_RISK_RAISED' | 'AGRO_COPILOT_READY';
+export type AgroNotificationKind =
+    | 'SPRAY_WINDOW_WARNING'
+    | 'DISEASE_RISK_RAISED'
+    | 'FROST_RISK_WARNING'
+    | 'AGRO_COPILOT_READY';
 
 export interface AgroNotificationTarget {
     tenantId: string;
@@ -111,6 +115,12 @@ const COPY: Record<AgroNotificationKind, AgroCopy> = {
         bodyWithDetailKey: 'notifications.agro.diseaseRisk.bodyWithDetail',
         pushBodyKey: 'notifications.agro.diseaseRisk.pushBody',
     },
+    FROST_RISK_WARNING: {
+        titleKey: 'notifications.agro.frostRisk.title',
+        bodyKey: 'notifications.agro.frostRisk.body',
+        bodyWithDetailKey: 'notifications.agro.frostRisk.bodyWithDetail',
+        pushBodyKey: 'notifications.agro.frostRisk.pushBody',
+    },
     AGRO_COPILOT_READY: {
         titleKey: 'notifications.agro.copilot.title',
         bodyKey: 'notifications.agro.copilot.body',
@@ -132,6 +142,24 @@ export const AGRO_COPY_KEYS: readonly string[] = Object.values(COPY).flatMap((c)
     c.bodyKey,
     c.bodyWithDetailKey,
 ]);
+
+/**
+ * The PUSH body keys, derived separately — #3077.
+ *
+ * `AGRO_COPY_KEYS` deliberately omits them, and nothing checked them, so a
+ * kind whose `pushBodyKey` had no catalogue entry would have put the key
+ * itself on a farmer's lock screen: `translateFor` returns the key on a miss
+ * and throws nothing. The docblock on `pushBodyKey` already argues that every
+ * kind needs one "because the alternative is a kind whose push body resolves
+ * to the empty string" — this is the check that makes that argument hold.
+ *
+ * Separate from `AGRO_COPY_KEYS` rather than folded into it because the two
+ * have different consumers: the bell row renders the first three, and
+ * `push-payload-carries-no-free-text` reasons about this one.
+ */
+export const AGRO_PUSH_BODY_KEYS: readonly string[] = Object.values(COPY).map(
+    (c) => c.pushBodyKey,
+);
 
 /**
  * Build the idempotency key. Pure helper so tests can assert the format.

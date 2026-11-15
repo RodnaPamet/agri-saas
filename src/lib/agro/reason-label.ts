@@ -25,12 +25,13 @@
 import { translateFor } from '@/lib/i18n/server-messages';
 import type { Locale } from '@/lib/i18n/locales';
 
-import type { DiseaseReason, SprayReason } from './rules';
+import type { DiseaseReason, FrostReason, SprayReason } from './rules';
 import type { SoilReason } from '@/lib/soil/suitability';
 
 const SPRAY_NS = 'locations.smart.sprayReason';
 const DISEASE_NS = 'locations.smart.diseaseReason';
 const SOIL_NS = 'locations.smart.soilReason';
+const FROST_NS = 'locations.smart.frostReason';
 
 /**
  * One reason, rendered. Falls back to `null` rather than to the key: this
@@ -55,6 +56,17 @@ export async function renderDiseaseReason(
 ): Promise<string | null> {
     if (!reason) return null;
     const key = `${DISEASE_NS}.${reason.code}`;
+    const out = await translateFor(locale, key, reason.params);
+    return out === key ? null : out;
+}
+
+/** As `renderSprayReason`, for the frost codes added in #3077. */
+export async function renderFrostReason(
+    locale: Locale,
+    reason: FrostReason | undefined,
+): Promise<string | null> {
+    if (!reason) return null;
+    const key = `${FROST_NS}.${reason.code}`;
     const out = await translateFor(locale, key, reason.params);
     return out === key ? null : out;
 }

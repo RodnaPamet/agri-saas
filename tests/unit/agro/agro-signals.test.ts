@@ -14,7 +14,7 @@
 const mockDb: any = {
     location: { findFirst: jest.fn() },
     weatherObservation: { findMany: jest.fn() },
-    agroSignal: { createMany: jest.fn(), updateMany: jest.fn() },
+    agroSignal: { createMany: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
     notification: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
 };
 
@@ -59,6 +59,7 @@ beforeEach(() => {
         [4, 3, 2, 1, 0].map(warmWetDay),
     );
     mockDb.agroSignal.updateMany.mockResolvedValue({ count: 1 });
+    mockDb.agroSignal.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe('evaluateLocationSignals — first run (signals fire)', () => {
@@ -188,5 +189,182 @@ describe('evaluateLocationSignals — calm/dry weather (no signals)', () => {
         mockDb.location.findFirst.mockResolvedValue(null);
         const result = await evaluateLocationSignals(ctx, 'loc-x', NOW);
         expect(result.created).toBe(0);
+    });
+});
+
+/**
+ * A FORECAST day, cold enough to warrant a frost warning.
+ *
+ * Positive offsets, unlike `warmWetDay`'s: the existing fixture walks
+ * BACKWARDS from today and every one of its days is at 14 degrees C, which is
+ * why the suites above claim no frost and stay about what they were written
+ * for.
+ */
+function frostyForecastDay(offsetDays: number, tempMinC: number | null = 1) {
+    const d = new Date(Date.UTC(2026, 5, 15 + offsetDays));
+    return {
+        obsDate: d,
+        tempMaxC: 9,
+        tempMinC,
+        // Calm and dry, so neither of the other two signals fires and a frost
+        // assertion cannot be satisfied by a spray or disease claim.
+        tempMeanC: 5,
+        precipMm: 0,
+        windMaxKmh: 4,
+        humidityMean: 60,
+    };
+}
+
+/** The `data[0]` of every createMany call, by kind. */
+function claimsOfKind(kind: string) {
+    return (mockDb.agroSignal.createMany.mock.calls as unknown[][])
+        .map((c) => (c[0] as { data: Array<Record<string, unknown>> }).data[0])
+        .filter((row: Record<string, unknown>) => row.kind === kind);
+}
+
+describe('FROST_RISK — claimed per forecast day (#3077)', () => {
+    it('claims a row for each cold forecast day and notifies ONCE, naming the nearest', async () => {
+        mockDb.weatherObservation.findMany.mockResolvedValue([
+            warmWetDay(0), // today, 14 degrees C — not frost
+            frostyForecastDay(1, 1.5),
+            frostyForecastDay(2, -2),
+        ]);
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        const result = await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        const frost = claimsOfKind('FROST_RISK');
+        expect(frost).toHaveLength(2);
+        expect(frost.map((r) => (r.signalDate as Date).toISOString().slice(0, 10))).toEqual([
+            '2026-06-16',
+            '2026-06-17',
+        ]);
+        expect(result.frost.fired).toBe(true);
+        expect(result.frost.days).toEqual(['2026-06-16', '2026-06-17']);
+
+        /*
+         * ONE notification for the snap, not one per day — three pushes about
+         * one cold spell is how somebody turns notifications off.
+         *
+         * Asserted on `createAgroNotificationMock` and NOT on
+         * `notification.createMany`: this suite mocks the notification factory,
+         * so the Prisma call never happens and a `createMany` assertion reads
+         * zero whatever the code does. My first version asserted the wrong
+         * collector and failed for that reason rather than for a defect.
+         */
+        // `createAgroSignalNotification(db, kind, target, now)` — so the KIND
+        // is argument 1 and the target argument 2. Reading index 0 as the kind
+        // is what my first version did, and it reported zero calls rather than
+        // a wrong one: an index mistake in a mock reader looks exactly like the
+        // code never running.
+        const frostCalls = (createAgroNotificationMock.mock.calls as unknown[][]).filter(
+            (c: unknown[]) => c[1] === 'FROST_RISK_WARNING',
+        );
+        expect(frostCalls).toHaveLength(1);
+        const target = frostCalls[0][2] as { detail: string; locale: string };
+        // Naming the NEAREST day, not the coldest — `obs` is ascending and the
+        // detail is rendered from the first day claimed.
+        expect(target.detail).toContain('2026-06-16');
+        expect(target.detail).not.toContain('2026-06-17');
+        // Bulgarian, because the location has no owner preference and `bg` is
+        // the column default — the same rule as its two siblings.
+        expect(target.locale).toBe('bg');
+        expect(target.detail).toMatch(/слана/);
+
+        // Both days are marked notified, so neither can be re-claimed or
+        // retracted later.
+        type UpdateArg = { where: { kind?: string; signalDate?: { in?: Date[] } } };
+        const marked = (mockDb.agroSignal.updateMany.mock.calls as unknown[][])
+            .map((c) => c[0] as UpdateArg)
+            .find((a: UpdateArg) => a.where.kind === 'FROST_RISK');
+        expect(marked?.where.signalDate?.in?.map((d) => d.toISOString().slice(0, 10))).toEqual([
+            '2026-06-16',
+            '2026-06-17',
+        ]);
+    });
+
+    it('claims nothing when the forecast stays above the threshold', async () => {
+        mockDb.weatherObservation.findMany.mockResolvedValue([
+            warmWetDay(0),
+            frostyForecastDay(1, 2.1),
+            frostyForecastDay(2, 8),
+        ]);
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        const result = await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        expect(claimsOfKind('FROST_RISK')).toHaveLength(0);
+        expect(result.frost.fired).toBe(false);
+        // The control: 2.1 is above and 2.0 is not, so the boundary is where
+        // the ruling put it rather than a degree either side.
+        mockDb.agroSignal.createMany.mockClear();
+        mockDb.weatherObservation.findMany.mockResolvedValue([frostyForecastDay(1, 2)]);
+        await evaluateLocationSignals(ctx, 'loc-1', NOW);
+        expect(claimsOfKind('FROST_RISK')).toHaveLength(1);
+    });
+
+    it('ignores a cold day that has already PASSED', async () => {
+        // A frost last Tuesday is not a reason to refuse to sow next week, and
+        // back-filling would suppress advice on days already gone.
+        mockDb.weatherObservation.findMany.mockResolvedValue([
+            { ...warmWetDay(3), tempMinC: -5 },
+            { ...warmWetDay(1), tempMinC: -5 },
+            warmWetDay(0),
+        ]);
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        expect(claimsOfKind('FROST_RISK')).toHaveLength(0);
+    });
+
+    it('treats a MISSING minimum as unknown, never as clear', async () => {
+        mockDb.weatherObservation.findMany.mockResolvedValue([
+            warmWetDay(0),
+            frostyForecastDay(1, null),
+        ]);
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        // No claim — we may not warn on a day we know nothing about…
+        expect(claimsOfKind('FROST_RISK')).toHaveLength(0);
+        // …and no retraction of it either, which is the half that matters:
+        // deleting a row for an unforecast day would be a claim that the day
+        // is clear. The delete is bounded by the horizon for that reason.
+        const del = mockDb.agroSignal.deleteMany.mock.calls[0]?.[0] as
+            | { where: { signalDate: { gt: Date; lte: Date } } }
+            | undefined;
+        expect(del).toBeDefined();
+        expect(del?.where.signalDate.lte.toISOString().slice(0, 10)).toBe('2026-06-16');
+    });
+
+    it('retracts only FUTURE, UN-NOTIFIED rows the forecast no longer supports', async () => {
+        mockDb.weatherObservation.findMany.mockResolvedValue([
+            warmWetDay(0),
+            frostyForecastDay(1, 1),
+            frostyForecastDay(2, 7), // warmed up — any row here must go
+        ]);
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+        mockDb.agroSignal.deleteMany.mockResolvedValue({ count: 1 });
+
+        const result = await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        const where = (mockDb.agroSignal.deleteMany.mock.calls[0][0] as {
+            where: Record<string, unknown>;
+        }).where;
+        // A notified row stands whatever the forecast now says — that is what
+        // makes "never notify twice about one day" a property of the data
+        // rather than of a flag somebody has to remember to check.
+        expect(where.notified).toBe(false);
+        expect(where.kind).toBe('FROST_RISK');
+        // Strictly after today, so a past row is never touched.
+        expect((where.signalDate as { gt: Date }).gt.toISOString().slice(0, 10)).toBe('2026-06-15');
+        // And the still-warranted day is excluded from the delete.
+        const kept = (where.NOT as { signalDate: { in: Date[] } }).signalDate.in.map((d: Date) =>
+            d.toISOString().slice(0, 10),
+        );
+        expect(kept).toEqual(['2026-06-16']);
+        expect(result.frost.retracted).toBe(1);
     });
 });

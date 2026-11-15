@@ -1025,10 +1025,12 @@ async function loadPlantingEvents(
 const AGRO_SIGNAL_KIND_TO_TYPE: Record<AgroSignalKind, CalendarEventType> = {
     SPRAY_WINDOW: 'agro-signal-spray-window',
     DISEASE_RISK: 'agro-signal-disease-risk',
+    FROST_RISK: 'agro-signal-frost-risk',
 };
 const AGRO_SIGNAL_KIND_TO_TITLE_KEY: Record<AgroSignalKind, string> = {
     SPRAY_WINDOW: 'agroSignalSprayWindow',
     DISEASE_RISK: 'agroSignalDiseaseRisk',
+    FROST_RISK: 'agroSignalFrostRisk',
 };
 
 /**
