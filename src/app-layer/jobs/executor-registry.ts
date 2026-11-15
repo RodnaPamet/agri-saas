@@ -718,6 +718,28 @@ executorRegistry.register('channel-cards', async () => {
     );
 });
 
+// ── zarnoborsa-pull ─────────────────────────────────────────────────
+//
+// #3081. Reads the Playwright container's handoff file. Tenantless: the price
+// catalogue has no farm.
+
+executorRegistry.register('zarnoborsa-pull', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runZarnoBorsaPull } = await import('./zarnoborsa-pull');
+    const r = await runZarnoBorsaPull();
+    // scanned = rows the fetch handed over, actioned = points written,
+    // skipped = the difference. The job's own log line carries the VERDICT and
+    // the reason, because this triple cannot say whether zero meant a missing
+    // file, a paywalled read or a quiet market — and those want different
+    // responses.
+    return makeResult(
+        'zarnoborsa-pull', startedAt, startMs,
+        r.received, r.pointsWritten, Math.max(0, r.received - r.pointsWritten),
+        { verdict: r.verdict, reason: r.reason, unmappedProducts: r.unmappedProducts },
+    );
+});
+
 // ── channel-digest ──────────────────────────────────────────────────
 //
 // P9.7's opt-in 07:15 recap (#2941). Tenantless for the same reason as

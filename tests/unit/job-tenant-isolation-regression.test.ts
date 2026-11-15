@@ -302,7 +302,10 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         'channel-cards',
         // #2941 — P9.7's 07:15 digest. Person-scoped: a channel has no farm,
         // and the recipient is a person who may belong to several.
-        'channel-digest'];
+        'channel-digest',
+        // #3081 — the price catalogue is global; `MarketPriceSeries` carries
+        // no tenantId, so there is no scope to isolate.
+        'zarnoborsa-pull'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -440,6 +443,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // tenantId here could name, and the recipient is a person who may
         // belong to several farms or none.
         'ChannelDigestPayload',
+        // #3081 — takes no arguments: the handoff path and the clock are the
+        // job's own, and the catalogue it writes has no tenant.
+        'ZarnoBorsaPullPayload',
         // #3020 — the 06:00 summary's payload: a recipient and the night key
         // that scheduled it. No tenantId for its producer's reason, and the
         // night key is the SCHEDULING identity rather than a scope — the job
