@@ -42,6 +42,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function PrivacyPage() {
     const t = await getTranslations('privacy');
     const contact = env.PRIVACY_CONTACT_EMAIL;
+    const controllerName = env.PRIVACY_CONTROLLER_NAME;
 
     const sections = [
         // `collectUsage` added with #493. Product-usage telemetry is personal
@@ -178,6 +179,14 @@ export default async function PrivacyPage() {
 
             <section className="space-y-default">
                 <Heading level={2}>{t('controllerTitle')}</Heading>
+                {/* The NAMED controller, when configured. Google's consent
+                    review requires the policy to identify who it is; the
+                    generic sentence below stays for a self-hosted deployment,
+                    which is a different controller and must not be given this
+                    one's name. */}
+                {controllerName ? (
+                    <p className="font-[560]">{controllerName}</p>
+                ) : null}
                 <p className="text-content-muted">{t('controllerBody')}</p>
                 {/* Rendered only when the operator has configured a real
                     address — an unconfigured deployment shows no contact rather

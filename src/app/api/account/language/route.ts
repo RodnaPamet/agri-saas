@@ -19,10 +19,9 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import {badRequest } from '@/lib/errors/types';
 import { updateOwnUiLanguage } from '@/lib/account/language';
-import { LOCALE_COOKIE, LOCALES } from '@/lib/i18n/locales';
+import { LOCALE_COOKIE, LOCALES, LOCALE_COOKIE_MAX_AGE_SECONDS } from '@/lib/i18n/locales';
 
 /** One year, in seconds — matches the middleware seed lifetime. */
-const LOCALE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 const LanguageSchema = z.object({
     language: z.enum(LOCALES),
@@ -44,7 +43,7 @@ export const PUT = withApiErrorHandling(async (req: NextRequest) => {
     const res = jsonResponse(result, { status: 200 });
     res.cookies.set(LOCALE_COOKIE, result.uiLanguage, {
         path: '/',
-        maxAge: LOCALE_COOKIE_MAX_AGE,
+        maxAge: LOCALE_COOKIE_MAX_AGE_SECONDS,
         sameSite: 'lax',
         httpOnly: false,
     });

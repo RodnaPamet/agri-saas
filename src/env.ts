@@ -676,6 +676,11 @@ export const env = createEnv({
         // software, so the address cannot be baked in. UNSET renders no contact
         // block at all rather than a placeholder that reads as a real address.
         PRIVACY_CONTACT_EMAIL: z.string().email().optional(),
+        // The named data controller, for Google's OAuth consent-screen review
+        // (#3070). OPTIONAL on purpose: a self-hosted deployment is not this
+        // company, and an unset value must leave the generic wording rather
+        // than name somebody who is not the controller.
+        PRIVACY_CONTROLLER_NAME: z.string().min(2).optional(),
 
         // P3.1 — the DSA Article 11/12 single point of contact, shown on
         // /dsa-contact and on the terms page. Configuration for the same
@@ -967,6 +972,7 @@ export const env = createEnv({
         PLATFORM_TENANT_SLUG: process.env.PLATFORM_TENANT_SLUG,
         PPP_ADVERTISING_SAFETY_BG: process.env.PPP_ADVERTISING_SAFETY_BG,
         PRIVACY_CONTACT_EMAIL: process.env.PRIVACY_CONTACT_EMAIL,
+        PRIVACY_CONTROLLER_NAME: process.env.PRIVACY_CONTROLLER_NAME,
         DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
         APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
         APPLE_SERVICES_ID: process.env.APPLE_SERVICES_ID,

@@ -28,6 +28,7 @@ import { getTranslations } from 'next-intl/server';
 export async function PublicLegalFooter() {
     const privacy = await getTranslations('privacy');
     const terms = await getTranslations('terms');
+    const cookies = await getTranslations('cookies');
     return (
         <footer className="mt-section border-t border-border-subtle pt-default text-sm text-content-muted">
             <nav className="flex flex-wrap gap-default">
@@ -36,6 +37,9 @@ export async function PublicLegalFooter() {
                 </a>
                 <a className="underline hover:text-content-default" href="/terms">
                     {terms('title')}
+                </a>
+                <a className="underline hover:text-content-default" href="/cookies">
+                    {cookies('title')}
                 </a>
             </nav>
         </footer>

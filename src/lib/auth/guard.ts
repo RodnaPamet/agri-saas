@@ -417,6 +417,7 @@ export const PUBLIC_PATH_EXACT = new Set([
     // prospective user has to be able to read it before signing up. It
     // renders no tenant data, so there is nothing to gate.
     '/privacy',
+    '/cookies', // Cookie policy — public by the same duty as /privacy (#3070)
 
     // ── probes and sinks, anonymous by design ──
     '/api/health', // Health check (no auth) — deprecated alias

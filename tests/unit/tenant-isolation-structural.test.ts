@@ -92,6 +92,7 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // request, and a prospective user must be able to read it without
             // an account. It renders no tenant data — only a description of
             // how the software handles data — so it has nothing to isolate.
+            'cookies',
             'privacy',
             // Epic 1, PR 3 — invite preview page (sign-in gated, any tenant).
             // User is not yet a member of the target tenant — cannot go under /t/.
