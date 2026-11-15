@@ -6,6 +6,7 @@ import { auth } from '@/auth';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
+import { PublicLegalFooter } from '@/components/layout/PublicLegalFooter';
 
 /**
  * Root: the landing page for a visitor, a redirect for a member (P3.8).
@@ -87,6 +88,7 @@ export default async function Home() {
                 <Heading level={2}>{t('honestTitle')}</Heading>
                 <p className="text-sm">{t('honestBody')}</p>
             </Card>
+            <PublicLegalFooter />
         </main>
     );
 }

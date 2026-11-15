@@ -74,6 +74,32 @@ export default async function PrivacyPage() {
         // a reader would reasonably infer the other does not happen.
         { key: 'use', body: ['useOperate', 'useSuppliers', 'useExchange'] },
         { key: 'protect', body: ['protectEncryption', 'protectIsolation', 'protectConsent'] },
+        // Google user data — required by Google's OAuth consent-screen review
+        // for the `drive.file` and `calendar.app.created` scopes (#3070).
+        //
+        // Every line here was checked against the code rather than against the
+        // feature description, because this page's rule is "only what the code
+        // implements". Two corrections came out of that: the per-person
+        // calendar sync and the lunar calendar do NOT exist yet, so the
+        // calendar line describes the farm deadlines that are actually
+        // written; and Drive is write-only apart from one metadata read of our
+        // own folder, which is what makes "no Google content enters our
+        // systems" true rather than aspirational.
+        //
+        // `googleLimitedUse` is Google's REQUIRED sentence and is deliberately
+        // identical in both catalogues — it must appear verbatim in English.
+        {
+            key: 'google',
+            body: [
+                'googleIntro',
+                'googleDrive',
+                'googleCalendar',
+                'googleStorage',
+                'googleNoSharing',
+                'googleDisconnect',
+                'googleLimitedUse',
+            ],
+        },
         { key: 'rights', body: ['rightsList'] },
         // P5.6 (#1597). The export and the deletion flow, and — in
         // `deleteIncomplete` — the fact that erasure is INCOMPLETE.

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
+import { PublicLegalFooter } from '@/components/layout/PublicLegalFooter';
 /**
  * Reserves the credentials-form footprint while the provider list is
  * still resolving (`credentialsEnabled === null`). The login card is
@@ -498,6 +499,7 @@ function LoginForm() {
                     ) : null}
                 </Card>
             </div>
+            <PublicLegalFooter />
         </div>
     );
 }
