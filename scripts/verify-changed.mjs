@@ -79,6 +79,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import {
+    collapseByRoot,
+    suiteCountByRoot,
+    trackedSources,
+    buildImporterGraph,
+    unreachedSuitesFor,
+} from './lib/import-graph.mjs';
+
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 
 const argv = process.argv.slice(2);
@@ -314,13 +322,69 @@ if (changedTests.length) {
     );
 }
 
+/**
+ * A THIRD axis — the suites that transitively IMPORT a changed source file
+ * (#3058, owner ruling 2026-11-15).
+ *
+ * The two rule axes select ROOTS, which is right for the questions they ask
+ * and wrong for "which suites actually exercise the module I just edited".
+ * Measured on main: an `src/app-layer/**` change reaches six roots no path
+ * rule selects, and adding them as rules would run most of the repository,
+ * because a transitive closure over a types barrel reaches nearly everything.
+ *
+ * So this adds the SPECIFIC suites in those roots. Deliberately last, and
+ * deliberately ADDITIVE: it is computed against what the rules already chose,
+ * so a suite inside a selected root is never named twice, and nothing the
+ * rules select is ever removed. It answers "what REFERENCES this module" and
+ * cannot answer "what fires on the SHAPE of this change" — that is the content
+ * rules' job, and replacing them with this would be faster, narrower and would
+ * lose the class of coverage they exist for.
+ *
+ * Skipped entirely with `--no-graph`, which exists for one reason: so the cost
+ * of this axis is measurable rather than assumed.
+ */
+let graphNote = null;
+if (!argv.includes('--no-graph')) {
+    const t0 = Date.now();
+    const selectedSoFar = [...selected.keys()];
+    const treeFiles = trackedSources(REPO_ROOT);
+    const graph = buildImporterGraph(REPO_ROOT, treeFiles);
+    const reached = unreachedSuitesFor(REPO_ROOT, files, selectedSoFar, {
+        files: treeFiles,
+        graph,
+    });
+    if (reached.suites.length > 0) {
+        const { paths, collapsed } = collapseByRoot(reached.suites, suiteCountByRoot(treeFiles));
+        const collapseNote = collapsed.length
+            ? ' — '
+              + collapsed
+                  .map((c) => `${c.root} named whole (${c.selected} of ${c.total} suites)`)
+                  .join(', ')
+            : '';
+        select(
+            paths,
+            `imports a changed source file, in a root no rule selected (#3058): `
+                + `${reached.sources} changed source file(s) reach ${reached.suites.length} `
+                + `such suite(s)${collapseNote}`,
+        );
+    }
+    graphNote =
+        `[verify:changed] import graph: ${reached.scanned} file(s) scanned, `
+        + `${reached.sources} changed source file(s), ${reached.suites.length} suite(s) `
+        + `added in ${Date.now() - t0}ms`;
+}
+
 const population = dedupeAgainstDirectories([...selected.keys()]);
 
 console.log(
     `[verify:changed] base ${base.slice(0, 9)} · ${files.length} changed file(s)`
         + (untracked.size ? ` (${untracked.size} untracked)` : ''),
 );
-console.log(`[verify:changed] population: ${population.length} jest path(s)\n`);
+console.log(`[verify:changed] population: ${population.length} jest path(s)`);
+// A READING, not a gate. Printed so the third axis's cost and yield are
+// visible on every run rather than being taken on trust.
+if (graphNote) console.log(graphNote);
+console.log('');
 for (const p of population.sort()) {
     console.log(`  ${p}`);
     if (explainOnly) for (const why of selected.get(p)) console.log(`      — ${why}`);

@@ -80,10 +80,27 @@
  * The assertion is scoped to `tests/integration`, which is #3057's property.
  * The derivation also finds app-layer files reaching `tests/rendered`,
  * `tests/guards`, `tests/guardrails`, `tests/pdf`, `tests/contracts` and
- * `tests/drills`, and the rules select none of those for a source change
- * either. That is a WIDER gap, it is printed on every run rather than left
- * implied, and closing it would make an app-layer change run most of the
- * repository — a cost decision rather than a defect fix. Tracked on #3058.
+ * `tests/drills`, and no PATH rule selects any of those for a source change.
+ *
+ * **That wider gap is CLOSED, but not by a path rule — #3058.** Owner ruling
+ * 2026-11-15, choosing an import-graph derivation over both "add the cheap
+ * roots" and "accept and document": `verify:changed` now has a THIRD axis that
+ * selects the specific SUITES transitively importing a changed source file, for
+ * the roots no rule selects. `src/app-layer/types.ts` selects ~59 suites rather
+ * than the ~888 that adding `tests/guards` + `tests/guardrails` as rules would
+ * have cost.
+ *
+ * So the table below is still a READING and still printed every run, and its
+ * meaning has changed: these roots are reached by the graph axis rather than by
+ * a rule, so a row here is no longer a gap. What it still catches is the graph
+ * axis going dark — a non-empty table with `scripts/lib/import-graph.mjs`
+ * selecting nothing would be the visible half of that.
+ *
+ * The axis itself is covered behaviourally by
+ * `tests/unit/verify-changed/import-graph.test.ts`, which EXECUTES the module
+ * and the script's seam rather than asserting on this file's derivation — two
+ * implementations of one question is how they come to disagree, and that suite
+ * owns the property while this one owns the rule.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -282,11 +299,13 @@ describe('verify:changed covers the app layer (#3057)', () => {
         expect(integration.length).toBeLessThan(100);
     });
 
-    it('reports the WIDER gap rather than implying it is covered', () => {
-        // Six more roots are reached by app-layer code and selected by no path
-        // rule for a source change. Printed, not asserted — closing it would
-        // run most of the repo on every app-layer edit, which is a cost
-        // decision. #3058.
+    it('reports the roots the GRAPH axis covers, rather than implying a rule does', () => {
+        // Six more roots are reached by app-layer code and selected by no PATH
+        // rule. Since #3058 they are covered by the import-graph axis instead —
+        // per SUITE rather than per root, because closing it with rules would
+        // have run most of the repo on every app-layer edit. Printed, not
+        // asserted: the numbers move with the tree, and the property belongs to
+        // `tests/unit/verify-changed/import-graph.test.ts`.
         const missing = new Map<string, number>();
         let colocated = 0;
         for (const { file, tests } of REACH) {
@@ -309,7 +328,8 @@ describe('verify:changed covers the app layer (#3057)', () => {
         }
         const rows = [...missing].sort((a, b) => b[1] - a[1]);
         console.log(
-            `[verify-changed-app-layer] roots still unreached by a PATH rule (#3058): `
+            `[verify-changed-app-layer] roots unreached by a PATH rule, covered by the `
+                + `import-graph axis (#3058): `
                 + (rows.map(([r, c]) => `${r}=${c}`).join(' ') || 'none')
                 + `; app-layer file(s) whose only test is colocated under src/ (#3059): `
                 + `${colocated}`,
