@@ -4258,6 +4258,58 @@ justified than when it was argued for, not less. The badge is also the first
 thing that makes the loss visible to a person, since a rejoined channel reads
 as entirely unread.
 
+### P9.4's four card kinds, and what a ZERO in the reading means
+
+`channel-cards` writes NEWS, LISTING, SCHEME and EVENT (#2938, #3063). Each
+returns its own `ChannelCardKindReading`, and the log line flattens all four
+so every number is queryable on its own.
+
+**`created: 0` is ambiguous without `dormant` beside it, which is why both are
+reported.** `created: 0, dormant: false` means the rule ran and found nothing
+to say — the expected state for LISTING, with 1 ACTIVE listing in production
+against 28 eligible oblast channels. `created: 0, dormant: true` means the kind
+CANNOT fire, which is EVENT until `AgriEvent` gets a producer (#3078). One
+number cannot separate those, and reading the first as the second is how a
+working rule gets "fixed".
+
+**EVENT computes `dormant` differently from its three siblings, deliberately.**
+For NEWS, LISTING and SCHEME the source exists and may be quiet, so dormancy is
+about the CHANNELS. EVENT's source is empty with no writer, so dormancy is
+about the SOURCE. The docblock says so; do not "unify" them.
+
+**Which channels take which kind is a product decision, not a property of the
+data.** LISTING is the ONLY route to the 28 oblast channels — the news
+vocabulary carries no regional tag — and keys on `ExchangeListing.regionCode`,
+whose value is the `oblast:` key's suffix verbatim (measured, not assumed).
+SCHEME goes to the 15 crop and topic channels and NEVER the oblast ones (owner
+ruling 2026-11-15), following the precedent NEWS set when it declined to show
+one national item in every regional channel; `SupportScheme.measureCode` is
+NULL on both production rows, so there is nothing to narrow a national scheme
+by.
+
+**A LISTING card excludes THREE separate hidden states, in the `where`.**
+`suppressedForDeletionAt` (#1655's deletion freeze, whose notice promises the
+seller stops being visible to other farms straight away), `removedByModerationAt`
+and `expiresAt`, besides `status: ACTIVE`. Reproducing any of them would
+resurface in a channel what another part of the product deliberately took
+down — the freeze most seriously, because nobody would look there.
+
+**`ChannelPost` refuses an empty post.** `channel_post_says_something` is a
+CHECK constraint, so a card always needs a `body` — which is the plain-text
+FALLBACK for a client that does not render cards, while `composeCardText`
+builds the real sentence from `cardPayloadJson` in the reader's language. For
+NEWS, SCHEME and EVENT that fallback is the source's own title. A
+description-less LISTING has no such text, so its fallback is composed from the
+CLIENT's own `channels.card.*` keys at `RECIPIENT_FALLBACK_LOCALE` — the
+decision this product already makes for every outbound email whose reader is
+unknown. One set of keys, so the two surfaces cannot word a listing
+differently.
+
+**`CardCopy` carries two RESOLVERS** — `commodityName` and `dayLabel` — because
+a LISTING payload holds `commodity: "wheat"` and a SCHEME payload a day key:
+correct as facts, unreadable as text, and resolving them needs a translator
+`card-text.ts` deliberately does not have.
+
 ### P9.7 — the digest's clock is a WINDOW, and the schedule is deliberately dumb
 
 The opt-in 07:15 recap of channel activity (#2941). `channel-digest` runs

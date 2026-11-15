@@ -6933,8 +6933,33 @@
 
             },
 
-            "open": "Open"
+            "open": "Open",
 
+            "listing": {
+
+                "heading": "Listings",
+
+                "line": "{commodity}, {quantity} t",
+
+                "withPrice": "{commodity}, {quantity} t — {price}/t"
+
+            },
+
+            "scheme": {
+
+                "heading": "Support",
+
+                "deadline": "Deadline: {date}"
+
+            },
+
+            "event": {
+
+                "heading": "Events",
+
+                "when": "Starts: {date}"
+
+            }
         },
         "title": "Channels",
         "intro": "Crop, region and input channels. You choose which to join — nothing joins you automatically.",

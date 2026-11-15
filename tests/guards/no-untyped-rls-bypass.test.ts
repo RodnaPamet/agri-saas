@@ -410,7 +410,21 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // the pushes had already been enqueued, and the retry would then
         // redeliver to everybody — bounded by the collapse key, but still a
         // second banner for people who had already been served correctly.
-        expect(sites.length).toBeLessThanOrEqual(26);
+        // 26 -> 32 by #3063: P9.4's LISTING, SCHEME and EVENT generators, TWO
+        // sites each — the source read and the `createMany` write — in the one
+        // file that already bypassed for `channel-card-generation`, so the
+        // FILE count is unchanged.
+        //
+        // Two short scopes per generator rather than one wrapping both, and
+        // that is deliberate in both directions. A single scope would hold the
+        // bypass open across the row building, which for LISTING includes
+        // `translateFor` loading a catalogue off disk — a bypass held across
+        // unrelated I/O is the thing this ceiling exists to make visible. And
+        // separate scopes keep the read and the write independently
+        // attributable in `rls-middleware.bypass_invoked`, which logs the
+        // caller line: one scope would report both as whichever line opened
+        // it.
+        expect(sites.length).toBeLessThanOrEqual(32);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

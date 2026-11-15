@@ -69,6 +69,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Heading } from '@/components/ui/typography';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { makeAuthorLabel } from '@/lib/channels/author-label';
+import { commodityLabel } from '@/lib/market/commodity-label';
+import { formatDate } from '@/lib/format-date';
 import { composeCardText, type CardCopy } from '@/lib/channels/card-text';
 
 import { DisplayNamePrompt } from './DisplayNamePrompt';
@@ -125,6 +127,9 @@ export function ChannelFeedClient({
     myUserId: string;
 }) {
     const t = useTranslations('channels');
+    // The SAME namespace the exchange resolves commodity names from, so a
+    // crop is called one thing across the product.
+    const tCommodity = useTranslations('trends.commodities');
     // Bound once: `t` is stable for a locale, and rebuilding this inside the
     // mapping would make a new function per render for no reason.
     const authorLabel = React.useMemo(
@@ -138,8 +143,27 @@ export function ChannelFeedClient({
         () => ({
             newsHeading: t('card.news.heading'),
             newsSource: (vars) => t('card.news.source', vars),
+            listingHeading: t('card.listing.heading'),
+            listingLine: (vars) => t('card.listing.line', vars),
+            listingLineWithPrice: (vars) => t('card.listing.withPrice', vars),
+            schemeHeading: t('card.scheme.heading'),
+            schemeDeadline: (vars) => t('card.scheme.deadline', vars),
+            eventHeading: t('card.event.heading'),
+            eventWhen: (vars) => t('card.event.when', vars),
+            /*
+             * The two conversions the composer cannot do itself.
+             *
+             * A LISTING payload carries `commodity: "wheat"` and a SCHEME
+             * payload a day key — facts, deliberately, because a channel is
+             * read in both languages and a sentence composed at generation
+             * time would pick one for every future reader. Resolving them
+             * needs `t` and a locale, which exist HERE and nowhere in
+             * `card-text.ts`.
+             */
+            commodityName: (slug) => commodityLabel(tCommodity, slug),
+            dayLabel: (iso) => formatDate(iso),
         }),
-        [t],
+        [t, tCommodity],
     );
 
     // LITERAL person-scoped paths — channel policies key on `app.user_id`.
