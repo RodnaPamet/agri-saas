@@ -102,7 +102,6 @@ describe('#3081 — the fetch bundle imports only what its image has', () => {
         const unexpected = [...externals].filter((e) => !ALLOWED_EXTERNALS.has(e)).sort();
         // The denominator, so a shrinking walk is visible rather than silently
         // passing.
-        // eslint-disable-next-line no-console -- [zarnoborsa-fetch-externals] a reading, collected by denominator-summary.cjs
         console.log(
             `[zarnoborsa-fetch-externals] walked ${seen.size} first-party file(s), `
             + `found ${externals.size} external(s): ${[...externals].sort().join(', ') || '(none)'}`,

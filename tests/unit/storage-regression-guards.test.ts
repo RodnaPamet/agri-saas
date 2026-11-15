@@ -96,6 +96,11 @@ describe('Guard: No direct fs in production paths', () => {
             'the local provider IS the filesystem implementation',
         // Both of these were invisible until #2585 made the guard read files.
         // Neither touches tenant uploads, which is what this guard is about.
+        'src/app-layer/jobs/zarnoborsa-pull.ts':
+            'reads the HANDOFF file the Playwright container writes (#3081) — a '
+            + 'file is the interface precisely because Playwright may not be in '
+            + 'this image, so there is no provider to go through and the content '
+            + 'is a price feed rather than anything a tenant uploaded',
         'src/app-layer/ai/vision/onnx-provider.ts':
             'reads the ONNX MODEL off disk at startup — a build artifact shipped in the image, not tenant content',
         'src/app/api/docs/assets/[asset]/route.ts':

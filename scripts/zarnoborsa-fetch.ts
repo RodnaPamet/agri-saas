@@ -32,7 +32,7 @@
  *
  * Run: `node dist/zarnoborsa-fetch.mjs [--out <path>]`
  */
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, renameSync } from 'fs';
 import { dirname } from 'path';
 
 import { chromium } from 'playwright';
@@ -263,8 +263,23 @@ async function main(): Promise<void> {
         rows: parsed.rows,
     };
 
+    /*
+     * WRITE-THEN-RENAME, because the reader is a different process on its own
+     * schedule.
+     *
+     * A bare `writeFileSync` is not atomic: a read landing mid-write sees a
+     * truncated document, and the reader's `unreadable` verdict exists for
+     * exactly that. `rename` within the same directory IS atomic on POSIX, so
+     * the reader observes either the previous document or the complete new
+     * one and never a partial one.
+     *
+     * The reader keeps handling `unreadable` regardless — this removes the
+     * cause we control, not every cause.
+     */
     mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');
+    const tmp = `${out}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');
+    renameSync(tmp, out);
 
     // The READING, with its denominators. `rows: 0` alone cannot say whether
     // the page was empty, paywalled or reshaped — so all four numbers go out

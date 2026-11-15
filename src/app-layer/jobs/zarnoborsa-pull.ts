@@ -25,7 +25,7 @@
  * about a fetch that never happened, which is the one thing the verdict exists
  * to prevent. So a document older than the window is `unaudited`.
  */
-import { readFileSync, existsSync, statSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 
 import { logger } from '@/lib/observability/logger';
 import { ZarnoBorsaRow } from '@/lib/market/zarnoborsa-parse';
@@ -70,24 +70,43 @@ export async function runZarnoBorsaPull(
         reason, handoffAgeMinutes: age,
     });
 
-    if (!existsSync(path)) {
-        const out = blank('no-file', null);
-        logger.warn('zarnoborsa_pull.reading', { component: 'zarnoborsa-pull', ...out });
-        return out;
-    }
-
+    /*
+     * NO `existsSync` BEFORE THE READ, and CodeQL was right to call the first
+     * version a high-severity TOCTOU: it checked existence, then separately
+     * stat'ed and read, so the file could change in between.
+     *
+     * The window is not theoretical here — the fetch container writes into
+     * this volume on its own schedule, so "the file appeared, vanished or was
+     * being rewritten between the check and the read" is exactly the race a
+     * second process creates.
+     *
+     * So the existence question is answered by ATTEMPTING the read and
+     * reading the error CODE: `ENOENT` is no-file, anything else is
+     * unreadable. One decision from one set of syscalls, and strictly more
+     * informative than the check it replaces — a permissions failure now
+     * reports `unreadable` instead of being mistaken for a present file that
+     * failed to parse.
+     */
     let doc: HandoffDoc;
     let ageMinutes: number;
     try {
         const stat = statSync(path);
         ageMinutes = Math.round((now.getTime() - stat.mtimeMs) / 60_000);
         doc = JSON.parse(readFileSync(path, 'utf8')) as HandoffDoc;
-    } catch {
-        // A truncated write — the fetch container killed mid-`writeFileSync` —
-        // is UNREADABLE, not empty. Reporting it as zero rows would be a
-        // claim about the market rather than about the file.
+    } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === 'ENOENT') {
+            const out = blank('no-file', null);
+            logger.warn('zarnoborsa_pull.reading', { component: 'zarnoborsa-pull', ...out });
+            return out;
+        }
+        // A truncated write, a permissions failure, or malformed JSON is
+        // UNREADABLE — not empty. Reporting it as zero rows would be a claim
+        // about the market rather than about the file.
         const out = blank('unreadable', null);
-        logger.error('zarnoborsa_pull.reading', { component: 'zarnoborsa-pull', ...out });
+        logger.error('zarnoborsa_pull.reading', {
+            component: 'zarnoborsa-pull', code: code ?? 'parse', ...out,
+        });
         return out;
     }
 
