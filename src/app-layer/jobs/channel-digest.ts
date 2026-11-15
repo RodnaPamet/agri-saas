@@ -178,6 +178,15 @@ export async function runChannelDigest(
     );
     reading.candidates = candidates.length;
 
+    /*
+     * `farmTodayFloor` is UTC midnight of the FARM day key, and
+     * `channelDigestSentOn` is `@db.Date` — which Prisma also hands back as
+     * UTC midnight. So the two are directly comparable, and that alignment is
+     * why the ledger check below is a `>=` on instants rather than a string
+     * compare on day keys. Do not "fix" either side to a local midnight: a
+     * Sofia-midnight floor is 22:00 UTC the previous day, which would make
+     * every already-sent row compare LESS than the floor and send twice.
+     */
     const todayFloor = farmTodayFloor(now);
 
     /*

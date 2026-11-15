@@ -5527,6 +5527,14 @@
             "saving": "Saving…",
             "saveName": "Save name"
         },
+        "channelDigest": {
+            "title": "Daily channel digest",
+            "description": "One message each morning at 07:15 with what happened in your channels. It does not replace the individual notifications — those carry on as before.",
+            "label": "Send a daily digest",
+            "labelAria": "Send a daily digest of channel activity each morning at 07:15",
+            "saveFailed": "That setting was not saved. Please try again."
+        },
+
         "feedback": {
             "title": "Sound & haptics",
             "description": "Confirmation when you mark field work done. Stays silent on devices that don’t support it.",

@@ -4235,6 +4235,70 @@ justified than when it was argued for, not less. The badge is also the first
 thing that makes the loss visible to a person, since a rejoined channel reads
 as entirely unread.
 
+### P9.7 — the digest's clock is a WINDOW, and the schedule is deliberately dumb
+
+The opt-in 07:15 recap of channel activity (#2941). `channel-digest` runs
+**every 15 minutes** and the JOB decides whether to act; it is not a daily
+cron.
+
+**That inverts P9.4's choice on purpose.** `channel-cards` takes a UTC cron
+because its hour only needs to be "before anybody looks", and an hour of
+seasonal drift changes nothing a reader could notice. Here the time is a
+PROMISE to the recipient, and `Europe/Sofia` is UTC+2 or UTC+3 by season — so a
+fixed UTC hour ships a digest at 06:15 half the year, which #2941 names as the
+failure. The schedule is therefore dumb and `digestDueAt` holds the clock, the
+same shape `statement-dispatch` uses where the queue is a column.
+
+**The gate is a WINDOW — `[07:15, 08:15)` local — and «has 07:15 passed» is the
+bug.** An open-ended gate is true at 22:00, so somebody whose first activity
+arrived late (nothing to report at 07:15, therefore never stamped) would be
+sent a MORNING digest at night. Four runs fall inside the window, so a worker
+down for one beat still delivers; after it the day is missed, which is the
+right outcome for a promise about the morning. `DIGEST_DELIVERY_WINDOW_MINUTES`
+is asserted as a CONSTANT in the suite, so widening it in the source moves the
+assertion rather than contradicting it.
+
+**Delivered by PUSH, and the issue asked for email.**
+`NotificationOutbox.tenantId` is NOT NULL and `EnqueueEmailInput.tenantId` is
+required, while a channel has no tenant — #3020's wall, with P5.4a's reason
+that resolving one invents a tenant for a person-scoped obligation. Owner
+ruling 2026-11-15. The cost is real: somebody who does not open the app gets a
+banner rather than a mail.
+
+**It is ADDITIVE, and the two controls must not be collapsed.** Opting in ADDS
+a recap and suppresses nothing. Batching INSTEAD is
+`UserNotificationPreference.delivery = DAILY_DIGEST` — a different model, per
+(user, farm) where this is per user. The job deliberately covers that
+population too, because `resolvePersonDelivery` returns `digest-only` for it
+while the FARM digest counts `Notification` rows, which a channel event never
+writes: those people would otherwise get no channel push AND no channel digest.
+
+**`User` HAS NO `deletedAt`.** The first draft's `where` used one, typechecked
+clean, and failed at runtime — an extended-client `where` key is invisible to
+`tsc`, the same class as the five wrong `select` keys P5.6a shipped. The four
+lifecycle columns are `suspendedAt`, `deletionRequestedAt`, `terminatedAt`,
+`pseudonymisedAt`. **An erased account is excluded by `pseudonymisedAt`, and
+`suspendedAt` does not cover it** — a self-service erasure never sets
+`suspendedAt`, and P5.6b keeps the `User` row alive on purpose, so "the row
+exists" cannot be read as "there is somebody to notify".
+
+**The opt-in route has no GET, and the switch is the feature.** `PUT
+/api/account/channel-digest`; the value rides `/api/auth/me`, which is the
+`bottom-tabs` convention. `channelDigestOptIn` defaults to FALSE, so without
+`ChannelDigestCard` on `/account/profile` the job would run every 15 minutes
+over an empty population for ever — green, silent and indistinguishable from
+working. That is #2844 and P9.3's entry-point rule. The card gates on
+`social.channels` rather than a flag of its own, so the control cannot be dark
+while the feature needing it is live.
+
+**Its schema is NOT strict, and that was a correction.** The docblock credited
+`.strict()` with refusing a misspelled `optin`; a mutation removing it left
+every case green, because zod strips unknown keys and the refusal always came
+from the REQUIRED key. The claim was true and its mechanism was not. Not being
+strict also buys forward compatibility — a newer client sending an extra field
+keeps working, the posture `bottom-tabs` takes toward tab ids it has never
+heard of.
+
 ### The farm-claim review console, and a SECOND DOOR for a person
 
 #2963. P3.9 shipped the farm-identity review mechanism — usecase, keyed queue,

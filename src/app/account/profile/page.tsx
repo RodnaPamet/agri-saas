@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { auth } from '@/auth';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { prisma } from '@/lib/prisma';
 import { Heading } from '@/components/ui/typography';
 
 import { AvatarUploadField } from './AvatarUploadField';
@@ -10,6 +11,7 @@ import { NameEditField } from './NameEditField';
 import { FeedbackPrefsCard } from './FeedbackPrefsCard';
 import { AssistantMemoryCard } from './AssistantMemoryCard';
 import { AssistantConversationsCard } from './AssistantConversationsCard';
+import { ChannelDigestCard } from './ChannelDigestCard';
 
 /**
  * Account → Profile. Avatar roadmap P3 — the first home for the
@@ -28,6 +30,21 @@ export default async function AccountProfilePage() {
      * resolves cohorts per user.
      */
     const memoryEnabled = await isFeatureEnabled('assistant.memory', session.user.id);
+    /*
+     * #2941 — the digest card is gated on `social.channels`, NOT on a flag of
+     * its own. The digest is about channel activity, so a switch offered while
+     * channels are off would promise a recap of a surface the person cannot
+     * reach; and a separate flag could leave the control dark while the
+     * feature needing it was live, which is P9.3's entry-point argument for
+     * gating `PUT /api/social/profile` the same way.
+     */
+    const channelsEnabled = await isFeatureEnabled('social.channels', session.user.id);
+    const digestOptIn = channelsEnabled
+        ? ((await prisma.user.findUnique({
+              where: { id: session.user.id },
+              select: { channelDigestOptIn: true },
+          }))?.channelDigestOptIn ?? false)
+        : false;
 
     return (
         <div className="w-full max-w-md">
@@ -55,6 +72,11 @@ export default async function AccountProfilePage() {
                     one screen, two controls, because deleting a conversation
                     and forgetting a point are different acts. */}
                 <AssistantConversationsCard enabled={memoryEnabled} />
+
+                {/* Renders NOTHING when channels are off, rather than a
+                    disabled switch — P5.3's rule: a disabled control
+                    advertises a feature that does not exist. */}
+                {channelsEnabled && <ChannelDigestCard initialOptIn={digestOptIn} />}
         </div>
     );
 }
