@@ -56,6 +56,20 @@ model MarketPriceSeries {
   /// Only ever set on `source: 'platform'` rows. A feed's series is never
   /// cleared — there is nobody to clear it and nothing it would mean.
   clearedAt DateTime?
+
+  /// Where this series came from, for a per-series attribution a client can
+  /// render (#3081) — «Източник: ZarnoBorsa.com».
+  ///
+  /// ON THE DATA rather than hard-coded in a client, because the attribution
+  /// belongs to the series: a client that mapped `source` to a name would be
+  /// a second table to keep in step, and a source added server-side would
+  /// show as unattributed until every client shipped.
+  ///
+  /// Nullable, so every existing series is untouched. The EC and platform
+  /// series carry none today; absence means "no link to offer", never "no
+  /// source".
+  sourceUrl String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
