@@ -2458,7 +2458,7 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/bulk/delete",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/bulk/due",

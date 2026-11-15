@@ -229,7 +229,6 @@
     "/api/t/{tenantSlug}/sso/entra/group-mappings",
     "/api/t/{tenantSlug}/sso/entra/group-mappings/{mappingId}",
     "/api/t/{tenantSlug}/tasks/bulk/assign",
-    "/api/t/{tenantSlug}/tasks/bulk/delete",
     "/api/t/{tenantSlug}/tasks/bulk/due",
     "/api/t/{tenantSlug}/tasks/bulk/status",
     "/api/t/{tenantSlug}/tasks/metrics",
