@@ -324,3 +324,103 @@ export function evaluateDiseaseRisk(
     }
     return { level, conduciveDays, maxConsecutive, reasons, reasonCodes };
 }
+
+// ─────────────────────────────── frost ────────────────────────────────
+
+/**
+ * One day's frost-relevant weather. A forecast day, usually — unlike
+ * `SprayWeather` and `DiseaseDay`, which describe days that have happened.
+ */
+export interface FrostDay {
+    /** `YYYY-MM-DD`. */
+    date: string;
+    /** Daily minimum air temperature at 2 m, °C. */
+    tempMinC?: number | null;
+}
+
+export interface FrostThresholds {
+    /** At or below this 2 m minimum ⇒ frost risk. */
+    tempMinC: number;
+}
+
+/**
+ * Owner ruling 2026-11-15: **2 °C, not 0 °C**, and one level rather than two.
+ *
+ * What we store is the 2 m AIR minimum, because that is what Open-Meteo's
+ * `temperature_2m_min` reports. Ground frost forms on clear calm nights while
+ * that reading is still above zero — radiative cooling makes the surface
+ * typically 2-4 °C colder than the screen — so a 0 °C rule misses the nights
+ * that actually kill seedlings.
+ *
+ * The cost is false warnings in spring, and that is the direction chosen
+ * deliberately: a missed frost loses a sowing, an extra warning loses a day.
+ * The same asymmetry decides the retraction rule in `agro-signals.ts`.
+ */
+export const DEFAULT_FROST_THRESHOLDS: FrostThresholds = {
+    tempMinC: 2,
+};
+
+/**
+ * Codes mirror the spray and disease namespaces
+ * (`locations.smart.frostReason.<code>`), so a farmer-facing surface renders
+ * Bulgarian through the catalogue rather than receiving an English sentence —
+ * the #2490 split, which disease had to be retrofitted with.
+ */
+export type FrostReasonCode = 'frostExpected' | 'noFrostExpected' | 'noForecast';
+
+export interface FrostReason {
+    code: FrostReasonCode;
+    params: Record<string, number>;
+}
+
+export interface FrostRiskResult {
+    /** True only when a minimum is KNOWN and at or below the threshold. */
+    atRisk: boolean;
+    /** The minimum that decided it, or null when none was recorded. */
+    tempMinC: number | null;
+    /** English sentences — for AI/audit consumers. */
+    reasons: string[];
+    /** Structured codes+params — for i18n at the render layer (#2490). */
+    reasonCodes: FrostReason[];
+}
+
+/**
+ * Frost risk for ONE day.
+ *
+ * A missing minimum is NOT no-risk: it is `noForecast`, and `atRisk` is false
+ * because we may not claim a warning we cannot support. The distinction lives
+ * in `reasonCodes` so a caller can tell "we looked and it is fine" from "we
+ * have nothing for this day" — the two states the client's horizon line
+ * exists to keep apart, and the reason an absent signal beyond the forecast
+ * horizon must never render as "checked, clear".
+ */
+export function evaluateFrostRisk(
+    day: FrostDay,
+    thresholds: FrostThresholds = DEFAULT_FROST_THRESHOLDS,
+): FrostRiskResult {
+    const tempMinC = day.tempMinC ?? null;
+    if (tempMinC == null) {
+        return {
+            atRisk: false,
+            tempMinC: null,
+            reasons: [`No minimum temperature recorded for ${day.date}`],
+            reasonCodes: [{ code: 'noForecast', params: {} }],
+        };
+    }
+    // At or below, so the threshold itself is a frost day — the ruling is
+    // "2 °C catches ground frost", and 2.0 exactly is the case it is about.
+    if (tempMinC <= thresholds.tempMinC) {
+        return {
+            atRisk: true,
+            tempMinC,
+            reasons: [`Minimum ${tempMinC}°C at or below the ${thresholds.tempMinC}°C frost threshold`],
+            reasonCodes: [{ code: 'frostExpected', params: { temp: tempMinC, threshold: thresholds.tempMinC } }],
+        };
+    }
+    return {
+        atRisk: false,
+        tempMinC,
+        reasons: [`Minimum ${tempMinC}°C exceeds the ${thresholds.tempMinC}°C frost threshold`],
+        reasonCodes: [{ code: 'noFrostExpected', params: { temp: tempMinC, threshold: thresholds.tempMinC } }],
+    };
+}

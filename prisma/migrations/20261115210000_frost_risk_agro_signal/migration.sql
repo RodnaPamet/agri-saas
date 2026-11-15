@@ -1,0 +1,33 @@
+-- #3077 — a third `AgroSignalKind`, so the lunar calendar can refuse to say
+-- «сей» on a frost day.
+--
+-- The rule is the owner's (2026-11-15): «no "sow" on a frost or spray-warning
+-- day». The spray half was already expressible — `SPRAY_WINDOW` is claimed
+-- only when the day's window is UNSUITABLE, so it is already a warning. The
+-- frost half was expressible by nothing: this enum held exactly
+-- `SPRAY_WINDOW` and `DISEASE_RISK`, and the only occurrences of "frost"
+-- anywhere in `src/` were a news category and an insurable peril. So a client
+-- composing that suppression would have shown no frost warning while looking
+-- as though it worked.
+--
+-- One level, not two. `AgroSignal.level` carries a free severity label per
+-- kind (UNSUITABLE for spray, HIGH for disease) and FROST_RISK deliberately
+-- uses a single value: the owner chose a 2 °C threshold over 0 °C to catch
+-- ground frost rather than a WARN/SEVERE split, so there is no second level
+-- to name.
+--
+-- No new column and no new index. A frost row is keyed by the existing
+-- `@@unique([tenantId, locationId, kind, signalDate])`, which is what makes a
+-- per-day claim idempotent, and read through the existing
+-- `@@index([tenantId, signalDate])`.
+--
+-- `ADD VALUE IF NOT EXISTS` so a re-run is a no-op, matching
+-- 20261003140000_p1_9b_lookup_rehash_audit_action. Postgres 12+ permits this
+-- inside a transaction provided the new value is not USED in the same
+-- transaction, which nothing here does.
+--
+-- Deliberately NO `deploy/rollback/` inverse: this is purely additive. The
+-- previous image neither writes nor reads FROST_RISK, so it keeps working
+-- against a database carrying the value — the rollback convention covers
+-- renames, drops and rewrites of persisted data, none of which this is.
+ALTER TYPE "AgroSignalKind" ADD VALUE IF NOT EXISTS 'FROST_RISK';

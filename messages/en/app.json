@@ -663,6 +663,13 @@
                 "bodyWithDetail": "High disease pressure detected at {label} — {detail}",
                 "pushBody": "High disease pressure detected. Open for details."
             },
+            "frostRisk": {
+                "title": "Frost expected",
+                "body": "Frost is expected at {label}.",
+                "bodyWithDetail": "Frost is expected at {label} — {detail}",
+                "pushBody": "Frost is expected. Open for the block and the date.",
+                "detailOn": "for {date}: {reason}"
+            },
             "copilot": {
                 "title": "Agronomy copilot explanation",
                 "body": "An agronomy explanation is ready for {label}.",
@@ -3314,6 +3321,7 @@
             "plantingCycle": "Planting: {name}",
             "agroSignalSprayWindow": "Spray window warning: {name}",
             "agroSignalDiseaseRisk": "Disease risk alert: {name}",
+            "agroSignalFrostRisk": "Frost warning: {name}",
             "aiNewsSubsidyDeadline": "Proposed subsidy deadline: {name}",
             "aiNewsRegulationEffective": "Proposed regulation date: {name}"
         },
@@ -5232,6 +5240,11 @@
             "diseaseReason": {
                 "noSustainedWarmWet": "No sustained warm-wet period",
                 "consecutiveWarmWetDays": "Consecutive warm-wet days: {days} — favourable for foliar disease"
+            },
+            "frostReason": {
+            "frostExpected": "Frost expected: minimum {temp}°C, at or below the {threshold}°C threshold",
+            "noFrostExpected": "No frost expected: minimum {temp}°C exceeds the {threshold}°C threshold",
+            "noForecast": "No minimum temperature forecast for this day"
             },
             "soilReason": {
                 "noPreferences": "No soil preferences on file for this crop, or soil is still pending for this field",

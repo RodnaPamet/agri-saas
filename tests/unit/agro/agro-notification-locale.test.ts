@@ -27,6 +27,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import {
     AGRO_COPY_KEYS,
+    AGRO_PUSH_BODY_KEYS,
     createAgroSignalNotification,
     type AgroNotificationKind,
     type AgroNotificationTarget,
@@ -38,8 +39,9 @@ import {
     type DiseaseReasonCode,
     type SprayReasonCode,
 } from '@/lib/agro/rules';
-import { loadMessagesFor } from '@/lib/i18n/server-messages';
+import { loadMessagesFor, translateFor } from '@/lib/i18n/server-messages';
 import { LOCALES } from '@/lib/i18n/locales';
+import { FROST_DETAIL_KEY } from '@/app-layer/usecases/agro-signals';
 
 const NOW = new Date('2026-06-15T09:00:00Z');
 
@@ -130,11 +132,15 @@ describe('the catalogue covers every key the COPY table names', () => {
     // DERIVED from the table, not a hand-written list: a fourth
     // AgroNotificationKind added without copy fails here rather than
     // shipping its key as a title.
-    it.each(LOCALES)('%s carries all three keys for all three kinds', async (locale) => {
+    it.each(LOCALES)('%s carries every bell key for every kind', async (locale) => {
         const messages = await loadMessagesFor(locale);
         expect(messages).not.toBeNull();
         const keys = AGRO_COPY_KEYS;
-        expect(keys.length).toBe(9);
+        // 9 -> 12 for FROST_RISK_WARNING (#3077), three keys per kind over
+        // four kinds. This file's own comment predicted the failure — "a
+        // fourth AgroNotificationKind added without copy fails here rather
+        // than shipping its key as a title" — and that is what it did.
+        expect(keys.length).toBe(12);
         console.log(`[agro-notification-locale] ${locale}: ${keys.length} copy keys checked`);
         for (const key of keys) {
             const value = key.split('.').reduce<unknown>(
@@ -147,6 +153,56 @@ describe('the catalogue covers every key the COPY table names', () => {
             expect(typeof value).toBe('string');
             expect((value as string).trim()).not.toBe('');
         }
+    });
+});
+
+describe('the keys NOT in AGRO_COPY_KEYS also resolve (#3077)', () => {
+    /*
+     * Two families sat outside the check above, and both fail toward a key
+     * reaching a farmer rather than toward an error.
+     *
+     * `pushBodyKey` is what goes on a lock screen, and `AGRO_COPY_KEYS`
+     * deliberately omits it, so a kind whose push copy was missing would have
+     * pushed the dotted path itself — `translateFor` returns the key on a miss
+     * and throws nothing. The `pushBodyKey` docblock already argued every kind
+     * must have one; nothing enforced it.
+     *
+     * `FROST_DETAIL_KEY` is resolved in `agro-signals.ts` rather than by the
+     * notification factory, because a frost warning is about a day that has
+     * not happened and the date has to be in the sentence. A key resolved
+     * outside the table is exactly the kind the table cannot vouch for.
+     */
+    it.each(LOCALES)('%s carries a push body for every kind', async (locale) => {
+        const messages = await loadMessagesFor(locale);
+        expect(AGRO_PUSH_BODY_KEYS.length).toBe(4);
+        console.log(
+            `[agro-notification-locale] ${locale}: ${AGRO_PUSH_BODY_KEYS.length} push-body key(s) checked`,
+        );
+        for (const key of AGRO_PUSH_BODY_KEYS) {
+            const value = key.split('.').reduce<unknown>(
+                (node, part) =>
+                    node && typeof node === 'object'
+                        ? (node as Record<string, unknown>)[part]
+                        : undefined,
+                messages,
+            );
+            expect(typeof value).toBe('string');
+            expect((value as string).trim()).not.toBe('');
+            // A push body names no block (#1999), so it interpolates nothing.
+            expect(value as string).not.toMatch(/[{}]/);
+        }
+    });
+
+    it.each(LOCALES)('%s renders the frost detail line with its date', async (locale) => {
+        const out = await translateFor(locale, FROST_DETAIL_KEY, {
+            date: '2026-04-12',
+            reason: 'XYZZY',
+        });
+        // Not the key itself, which is what a miss returns.
+        expect(out).not.toBe(FROST_DETAIL_KEY);
+        expect(out).toContain('2026-04-12');
+        expect(out).toContain('XYZZY');
+        expect(out).not.toMatch(/[{}]/);
     });
 });
 

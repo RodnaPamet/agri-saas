@@ -1156,6 +1156,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/agro/signals",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/ai/automation-suggestions",
       "status": "live",
       "documented": false
