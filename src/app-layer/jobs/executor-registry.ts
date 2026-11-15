@@ -695,14 +695,25 @@ executorRegistry.register('channel-cards', async () => {
     const startMs = performance.now();
     const { runChannelCards } = await import('./channel-cards');
     const r = await runChannelCards();
-    // scanned = channels considered for the one kind that exists today,
-    // actioned = cards inserted, skipped = the difference. The PER-KIND
-    // arithmetic is in the job's own log line, because a single triple cannot
-    // say which kind was dormant — which is the whole point of the reading.
-    const news = r.byKind.NEWS;
+    // The PER-KIND arithmetic stays in the job's own log line, because a
+    // single triple cannot say WHICH kind was dormant — the whole point of
+    // that reading.
+    /*
+     * scanned is the sum of ELIGIBLE channels across every kind — the card
+     * OPPORTUNITIES this run had — not the channel count.
+     *
+     * It was `byKind.NEWS.channels` while NEWS was the only kind, and that
+     * arithmetic breaks the moment there are four: `cards` now sums all of
+     * them, so against a 43-channel denominator `skipped` could go NEGATIVE.
+     * A negative skip is not a wrong number so much as a nonsense one, and it
+     * would appear only on a day when several kinds fired — the days least
+     * likely to be examined (#3063).
+     */
+    const kinds = Object.values(r.byKind);
+    const opportunities = kinds.reduce((n, k) => n + k.eligible, 0);
     return makeResult(
         'channel-cards', startedAt, startMs,
-        news?.channels ?? 0, r.cards, (news?.channels ?? 0) - r.cards,
+        opportunities, r.cards, Math.max(0, opportunities - r.cards),
         { cards: r.cards, byKind: r.byKind },
     );
 });
