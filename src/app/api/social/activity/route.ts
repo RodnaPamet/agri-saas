@@ -52,5 +52,13 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         }
     }
 
-    return jsonResponse(await readMyActivity(ctx, { limit, before }));
+    // The TIE-BREAK, optional. `createdAt` is `timestamp(3)` and Postgres
+    // `now()` is transaction-stable, so rows written by one `createMany`
+    // share a timestamp — a cursor on `createdAt` alone drops every row tied
+    // with the boundary. Optional because callers already in the wild send
+    // `before` alone, and refusing them would turn a silent row loss into an
+    // outage.
+    const beforeId = url.searchParams.get('beforeId') ?? undefined;
+
+    return jsonResponse(await readMyActivity(ctx, { limit, before, beforeId }));
 });

@@ -1005,9 +1005,188 @@ export interface ActivityItem {
  * half-measure: the post is still in the channel feed, so hiding it from this
  * list protects nobody and makes two reads of the same row disagree.
  */
+/**
+ * The keyset `before` clause, shared by every paged channel read.
+ *
+ * ## Why a tuple and not `createdAt < before`
+ *
+ * `createdAt` is `timestamp(3)` and Postgres `now()` is TRANSACTION-STABLE, so
+ * every row written by one statement in one transaction carries an identical
+ * timestamp — P9.4's card generator inserts up to ten cards with a single
+ * `createMany`. With `ORDER BY createdAt DESC, id DESC` and a cursor on
+ * `createdAt` alone, `lt` excludes EVERY row tied with the boundary, so a page
+ * boundary inside such a group silently drops the rest of it. Measured: five
+ * tied rows, paged two at a time, returned two.
+ *
+ * Found by the agrent-ios session asking whether `before` was strict `<` —
+ * which it was, and which was the bug.
+ *
+ * ## `beforeId` is OPTIONAL, and absent means the old lossy behaviour
+ *
+ * Deliberately not required: callers already in the wild send `before` alone,
+ * and rejecting them would turn a silent row loss into an outage. Absent, this
+ * is exactly what it was before; present, ties are broken by the same second
+ * key the ordering uses. Every caller in this repo passes both.
+ *
+ * ONE helper rather than three copies, because three spellings of a cursor is
+ * how two of them come to disagree about a boundary — and a paging bug is
+ * invisible in exactly the way this one was.
+ */
+function beforeClause(before?: Date, beforeId?: string) {
+    if (!before) return [];
+    if (!beforeId) return [{ createdAt: { lt: before } }];
+    return [{
+        OR: [
+            { createdAt: { lt: before } },
+            { createdAt: before, id: { lt: beforeId } },
+        ],
+    }];
+}
+
+/** The shortest needle worth scanning for. */
+export const CHANNEL_SEARCH_MIN_LENGTH = 2;
+
+/** Which channels a search covers. */
+export type ChannelSearchScope = 'joined' | 'all';
+
+/** One hit, with the channel it is in. */
+export interface ChannelSearchHit {
+    readonly post: ChannelPostView;
+    readonly channelId: string;
+    readonly channelNameBg: string;
+    readonly channelNameEn: string;
+}
+
+/**
+ * Search channel posts (P9.7, #2941).
+ *
+ * ## HIDDEN POSTS ARE EXCLUDED IN THE `where`, and this is a real disclosure
+ *
+ * The three removal columns empty the body at READ time, in `toPostView` — the
+ * column still holds the text. So a search over `body` would MATCH a removed
+ * post and hand back a row with an empty body, which tells the searcher that a
+ * post containing their needle exists; a few more queries narrow down what it
+ * said. Search would become a disclosure channel for exactly the content
+ * moderation took down.
+ *
+ * `deletedAt`, `removedByModerationAt` and `autoHiddenAt` are therefore all
+ * `null` HERE and not collapsed afterwards. This is the one read in this file
+ * where the collapse is not sufficient, because the collapse hides the text
+ * and search leaks the EXISTENCE.
+ *
+ * ## NO RELEVANCE SCORE — ordered by recency
+ *
+ * #2868 deleted `CONTENT_DEMOTED` because there is no ranking in this product
+ * to demote within. A relevance score would introduce the first one, and
+ * re-open that question rather than settle it — so this is `contains` with
+ * `ORDER BY createdAt DESC`: a filter, not a judgement. Postgres full-text
+ * with `ts_rank` is the thing deliberately not reached for yet.
+ *
+ * ## MEMBERSHIP IS RELEVANCE HERE, NOT SECURITY
+ *
+ * #2941 asked for membership filtering because searching every channel would
+ * "leak their existence". Measured, there is nothing to leak:
+ * `channel_post_select` admits any authenticated caller, `Channel` has no
+ * visibility column, and P9.1 states there is no private channel in this
+ * design — that phase put the gate on POSTING, because nobody joins a channel
+ * they cannot look into first.
+ *
+ * So `scope` defaults to `joined` for RELEVANCE — a farmer in three channels
+ * does not want 43 channels of noise — and `all` stays available because the
+ * data is public either way (owner ruling 2026-11-15). Stating which it is
+ * matters: a `where` clause justified by a false premise is one a later reader
+ * will not dare to change.
+ *
+ * ## Why `ChannelPost.body` is plaintext, cashed in here
+ *
+ * P9.1 made that call BECAUSE of search, and this is the phase that spends it.
+ * `DirectMessage.body` and `ExchangeMessage.body` are encrypted because a
+ * two-party row under either party's DEK is unreadable by the other; a channel
+ * has no second party to lock out, and an encrypted column cannot be searched
+ * without a second plaintext copy that would become the real store with
+ * nothing guarding it.
+ */
+export async function searchChannelPosts(
+    ctx: UserContext,
+    opts: {
+        q: string;
+        scope?: ChannelSearchScope;
+        limit?: number;
+        before?: Date;
+        /** The previous page's OLDEST id — breaks a `createdAt` tie. */
+        beforeId?: string;
+    },
+): Promise<{ hits: ChannelSearchHit[]; hasMore: boolean; scope: ChannelSearchScope }> {
+    const q = opts.q.trim();
+    if (q.length < CHANNEL_SEARCH_MIN_LENGTH) {
+        throw codedBadRequest(
+            'SEARCH_TOO_SHORT',
+            `Search for at least ${CHANNEL_SEARCH_MIN_LENGTH} characters.`,
+        );
+    }
+    const scope: ChannelSearchScope = opts.scope ?? 'joined';
+    const limit = Math.min(
+        Math.max(opts.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
+        CHANNEL_FEED_MAX_PAGE_SIZE,
+    );
+
+    const inner = await runInUserContext(ctx, async (tx) => {
+        const rows = await tx.channelPost.findMany({
+            where: {
+                AND: [
+                    ...beforeClause(opts.before, opts.beforeId),
+                    // The needle. `mode: 'insensitive'` so «ПШЕНИЦА» finds
+                    // «пшеница» — Bulgarian is the product's language and a
+                    // case-sensitive search would be useless in it.
+                    { body: { contains: q, mode: 'insensitive' as const } },
+                    // HIDDEN POSTS, excluded here rather than collapsed after.
+                    // See the docblock: the collapse hides the text and a
+                    // search leaks the existence.
+                    { deletedAt: null },
+                    { removedByModerationAt: null },
+                    { autoHiddenAt: null },
+                    ...(scope === 'joined'
+                        ? [{ channel: { memberships: { some: { userId: ctx.userId } } } }]
+                        : []),
+                ],
+            },
+            // RECENCY, not relevance — see the docblock.
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: limit + 1,
+            select: {
+                ...POST_VIEW_SELECT,
+                channel: { select: { id: true, nameBg: true, nameEn: true } },
+            },
+        });
+
+        const hasMore = rows.length > limit;
+        const page = rows.slice(0, limit);
+        const authors = await resolveAuthors(tx, page);
+        return { page, authors, hasMore };
+    });
+
+    const handles = await resolveFarmHandles(
+        inner.page.map((r) => r.authorTenantId).filter((t): t is string => t !== null),
+    );
+    const authors = { ...inner.authors, handles };
+
+    return {
+        hits: inner.page.map((r) => ({
+            post: toPostView(r, authors),
+            channelId: r.channel.id,
+            channelNameBg: r.channel.nameBg,
+            channelNameEn: r.channel.nameEn,
+        })),
+        hasMore: inner.hasMore,
+        // ECHOED, so a client rendering «търсене във всички канали» knows
+        // which question was answered rather than which one it asked.
+        scope,
+    };
+}
+
 export async function readMyActivity(
     ctx: UserContext,
-    opts?: { limit?: number; before?: Date },
+    opts?: { limit?: number; before?: Date; beforeId?: string },
 ): Promise<{ items: ActivityItem[]; hasMore: boolean }> {
     const limit = Math.min(
         Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
@@ -1023,7 +1202,7 @@ export async function readMyActivity(
                 // former. P8.5 shipped that once — every page returned page
                 // one.
                 AND: [
-                    ...(opts?.before ? [{ createdAt: { lt: opts.before } }] : []),
+                    ...beforeClause(opts?.before, opts?.beforeId),
                     // Never my own act — see the docblock.
                     { authorUserId: { not: ctx.userId } },
                     {
@@ -1076,7 +1255,7 @@ export async function readMyActivity(
 export async function readChannelFeed(
     ctx: UserContext,
     channelId: string,
-    opts?: { limit?: number; before?: Date },
+    opts?: { limit?: number; before?: Date; beforeId?: string },
 ): Promise<{ posts: ChannelPostView[]; hasMore: boolean }> {
     const limit = Math.min(
         Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
@@ -1094,7 +1273,7 @@ export async function readChannelFeed(
             where: {
                 channelId,
                 parentPostId: null,
-                ...(opts?.before ? { createdAt: { lt: opts.before } } : {}),
+                AND: beforeClause(opts?.before, opts?.beforeId),
             },
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             // `limit + 1` is the hasMore probe. Nothing is filtered AFTER this
