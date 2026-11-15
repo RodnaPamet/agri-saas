@@ -237,6 +237,16 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             acceptedTermsVersion: true,
             bottomTabOrder: true,
             newsTagPreferences: true,
+            // #2941 — the channel-digest opt-in and the day it last went out.
+            // EXPORTED rather than omitted: both are facts about this person
+            // and nobody else. The opt-in is a preference they set, like
+            // `bottomTabOrder` and `newsTagPreferences` directly above, and
+            // the send date is OUR record of what we sent THEM — which is
+            // squarely what Art 15 is a right to know. There is no second
+            // owner to withhold it for, which is the test every
+            // `OMITTED_BY_DECISION` entry in the export guard turns on.
+            channelDigestOptIn: true,
+            channelDigestSentOn: true,
             isPrivateRelay: true,
             deletionRequestedAt: true,
             deletionRequestedBy: true,

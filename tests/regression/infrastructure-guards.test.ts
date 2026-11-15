@@ -227,7 +227,11 @@ describe('Infrastructure Regression Guards', () => {
             // generation at 03:00 UTC. A scheduled job is a thing that runs
             // unattended against production data, so it lands as a visible
             // line here by design.
-            expect(SCHEDULED_JOBS).toHaveLength(38);
+            // 38 -> 39 by #2941: `channel-digest`, P9.7's opt-in 07:15 recap.
+            // Every 15 minutes rather than once a day, because the promise is
+            // a LOCAL time and a fixed UTC hour drifts across DST — the job
+            // holds the clock and leaves outside its delivery window.
+            expect(SCHEDULED_JOBS).toHaveLength(39);
         });
 
         test('scheduled job names match expected set', () => {
@@ -255,6 +259,7 @@ describe('Infrastructure Regression Guards', () => {
                 // #2938 — P9.4's daily cards. Named rather than counted only,
                 // so a RENAME is as visible as an addition.
                 'channel-cards',
+                'channel-digest',
                 // 'compliance-digest' removed in GRC teardown phase 2.
                 'compliance-snapshot',
                 // Grain fulfilment — daily 07:30 UTC sweep firing

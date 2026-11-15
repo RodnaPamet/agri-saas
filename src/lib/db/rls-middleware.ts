@@ -103,6 +103,7 @@ export type RlsBypassReason =
      */
     | 'channel-author-farm-handle'
     | 'channel-card-generation'
+    | 'channel-digest'
     /** NextAuth JWT callback discovering a user's tenant memberships. */
     | 'auth-tenant-discovery'
     /** Credentials lookup (password reset, invite redemption, etc.). */
@@ -405,6 +406,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'exchange-farm-attribution': true,
     'channel-author-farm-handle': true,
     'channel-card-generation': true,
+    'channel-digest': true,
     'auth-tenant-discovery': true,
     'auth-credentials': true,
     'webhook-ingest': true,

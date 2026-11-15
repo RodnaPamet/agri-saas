@@ -29,6 +29,12 @@ export const GET = withApiErrorHandling(async () => {
             // see `avatarUrl` below for why one column answers all three cases.
             image: true,
             bottomTabOrder: true,
+            // #2941 — the 07:15 channel-digest opt-in, on the query this
+            // handler ALREADY runs. The write is `PUT
+            // /api/account/channel-digest`, which has no GET of its own for
+            // the `bottom-tabs` reason: a settings switch should not need a
+            // second round-trip before it can be drawn.
+            channelDigestOptIn: true,
             // P5.6b / agrent-ios — the pending-deletion state, on the query
             // this handler ALREADY runs, so the field costs no extra round
             // trip. See `deletion` in the response for why it lives here
@@ -325,6 +331,18 @@ export const GET = withApiErrorHandling(async () => {
             // `[]` means deliberately cleared. It is a PREFERENCE — resolve it
             // against the surfaces the member may reach on every render.
             bottomTabOrder: parseBottomTabOrder(user?.bottomTabOrder),
+            // #2941 — whether the person receives the 07:15 channel digest.
+            // ADDITIVE: true means they ALSO get a morning recap, never that
+            // per-event pushes are suppressed. Batching instead is the
+            // separate `UserNotificationPreference.delivery = DAILY_DIGEST`,
+            // which is per (user, farm) where this is per user — so a client
+            // must not render the two as one switch.
+            //
+            // Defaults to `false` on an absent row rather than `null`: the
+            // column is NOT NULL with a `false` default, so there is no
+            // "never chosen" state to represent, and a nullable field here
+            // would invite a client to draw a third, unreachable one.
+            channelDigestOptIn: user?.channelDigestOptIn ?? false,
             /**
              * A pending account deletion, or `null` (P5.6b, #1597).
              *

@@ -1010,6 +1010,17 @@ export interface ChannelCardsPayload {
     readonly _?: never;
 }
 
+/**
+ * channel-digest — P9.7's opt-in 07:15 recap (#2941).
+ *
+ * Tenantless, like its P9 siblings: a channel has no farm, so `job-scope-audit`
+ * records it as person-scoped rather than as a job that forgot a `tenantId`.
+ */
+export interface ChannelDigestPayload {
+    /** No arguments — the population and the clock are both read by the job. */
+    _?: never;
+}
+
 export interface ExchangeExpirySweepPayload {
     /** Optional cap on rows flipped per run. */
     batchSize?: number;
@@ -1137,6 +1148,7 @@ export interface JobPayloadMap {
     'cadastre-import': CadastreImportJobPayload;
     'farm-record-pdf': FarmRecordPdfPayload;
     'channel-cards': ChannelCardsPayload;
+    'channel-digest': ChannelDigestPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'mail-canary': MailCanaryPayload;
@@ -1290,6 +1302,26 @@ export const JOB_DEFAULTS: Record<JobName, {
         // latency, not loss.
         attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'channel-digest': {
+        /*
+         * MORE than one attempt, and the reason is the COLLAPSE KEY rather
+         * than an index. `channelDigestSentOn` is stamped AFTER the enqueue,
+         * so a process that dies between the two re-enqueues that person on
+         * retry — and `collapseKey: channel-digest-<day>` means the second
+         * banner REPLACES the first rather than stacking. So the worst a
+         * retry can do is redeliver the same notification once, which is
+         * bounded, while NOT retrying leaves the rest of the population
+         * unsent for the day with no later chance inside the window.
+         *
+         * That is the opposite of `statement-dispatch` (1 attempt, because a
+         * retry would re-SEND an Art 17 letter that has no collapse key) and
+         * of `notice-score` (1, because a retry would re-SPEND the AI budget).
+         */
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30_000 },
         removeOnComplete: 100,
         removeOnFail: 500,
     },

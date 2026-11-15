@@ -288,7 +288,16 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // Its own reason (`channel-card-generation`) rather than borrowing
         // `channel-author-farm-handle`: that bypass RESOLVES a published
         // handle for display, and this one WRITES posts.
-        expect(callers.length).toBeLessThanOrEqual(13);
+        // 13 -> 14 by #2941: `jobs/channel-digest.ts`, P9.7's 07:15 recap.
+        // Tenantless for `channel-cards`' reason and then one more: the
+        // population is `User` OR `UserNotificationPreference`, and those two
+        // sit on opposite sides of the tenant boundary — `User` is global
+        // while the preference is per (user, farm) — so NO single tenant
+        // context could read both halves of one query. Its own reason
+        // (`channel-digest`) rather than borrowing `channel-card-generation`:
+        // that bypass WRITES channel posts, this one READS a notification
+        // population and stamps a send ledger.
+        expect(callers.length).toBeLessThanOrEqual(14);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -392,7 +401,16 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // between them and go through `getMarketNews`, which owns its own
         // access, so holding a bypass across them would widen it for no
         // reason.
-        expect(sites.length).toBeLessThanOrEqual(24);
+        // 24 -> 26 by #2941: `channel-digest.ts` holds TWO sites — the
+        // candidate read and the `channelDigestSentOn` stamp. They are
+        // deliberately separate `runWithoutRls` calls rather than one wrapping
+        // the loop: the stamp must commit per person as the digest goes out,
+        // so a run that dies halfway has sent and recorded the same set. One
+        // transaction around the whole loop would roll the ledger back while
+        // the pushes had already been enqueued, and the retry would then
+        // redeliver to everybody — bounded by the collapse key, but still a
+        // second banner for people who had already been served correctly.
+        expect(sites.length).toBeLessThanOrEqual(26);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

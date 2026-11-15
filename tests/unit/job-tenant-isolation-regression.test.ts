@@ -299,7 +299,10 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // #2938 — P9.4's daily card generation. A channel is tenantless by
         // design, so this job ranges over every farm's shared surfaces and
         // has no tenant axis to scope.
-        'channel-cards'];
+        'channel-cards',
+        // #2941 — P9.7's 07:15 digest. Person-scoped: a channel has no farm,
+        // and the recipient is a person who may belong to several.
+        'channel-digest'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -429,6 +432,14 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // derives its own day in `Europe/Sofia` and ranges over every
         // non-archived channel, none of which has a tenant.
         'ChannelCardsPayload',
+        // #2941 — P9.7's digest takes no arguments either: the run derives
+        // its own clock in `Europe/Sofia` and its population from
+        // `channelDigestOptIn` OR a per-farm DAILY_DIGEST preference. Those
+        // two sit on OPPOSITE sides of the tenant boundary — `User` is global,
+        // the preference is per (user, farm) — so there is no one tenant a
+        // tenantId here could name, and the recipient is a person who may
+        // belong to several farms or none.
+        'ChannelDigestPayload',
         // #3020 — the 06:00 summary's payload: a recipient and the night key
         // that scheduled it. No tenantId for its producer's reason, and the
         // night key is the SCHEDULING identity rather than a scope — the job

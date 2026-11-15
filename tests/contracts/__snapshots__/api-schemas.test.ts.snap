@@ -6377,6 +6377,10 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
         "bottomTabOrder": {
           "$ref": "#/components/schemas/BottomTabOrder"
         },
+        "channelDigestOptIn": {
+          "type": "boolean",
+          "description": "Whether the caller receives the opt-in 07:15 (Europe/Sofia) channel digest (#2941). ADDITIVE: \`true\` means they ALSO get a morning recap of their channel mentions and replies, never that per-event pushes are suppressed — batching instead is the separate per-farm \`DAILY_DIGEST\` notification preference, so a client must not draw the two as one switch. Always a boolean: the column is NOT NULL with a \`false\` default, so there is no \\"never chosen\\" state. Write it with \`setChannelDigestOptIn\`."
+        },
         "avatarUrl": {
           "type": [
             "string",
@@ -6415,6 +6419,7 @@ exports[`API contract — per-schema snapshots schema: CurrentUser 1`] = `
         "role",
         "permissions",
         "bottomTabOrder",
+        "channelDigestOptIn",
         "deletion"
       ]
     },
@@ -18818,6 +18823,20 @@ exports[`API contract — per-schema snapshots schema: SetBottomTabOrderRequest 
   },
   "required": [
     "order"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetChannelDigestOptInRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "optIn": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "optIn"
   ]
 }"
 `;
