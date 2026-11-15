@@ -226,6 +226,24 @@ describe("a 'use client' module does not reach a server-only module (#3070)", ()
             fs.writeFileSync(innocent, "'use client';\nimport './mid-never';\nexport const C = 1;\n");
             fs.writeFileSync(path.join(dir, 'mid-never.ts'), 'export const z = 1;\n');
             expect(reachesServerOnly(innocent)).toBeNull();
+
+            /*
+             * `rel` is asserted HERE because the only other thing that calls
+             * it is the failure message, which never renders while the
+             * population is clean — so `Selector teeth` reported
+             * `rel() -> return '' | []` as SURVIVED, and it was right. A
+             * reporter nobody exercises is how a real offender gets reported
+             * as `  ->  ` with no paths in it, on the one run that matters.
+             */
+            const rendered = (deep as string[]).map(rel);
+            expect(rendered[0]).toBe(
+                path.relative(REPO_ROOT, threeHops).split(path.sep).join('/'),
+            );
+            expect(rendered[rendered.length - 1]).toMatch(/server-leaf\.ts$/);
+            // Repo-relative and POSIX-separated, so the message is readable
+            // and stable across platforms.
+            expect(rendered.every((r) => r.length > 0 && !path.isAbsolute(r))).toBe(true);
+            expect(rendered.some((r) => r.includes('\\'))).toBe(false);
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }

@@ -1,32 +1,46 @@
 /**
- * The Google card's calendar-sync control — #2020.
+ * The Google card offers NO calendar sync — #2020, then scrapped (#3070).
  *
- * Two fields of the sync's response are CONTRACTS rather than statistics, and
- * this file exists because a guard cannot tell whether they reach the screen:
+ * ## What this file used to be, and why it is not deleted
  *
- *   - `partial: true` means the sync declined to delete anything, because the
- *     source read was truncated. The calendar may hold an event the farm no
- *     longer has.
- *   - `skippedEdited > 0` means events the farmer had edited were left alone,
- *     so the calendar deliberately disagrees with the farm.
+ * It was the behavioural cover for the sync control: eight cases over the two
+ * fields of the response that are CONTRACTS rather than statistics
+ * (`partial: true` meaning nothing was deleted, `skippedEdited > 0` meaning
+ * the farmer's own edits were left alone), because a plain "Calendar updated"
+ * over either one claims a clean run that did not happen.
  *
- * In both cases a plain "Calendar updated" is a claim about a clean run that
- * did not happen — the `truncated`-flag lesson from the offline basemap pack,
- * where an outage produced a sweep of 204s and a confident "Offline map ready"
- * over an empty pack.
+ * The owner scrapped the sync on 2026-11-15 — "let's scrap the google calendar
+ * sync for now, leave the lunar in-app calendar" — and ruled to drop the
+ * Calendar scope with it, so `GOOGLE_SCOPES` requests Drive only and the
+ * control, its hint and its three result banners are gone from the card.
+ *
+ * Deleting this suite was the obvious move and is the wrong one twice over.
+ * `rendered-coverage-floor` counts it (269 → 270 at #2020), so deletion means
+ * lowering a shared ratchet to pay for a product decision — and more
+ * importantly, the removal is a DECISION that deserves a pin. "For now" means
+ * somebody will eventually propose putting the button back; this file is what
+ * makes that proposal confront the scope it would need rather than reappear as
+ * a tidy-looking revert.
+ *
+ * ## A negative assertion needs a positive control, and here it needs three
+ *
+ * "No Sync calendar button" is satisfied perfectly by a card that failed to
+ * mount, by a fetch that never resolved, and by a renamed label. So every case
+ * below also asserts the card RENDERED, and the strongest case asserts the
+ * absence on the one connection that could still perform a sync — a
+ * pre-existing grant — rather than only on connections that never could.
  *
  * Copy comes from the REAL English catalogue via the project-wide next-intl
- * mock in `tests/rendered/setup.ts`, so these assertions are byte-identical to
- * production output — which also means a missing key would render as its own
- * dotted path and fail here rather than shipping.
+ * mock in `tests/rendered/setup.ts`, so a missing key renders as its own
+ * dotted path and fails here rather than shipping. That is what caught
+ * `admin.integrations.googleCalendar` being deleted along with the sync keys.
  *
  * Viewport: the project default (a phone). Stated rather than inherited
- * silently — this card has no responsive branch, so the two viewports render
- * the same tree and the default is the honest choice.
+ * silently — this card has no responsive branch, so both viewports render the
+ * same tree and the default is the honest choice.
  */
 import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 const apiPostMock = jest.fn();
 
@@ -37,6 +51,9 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     __esModule: true,
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
 }));
+// Still mocked, and the assertion is that NOTHING calls it. The card no longer
+// imports `apiPost` at all, so this doubles as a check that no sync request
+// survives by another route.
 jest.mock('@/lib/api-client', () => ({
     __esModule: true,
     apiPost: (...a: unknown[]) => apiPostMock(...a),
@@ -51,7 +68,15 @@ jest.mock('@/components/ui/hooks', () => ({
 
 import { GoogleCard } from '@/app/t/[tenantSlug]/(app)/admin/integrations/GoogleCard';
 
-/** One connection with Calendar granted, as the collection endpoint returns it. */
+/**
+ * A connection that ALREADY holds a Calendar grant.
+ *
+ * This is the load-bearing fixture. No new connection can have it — the scope
+ * is no longer requested — but one made before the scope was dropped can, and
+ * it is the only connection on which a sync control could still work. A suite
+ * that only checked Drive-only connections would pass with the button fully
+ * restored.
+ */
 const WITH_CALENDAR = [
     {
         id: 'c1',
@@ -78,132 +103,80 @@ function stubList(rows: unknown[]) {
     ) as unknown as typeof fetch;
 }
 
-const CLEAN = { created: 2, updated: 1, deleted: 0, unchanged: 5, skippedEdited: 0, partial: false };
-
-/** Mount, wait for the connection list, and return a typing-capable user. */
 async function mountCard() {
-    const user = userEvent.setup();
     render(<GoogleCard />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    return user;
 }
 
 beforeEach(() => {
     jest.clearAllMocks();
-    apiPostMock.mockResolvedValue(CLEAN);
 });
 
-describe('the sync control is offered on the right connections (#2020)', () => {
-    it('appears when Calendar is granted', async () => {
+describe('the calendar sync control is gone (#3070)', () => {
+    it('is absent even on a connection that still HOLDS a Calendar grant', async () => {
         stubList(WITH_CALENDAR);
         await mountCard();
-        expect(await screen.findByRole('button', { name: 'Sync calendar' })).toBeInTheDocument();
+
+        // The card rendered — so the absence below is about the feature and
+        // not about a failed mount. Anchored, because an unanchored /Connect/i
+        // also matches «Disconnect».
+        expect(await screen.findByRole('button', { name: /^Connect/ })).toBeInTheDocument();
+        expect(screen.getByText('Google')).toBeInTheDocument();
+
+        expect(screen.queryByRole('button', { name: 'Sync calendar' })).not.toBeInTheDocument();
+        // Nor its hint, nor any sync request.
+        expect(screen.queryByText(/separate «Agrent/)).not.toBeInTheDocument();
+        expect(apiPostMock).not.toHaveBeenCalled();
     });
 
-    it('is absent on a Drive-only connection', async () => {
-        // Absent rather than disabled: a disabled control advertises a feature
-        // this connection cannot perform, and the card already says Calendar
-        // is not granted and how to fix it.
+    it('still REPORTS the Calendar grant it holds', async () => {
+        // Removing the sync is not the same as hiding what we can reach. This
+        // connection granted Calendar and that access has not been given back,
+        // so the card has to say so — the integrations page is where a farm
+        // sees what we hold, and the privacy notice points people at it.
+        //
+        // This is also the assertion that would have caught the actual defect:
+        // deleting `admin.integrations.googleCalendar` along with the sync copy
+        // left the badge rendering its own key path as user-facing text.
+        stubList(WITH_CALENDAR);
+        await mountCard();
+
+        const granted = await screen.findByText(/^Calendar:/);
+        expect(granted).toBeInTheDocument();
+        expect(granted.textContent).toContain('Granted');
+        // Not a dotted key path, which is what a missing key renders as.
+        expect(granted.textContent).not.toMatch(/admin\.integrations/);
+    });
+
+    it('does not ask a Drive-only connection to reconnect for Calendar', async () => {
+        // The reconnect nag is Drive-only now. While it also fired on a
+        // missing Calendar grant it told every farm to reconnect to grant a
+        // scope the consent screen no longer requests — advice that cannot be
+        // followed, and the card is where somebody would keep trying.
         stubList(DRIVE_ONLY);
         await mountCard();
-        await waitFor(() =>
-            expect(screen.queryByRole('button', { name: 'Sync calendar' })).not.toBeInTheDocument(),
-        );
-        // The control for the control: the card DID render, so the absence is
-        // about the connection and not about a failed mount. Anchored, because
-        // an unanchored /Connect/i also matches «Disconnect».
-        expect(screen.getByRole('button', { name: /^Connect/ })).toBeInTheDocument();
+
+        expect(await screen.findByRole('button', { name: /^Connect/ })).toBeInTheDocument();
+        expect(
+            screen.queryByText(/To grant the missing permissions/),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Sync calendar' })).not.toBeInTheDocument();
+    });
+
+    it('still nags when DRIVE is the grant that is missing', async () => {
+        // The control for the case above: the nag is narrowed, not deleted. A
+        // card that never nagged would satisfy the previous assertion.
+        stubList(WITH_CALENDAR);
+        await mountCard();
+
+        expect(await screen.findByText(/To grant the missing permissions/)).toBeInTheDocument();
     });
 
     it('is absent with no connection at all', async () => {
         stubList([]);
         await mountCard();
+
+        expect(await screen.findByText(/No Google account is connected/)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Sync calendar' })).not.toBeInTheDocument();
-    });
-});
-
-describe('what the sync reports reaches the screen (#2020)', () => {
-    it('a clean run shows the counts and NO warning', async () => {
-        // The control. Without it, an implementation that always warned would
-        // satisfy both cases below.
-        stubList(WITH_CALENDAR);
-        const user = await mountCard();
-        await user.click(await screen.findByRole('button', { name: 'Sync calendar' }));
-
-        expect(await screen.findByText(/Calendar updated/)).toBeInTheDocument();
-        expect(screen.getByText(/New: 2/)).toBeInTheDocument();
-        expect(screen.getByText(/Unchanged: 5/)).toBeInTheDocument();
-        expect(screen.queryByText(/nothing was removed/)).not.toBeInTheDocument();
-        expect(screen.queryByText(/Left unchanged because you edited/)).not.toBeInTheDocument();
-    });
-
-    it('a TRUNCATED run says nothing was removed', async () => {
-        // The whole point of the `partial` field. Without this notice the
-        // farmer sees "Calendar updated" over a calendar that may hold a
-        // deadline the farm has dropped.
-        apiPostMock.mockResolvedValue({ ...CLEAN, partial: true });
-        stubList(WITH_CALENDAR);
-        const user = await mountCard();
-        await user.click(await screen.findByRole('button', { name: 'Sync calendar' }));
-
-        expect(await screen.findByText(/nothing was removed/)).toBeInTheDocument();
-        expect(screen.getByText(/could not be read in full/)).toBeInTheDocument();
-    });
-
-    it('edited events are reported, with the count', async () => {
-        apiPostMock.mockResolvedValue({ ...CLEAN, skippedEdited: 3 });
-        stubList(WITH_CALENDAR);
-        const user = await mountCard();
-        await user.click(await screen.findByRole('button', { name: 'Sync calendar' }));
-
-        expect(await screen.findByText(/Left unchanged because you edited them in Google: 3/))
-            .toBeInTheDocument();
-    });
-
-    it('zero edited events shows no such notice', async () => {
-        // `skippedEdited: 0` must not render "… : 0", which reads as a problem
-        // where there is none.
-        stubList(WITH_CALENDAR);
-        const user = await mountCard();
-        await user.click(await screen.findByRole('button', { name: 'Sync calendar' }));
-
-        await screen.findByText(/Calendar updated/);
-        expect(screen.queryByText(/Left unchanged because you edited/)).not.toBeInTheDocument();
-    });
-});
-
-describe('a refusal shows the SERVER’s sentence (#2020)', () => {
-    it('renders the message the server sent, not a local string', async () => {
-        // Owner ruling #1677: the server resolves the locale and sends
-        // `message` already translated, and the web reads the error `code`
-        // nowhere. A local code->copy map would be the second catalogue that
-        // ruling exists to prevent — and the server's sentence is the one that
-        // names the remedy for THIS refusal.
-        apiPostMock.mockRejectedValue(
-            new Error(
-                'The Google connection does not include Calendar access. Reconnect it and grant Calendar.',
-            ),
-        );
-        stubList(WITH_CALENDAR);
-        const user = await mountCard();
-        await user.click(await screen.findByRole('button', { name: 'Sync calendar' }));
-
-        expect(await screen.findByText(/Reconnect it and grant Calendar/)).toBeInTheDocument();
-        // And no success notice beside it.
-        expect(screen.queryByText(/Calendar updated/)).not.toBeInTheDocument();
-    });
-
-    it('lets the SERVER’s 60s budget expire before the client gives up', async () => {
-        // `apiPost` otherwise applies a 20s default while the route declares
-        // `maxDuration = 60`, so a first sync on an established farm would be
-        // aborted by the client and reported as a failure having actually
-        // succeeded. The signal must be the caller's.
-        stubList(WITH_CALENDAR);
-        const user = await mountCard();
-        await user.click(await screen.findByRole('button', { name: 'Sync calendar' }));
-
-        await waitFor(() => expect(apiPostMock).toHaveBeenCalled());
-        const init = apiPostMock.mock.calls[0][3] as RequestInit | undefined;
-        expect(init?.signal).toBeInstanceOf(AbortSignal);
     });
 });

@@ -130,6 +130,23 @@ export const REFERENCED_FLAG_KEYS = [
      * capability exists to surface.
      */
     'library.enabled',
+    /**
+     * «Лунен календар» — the lunar sowing calendar (#3070). Gates
+     * `GET /api/lunar`, and every later lunar surface.
+     *
+     * Dark by default, and `feature-flags-capability` will report it in
+     * `missingRows` until an operator inserts the row — the correct reading
+     * rather than noise, for the same reason as its neighbours above: a key
+     * gating a route with no row is exactly what that capability exists to
+     * surface, and inserting the row is what separates "somebody decided this
+     * is off" from "nobody ever inserted it".
+     *
+     * No cohorts when it goes on: the answer is astronomy and is identical for
+     * every farm in the country on a given date, so there is no population to
+     * narrow to. Note cohorts compose as AND — an enabled flag with cohorts
+     * set is on for that cohort ONLY.
+     */
+    'lunar.enabled',
     'notifications.sse',
     // Direct messages (P8.2, #2796). Dark by default, and expected to stay
     // dark until P8.3/P8.4 ship a UI: the nine routes answer 404 while the

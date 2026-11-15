@@ -294,6 +294,25 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             //
             // A route that needs a tenant does NOT belong here.
             'me',
+            // #3070 — «Лунен календар». PERSON-scoped and farm-free, and here
+            // the invariant has no subject in a stronger sense than `me`: the
+            // answer contains no farm data at all. It is the sidereal position
+            // of the Moon, identical for every caller in the country on a
+            // given date, so there is nothing to scope and nothing a wrong
+            // scope could leak.
+            //
+            // It is outside /api/t/[tenantSlug] because the owner's
+            // requirement is that the calendar works BEFORE a farmer has a
+            // farm, and a tenant route cannot serve somebody with no
+            // membership. Authenticated all the same (`getUserCtx`), and
+            // behind the `lunar.enabled` flag.
+            //
+            // What stands in for tenant scoping: the route reads NO tenant
+            // table. A future lunar route that wanted a farm's blocks — to
+            // suppress sowing advice on a frost day, say (#3077) — does NOT
+            // belong here; it belongs under /api/t/[tenantSlug], which is
+            // precisely the split that keeps this exemption honest.
+            'lunar',
             // P5.2a (#1593) — the person-scoped SOCIAL surface, starting with
             // `reports` (file a DSA Art 16 notice, read your own back).
             // AUTHENTICATED like `me`, and with no tenant for a stronger
