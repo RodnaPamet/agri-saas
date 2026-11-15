@@ -103,7 +103,28 @@ export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.a
  * the whole point of `grantedProducts` below. No working calendar connection
  * can exist to break, because creating one was impossible.
  */
-export const GOOGLE_SCOPES: readonly string[] = [GOOGLE_DRIVE_SCOPE, GOOGLE_CALENDAR_SCOPE];
+/**
+ * What we ASK FOR at consent — Drive only, since the owner scrapped the
+ * calendar sync (2026-11-15).
+ *
+ * `GOOGLE_CALENDAR_SCOPE` is deliberately still declared and still read by
+ * `grantedProducts` below, and the two roles are different:
+ *
+ *   * REQUESTED  — this list. Asking for access to a feature that does not
+ *     run is the opposite of least privilege, and it is a concrete risk to
+ *     the OAuth verification: a reviewer asks for each sensitive scope to be
+ *     demonstrated in use, and a calendar scope with no sync behind it has
+ *     nothing to show.
+ *   * GRANTED    — what a STORED connection covers. Connections made before
+ *     this change may still carry the calendar scope, and the farm-scoped
+ *     sync is dormant rather than deleted, so `grantedProducts` must go on
+ *     reporting it truthfully. Dropping the constant would make every such
+ *     grant read as calendar-less and silently change what that code sees.
+ *
+ * So the calendar sync returns by putting this constant back in THIS list,
+ * and nothing else needs rediscovering.
+ */
+export const GOOGLE_SCOPES: readonly string[] = [GOOGLE_DRIVE_SCOPE];
 
 /**
  * Which products a stored grant actually covers.

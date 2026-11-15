@@ -83,11 +83,16 @@ export default async function PrivacyPage() {
         // Every line here was checked against the code rather than against the
         // feature description, because this page's rule is "only what the code
         // implements". Two corrections came out of that: the per-person
-        // calendar sync and the lunar calendar do NOT exist yet, so the
-        // calendar line describes the farm deadlines that are actually
-        // written; and Drive is write-only apart from one metadata read of our
-        // own folder, which is what makes "no Google content enters our
-        // systems" true rather than aspirational.
+        // calendar sync did not exist; and Drive is write-only apart from one
+        // metadata read of our own folder, which is what makes "no Google
+        // content enters our systems" true rather than aspirational.
+        //
+        // The calendar line is GONE as of 2026-11-15: the owner scrapped the
+        // sync, so `GOOGLE_SCOPES` no longer asks for a calendar scope and the
+        // page must not describe access we do not request. `googleCalendar`
+        // was deleted from both catalogues in the same change rather than left
+        // unused, because an orphaned key is a sentence waiting to be
+        // re-rendered by someone who assumes it is still true.
         //
         // `googleLimitedUse` is Google's REQUIRED sentence and is deliberately
         // identical in both catalogues — it must appear verbatim in English.
@@ -96,7 +101,6 @@ export default async function PrivacyPage() {
             body: [
                 'googleIntro',
                 'googleDrive',
-                'googleCalendar',
                 'googleStorage',
                 'googleNoSharing',
                 'googleDisconnect',
