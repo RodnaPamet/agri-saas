@@ -24,4 +24,4 @@
  *
  * @module lib/i18n/shared-namespaces
  */
-export const SHARED_NAMESPACES: readonly string[] = ['notFound'];
+export const SHARED_NAMESPACES: readonly string[] = ['notFound', 'legal'];

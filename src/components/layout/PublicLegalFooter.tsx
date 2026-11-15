@@ -26,20 +26,24 @@ import { getTranslations } from 'next-intl/server';
  * self-consistent and every guard green.
  */
 export async function PublicLegalFooter() {
-    const privacy = await getTranslations('privacy');
-    const terms = await getTranslations('terms');
-    const cookies = await getTranslations('cookies');
+    // The `legal` namespace, NOT `privacy`/`terms`/`cookies`. Those live in
+    // the `app` bundle, which the auth surface does not ship — mounting this
+    // footer on `/login` while reading them rendered three BLANK labels, and
+    // `auth-surface-i18n-complete` is what caught it. Three link labels do not
+    // justify pulling three whole policy namespaces into the auth payload
+    // either; `legal` is shared, so `/` and `/login` both have it.
+    const t = await getTranslations('legal');
     return (
         <footer className="mt-section border-t border-border-subtle pt-default text-sm text-content-muted">
             <nav className="flex flex-wrap gap-default">
                 <a className="underline hover:text-content-default" href="/privacy">
-                    {privacy('title')}
+                    {t('privacy')}
                 </a>
                 <a className="underline hover:text-content-default" href="/terms">
-                    {terms('title')}
+                    {t('terms')}
                 </a>
                 <a className="underline hover:text-content-default" href="/cookies">
-                    {cookies('title')}
+                    {t('cookies')}
                 </a>
             </nav>
         </footer>
