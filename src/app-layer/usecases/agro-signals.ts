@@ -101,7 +101,11 @@ interface ObsRow {
 }
 
 /**
- * Evaluate spray-window + disease-risk signals for one location.
+ * Evaluate spray-window, disease-risk and frost signals for one location.
+ *
+ * Frost differs from the other two: it reads the FORECAST, so it claims one
+ * row per warned day ahead and retracts future un-notified rows a later pull
+ * no longer supports (#3077).
  *
  * Callable standalone (opens its own `runInTenantContext`) — the daily
  * job calls it once per location after persisting that location's

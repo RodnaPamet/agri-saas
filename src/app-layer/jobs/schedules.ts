@@ -431,7 +431,7 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     {
         name: 'weather-pull',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
-        description: 'Pull daily weather (Open-Meteo) for every farm location, then evaluate spray-window + disease-risk agro-signals',
+        description: 'Pull daily weather (Open-Meteo) for every farm location, then evaluate spray-window, disease-risk and frost agro-signals',
         defaultPayload: {},
     },
     {

@@ -15,7 +15,9 @@
  *        d. UPSERT one WeatherObservation per (locationId, obsDate),
  *           filling tempMeanC = (max+min)/2 when the API mean is absent.
  *   3. After persisting a location's weather, evaluate its agro signals
- *      (`evaluateLocationSignals`) — spray-window + disease-risk.
+ *      (`evaluateLocationSignals`) — spray-window, disease-risk and frost.
+ *         Frost is per FORECAST day, so this run claims one row per warned
+ *         day ahead rather than one for today (#3077).
  *
  * The external `fetch` + the per-location upsert/eval are a WRITE/IO
  * loop, not a Prisma-read loop, so the N+1 guardrail doesn't apply; the
