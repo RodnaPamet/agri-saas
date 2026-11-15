@@ -97,7 +97,25 @@ export async function runZarnoBorsaPull(
         return out;
     }
 
-    const result = await ingestZarnoBorsaRows(doc.rows ?? [], { locked: doc.locked === true });
+    /*
+     * `Boolean(...)` and NOT `=== true`, which a mutation corrected.
+     *
+     * The two agree on an ABSENT flag — both read it as not locked, which is
+     * what an older fetch bundle predating the field means by saying nothing,
+     * and discarding its rows would be wrong.
+     *
+     * They differ on a TRUTHY NON-TRUE value, and there `=== true` fails in
+     * the UNSAFE direction: a paywalled read whose flag serialised as
+     * `"false"` or `1` would be treated as unlocked and its August prices
+     * ingested. With `Boolean`, anything truthy locks the read — so a
+     * malformed flag costs one missed cycle instead of corrupting the figures
+     * the grain calculator uses.
+     *
+     * The mutation that found this swapped the two and left every test green,
+     * because the suite only exercised absence. Failing toward "refuse" is the
+     * cheap direction, and it is now the one taken.
+     */
+    const result = await ingestZarnoBorsaRows(doc.rows ?? [], { locked: Boolean(doc.locked) });
     const out: ZarnoBorsaPullResult = {
         ...result,
         reason: 'ok',

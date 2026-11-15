@@ -115,6 +115,22 @@ describe('#3081 — a good handoff is passed through', () => {
         expect(ingestMock).toHaveBeenCalledWith([{ marketId: 1044 }], { locked: true });
     });
 
+    it('LOCKS on a truthy non-true flag — refusing is the cheap direction', async () => {
+        /*
+         * The discriminating case, and a mutation is what found it. An absent
+         * flag reads as not locked under both `=== true` and `Boolean(...)`,
+         * so the suite could not tell them apart — and they differ exactly
+         * here, where `=== true` fails UNSAFE: a paywalled read whose flag
+         * serialised as a string would have its August prices ingested.
+         *
+         * A malformed flag costing one missed cycle is the cheap direction
+         * against corrupting figures the grain calculator uses.
+         */
+        const p = handoff({ locked: 'false', rows: [{ marketId: 1044 }] });
+        await runZarnoBorsaPull(NOW, p);
+        expect(ingestMock).toHaveBeenCalledWith([{ marketId: 1044 }], { locked: true });
+    });
+
     it('treats a MISSING locked field as not locked, not as locked', async () => {
         // `locked === true` rather than truthiness: an older fetch bundle that
         // omits the field must not have its rows discarded, because the field
