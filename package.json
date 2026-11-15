@@ -157,6 +157,7 @@
         "@visx/tooltip": "^4.0.0",
         "@xmldom/xmldom": "^0.9.12",
         "@xyflow/react": "^12.12.1",
+        "astronomy-engine": "2.1.19",
         "bcryptjs": "^3.0.3",
         "bullmq": "^6.5.4",
         "canvas-confetti": "^1.9.4",

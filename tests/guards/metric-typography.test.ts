@@ -93,6 +93,34 @@ function walk(dir: string): string[] {
 }
 
 describe('Metric typography ratchet (Polish PR-2)', () => {
+    it('walks a real population, and the detector can detect — the control', () => {
+        // `Selector teeth` reported `walk()` as SURVIVED against `return []`,
+        // and it was right: the only other assertion in this file is
+        // `expect(offenders).toEqual([])`, which an EMPTY file list satisfies
+        // perfectly. A negated assertion over nothing is the cheapest possible
+        // pass, and this guard had no floor between it and zero.
+        //
+        // Surfaced when an unrelated change added a page under `src/app` and
+        // pulled this file into the selector-teeth population (#3070). The
+        // dead selector was already here; nothing had looked.
+        const scanned = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+        console.log(`[metric-typography] ${scanned.length} file(s) scanned across ${SCAN_DIRS.length} root(s)`);
+        // A floor, not an equality: the tree grows, and the point is only that
+        // the walk is not returning nothing.
+        expect(scanned.length).toBeGreaterThanOrEqual(100);
+
+        // And the matchers can still MATCH, so a real offender would be seen.
+        // Without this, gutting the regexes passes the negated assertion too.
+        const offending = '<p className="text-3xl font-bold">{metrics.total}</p>';
+        expect(SIZE_RE.test(offending)).toBe(true);
+        expect(WEIGHT_RE.test(offending)).toBe(true);
+        expect(HAS_EXPRESSION_RE.test(offending)).toBe(true);
+
+        // Discriminating, not merely present: ordinary body copy is not a hit.
+        const safe = '<p className="text-sm text-content-muted">{t(\'intro\')}</p>';
+        expect(SIZE_RE.test(safe)).toBe(false);
+    });
+
     it('zero raw `text-(2xl|3xl|4xl) font-(bold|semibold)` next to numeric content in src/app', () => {
         const offenders: Hit[] = [];
         for (const dir of SCAN_DIRS) {

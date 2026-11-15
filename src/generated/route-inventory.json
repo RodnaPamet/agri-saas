@@ -421,6 +421,11 @@
       "documented": false
     },
     {
+      "path": "/api/lunar",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/me/farms",
       "status": "live",
       "documented": true
