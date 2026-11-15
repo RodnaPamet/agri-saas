@@ -1,0 +1,11 @@
+-- #3081 — a per-series attribution a client can render.
+--
+-- ADDITIVE and NULLABLE, so every existing series is untouched and no
+-- backfill is needed. The EC and platform series carry no URL today; absence
+-- means "no link to offer", never "no source".
+--
+-- No inverse script is needed: `destructive-migration-has-inverse` derives
+-- its population from DROP TABLE / DROP COLUMN / DROP TYPE / RENAME, and a
+-- plain additive nullable column breaks no previous image — the old code
+-- simply never selects it.
+ALTER TABLE "MarketPriceSeries" ADD COLUMN "sourceUrl" TEXT;

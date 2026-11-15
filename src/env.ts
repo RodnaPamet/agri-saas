@@ -702,6 +702,21 @@ export const env = createEnv({
         // an invented address is worse served than one told to ask.
         DSA_CONTACT_EMAIL: z.string().email().optional(),
 
+        /*
+         * ZarnoBorsa's subscriber login (#3081). OPTIONAL, because a
+         * self-hosted deployment has no subscription and must still boot —
+         * the job treats absence as "not configured" and writes nothing,
+         * rather than failing a run for a feature that deployment does not
+         * have.
+         *
+         * The PASSWORD is deliberately not `.min()`-constrained: a length
+         * rule here would put a fact about the credential into a file this
+         * public repository tracks. Validation that matters is whether the
+         * login SUCCEEDS, which only the job can tell.
+         */
+        ZARNOBORSA_EMAIL: z.string().email().optional(),
+        ZARNOBORSA_PASSWORD: z.string().optional(),
+
         // ── Sign in with Apple (P4.2) ──
         //
         // All four are OPTIONAL and the feature is DORMANT without them, the
@@ -986,6 +1001,8 @@ export const env = createEnv({
         PRIVACY_CONTROLLER_ADDRESS: process.env.PRIVACY_CONTROLLER_ADDRESS,
         PRIVACY_CONTROLLER_PHONE: process.env.PRIVACY_CONTROLLER_PHONE,
         DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
+        ZARNOBORSA_EMAIL: process.env.ZARNOBORSA_EMAIL,
+        ZARNOBORSA_PASSWORD: process.env.ZARNOBORSA_PASSWORD,
         APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
         APPLE_SERVICES_ID: process.env.APPLE_SERVICES_ID,
         APPLE_KEY_ID: process.env.APPLE_KEY_ID,
