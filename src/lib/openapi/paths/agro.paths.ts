@@ -305,7 +305,7 @@ export function registerAgroPaths(registry: OpenAPIRegistry): void {
                     }),
                     truncated: z.boolean().openapi({
                         description:
-                            'True when the row cap was hit and the list is INCOMPLETE. Reported rather than silently trimmed: a block whose warning was cut off would be the exact failure this endpoint exists to prevent.',
+                            'True when the row cap was hit and the list is INCOMPLETE. Reported rather than silently trimmed: a block whose warning was cut off would be the exact failure this endpoint exists to prevent. SAY SO TO THE USER rather than rendering a clean screen — the iOS client words it «Списъкът с предупреждения е непълен. Липсата на предупреждение не значи, че няма такова.», and that second sentence is the one worth copying: with the list cut off, an absent warning is not evidence of safety.',
                     }),
                 })
                 .openapi('AgroSignals'),
