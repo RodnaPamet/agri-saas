@@ -129,7 +129,23 @@ export function adviceFor(dayType: DayType, phase: Phase): GroupAdvice {
     return RULES[dayType]?.[phase] ?? EMPTY;
 }
 
-/** The i18n key a recommendation resolves to. */
+/**
+ * The i18n key a recommendation resolves to, RELATIVE to the `lunar`
+ * namespace — so `useTranslations('lunar')(recommendationKey(rec))`.
+ *
+ * It returned `lunar.rec.${rec}` until #3070's review, which is a key that
+ * exists in NEITHER locale: the catalogue spells these `lunar.recCutFlowers`,
+ * not `lunar.rec.cutFlowers`. Nothing called it yet, so nothing failed — and
+ * `translateFor` and `useTranslations` both RETURN THE KEY for a miss, so the
+ * first consumer would have rendered `lunar.rec.cutFlowers` to a farmer as the
+ * sentence. That is P9.3d verbatim, where the first Art 17 statements went out
+ * reading `statementOfReasons.action.CONTENT_AUTO_HIDDEN`.
+ *
+ * This is now the ONE place the spelling lives:
+ * `tests/guards/lunar-rules-have-copy.test.ts` imports it rather than
+ * re-deriving it, so a rename cannot leave the guard agreeing with itself
+ * while disagreeing with the catalogue.
+ */
 export function recommendationKey(rec: Recommendation): string {
-    return `lunar.rec.${rec}`;
+    return `rec${rec[0].toUpperCase()}${rec.slice(1)}`;
 }

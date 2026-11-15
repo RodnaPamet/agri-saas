@@ -26,24 +26,34 @@
  * Bulgarian verbatim, so the web and the phone say the same thing. A key that
  * silently falls back to English on the web ships English to the phone too.
  */
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-
-import { REPO_ROOT } from '../helpers/collect-files';
-import { RECOMMENDATIONS, type Recommendation } from '../../src/lib/lunar/rules';
+import { readCatalogue } from '../helpers/catalogue';
+import { RECOMMENDATIONS, recommendationKey, type Recommendation } from '../../src/lib/lunar/rules';
 import { DAY_TYPES, ELEMENTS, SIGNS } from '../../src/lib/lunar/zodiac';
 
-type Catalogue = { lunar?: Record<string, string> };
-
+/**
+ * Through `readCatalogue`, never a path of our own — #1813. A second reader
+ * that knows where the catalogue lives keeps working until the bundles move,
+ * which is exactly when nobody is looking for it; `one-catalogue-reader`
+ * refused this file's first draft for building `messages/${locale}/app.json`
+ * by hand.
+ */
 function lunarKeys(locale: string): Record<string, string> {
-    const file = path.join(REPO_ROOT, `messages/${locale}/app.json`);
-    const parsed = JSON.parse(readFileSync(file, 'utf8')) as Catalogue;
-    return parsed.lunar ?? {};
+    return (readCatalogue(locale) as { lunar?: Record<string, string> }).lunar ?? {};
 }
 
-/** `sowBeetPotato` → `recSowBeetPotato`, the one place that spelling lives. */
+/**
+ * `sowBeetPotato` → `recSowBeetPotato`, IMPORTED from the runtime rather than
+ * re-derived here.
+ *
+ * It was a local copy until #3070's review, and that is precisely how this
+ * guard stayed green over a defect: `rules.ts` exported its own
+ * `recommendationKey` returning `lunar.rec.${rec}` — a key in neither
+ * locale — while this file asserted the Pascal spelling it had derived for
+ * itself. Both halves self-consistent, the catalogue correct, and the function
+ * a consumer would actually call pointing at nothing.
+ */
 function copyKeyFor(rec: Recommendation): string {
-    return `rec${rec[0].toUpperCase()}${rec.slice(1)}`;
+    return recommendationKey(rec);
 }
 
 const LOCALES = ['bg', 'en'] as const;

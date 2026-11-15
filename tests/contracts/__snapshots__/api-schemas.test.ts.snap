@@ -12280,6 +12280,269 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: LunarCalendar 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "days": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "A calendar day in \`Europe/Sofia\`, \`YYYY-MM-DD\`.",
+            "example": "2026-03-21"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "waxing",
+              "waning"
+            ],
+            "description": "Which way the illuminated fraction is going. The rule table keys on this, not on \`phaseName\`."
+          },
+          "phaseName": {
+            "type": "string",
+            "enum": [
+              "new",
+              "waxingCrescent",
+              "firstQuarter",
+              "waxingGibbous",
+              "full",
+              "waningGibbous",
+              "lastQuarter",
+              "waningCrescent"
+            ],
+            "description": "The named phase, for display. The four quarter names cover a ±6° window around the exact instant, so two consecutive days can both read \`full\`."
+          },
+          "illumination": {
+            "type": "number",
+            "description": "Illuminated fraction of the disc, 0..1.",
+            "example": 0.52
+          },
+          "sign": {
+            "type": "string",
+            "enum": [
+              "aries",
+              "taurus",
+              "gemini",
+              "cancer",
+              "leo",
+              "virgo",
+              "libra",
+              "scorpio",
+              "sagittarius",
+              "capricorn",
+              "aquarius",
+              "pisces"
+            ],
+            "description": "The SIDEREAL sign the Moon occupies at farm-local noon."
+          },
+          "element": {
+            "type": "string",
+            "enum": [
+              "fire",
+              "earth",
+              "air",
+              "water"
+            ]
+          },
+          "dayType": {
+            "type": "string",
+            "enum": [
+              "fruit",
+              "root",
+              "flower",
+              "leaf"
+            ],
+            "description": "The traditional day type, derived from the sign's element: fire→fruit, earth→root, air→flower, water→leaf. Measured at farm-local NOON, so a day holding a sign change is labelled by whichever sign holds the middle of it — \`transitions\` is what says the boundary exists."
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "UTC instant of the sign change."
+                },
+                "toSign": {
+                  "type": "string",
+                  "enum": [
+                    "aries",
+                    "taurus",
+                    "gemini",
+                    "cancer",
+                    "leo",
+                    "virgo",
+                    "libra",
+                    "scorpio",
+                    "sagittarius",
+                    "capricorn",
+                    "aquarius",
+                    "pisces"
+                  ]
+                },
+                "toDayType": {
+                  "type": "string",
+                  "enum": [
+                    "fruit",
+                    "root",
+                    "flower",
+                    "leaf"
+                  ]
+                }
+              },
+              "required": [
+                "at",
+                "toSign",
+                "toDayType"
+              ]
+            },
+            "description": "Sign changes falling inside this local day, if any. Usually empty — the Moon spends about 2.2 days per sign — and never more than one in practice. Present so a client can show that the day is split rather than implying the noon reading held all day."
+          },
+          "recommendations": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "soilWork",
+                    "incorporateResidues",
+                    "sowBeetPotato",
+                    "sowCarrotRadishOnion",
+                    "rootPruning",
+                    "liftNurseryStock",
+                    "sowForageGrass",
+                    "sowLeafyVeg",
+                    "leafFeeding",
+                    "grafting",
+                    "cutLeafyForUse",
+                    "sowOilseedRape",
+                    "sowFloweringVeg",
+                    "cutFlowers",
+                    "formativePruning",
+                    "sowCerealGrain",
+                    "sowFruitingVeg",
+                    "plantTreesVines",
+                    "harvestForStorage",
+                    "harvestGrainForStorage",
+                    "seedSaving",
+                    "winterPruning"
+                  ],
+                  "description": "A rule-table verdict. Render it through the \`lunar.rec*\` message key for the recommendation — the server sends no prose, so the catalogue is the only copy. Treat an unrecognised member as \\"no advice\\" rather than as an error: this list grows.",
+                  "example": "soilWork"
+                }
+              },
+              "vegetable": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "soilWork",
+                    "incorporateResidues",
+                    "sowBeetPotato",
+                    "sowCarrotRadishOnion",
+                    "rootPruning",
+                    "liftNurseryStock",
+                    "sowForageGrass",
+                    "sowLeafyVeg",
+                    "leafFeeding",
+                    "grafting",
+                    "cutLeafyForUse",
+                    "sowOilseedRape",
+                    "sowFloweringVeg",
+                    "cutFlowers",
+                    "formativePruning",
+                    "sowCerealGrain",
+                    "sowFruitingVeg",
+                    "plantTreesVines",
+                    "harvestForStorage",
+                    "harvestGrainForStorage",
+                    "seedSaving",
+                    "winterPruning"
+                  ],
+                  "description": "A rule-table verdict. Render it through the \`lunar.rec*\` message key for the recommendation — the server sends no prose, so the catalogue is the only copy. Treat an unrecognised member as \\"no advice\\" rather than as an error: this list grows.",
+                  "example": "soilWork"
+                }
+              },
+              "perennial": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "soilWork",
+                    "incorporateResidues",
+                    "sowBeetPotato",
+                    "sowCarrotRadishOnion",
+                    "rootPruning",
+                    "liftNurseryStock",
+                    "sowForageGrass",
+                    "sowLeafyVeg",
+                    "leafFeeding",
+                    "grafting",
+                    "cutLeafyForUse",
+                    "sowOilseedRape",
+                    "sowFloweringVeg",
+                    "cutFlowers",
+                    "formativePruning",
+                    "sowCerealGrain",
+                    "sowFruitingVeg",
+                    "plantTreesVines",
+                    "harvestForStorage",
+                    "harvestGrainForStorage",
+                    "seedSaving",
+                    "winterPruning"
+                  ],
+                  "description": "A rule-table verdict. Render it through the \`lunar.rec*\` message key for the recommendation — the server sends no prose, so the catalogue is the only copy. Treat an unrecognised member as \\"no advice\\" rather than as an error: this list grows.",
+                  "example": "soilWork"
+                }
+              }
+            },
+            "required": [
+              "field",
+              "vegetable",
+              "perennial"
+            ],
+            "description": "The rule table's advice for this \`(dayType, phase)\`, per crop group. An empty array means the tradition offers nothing for that group that day — which is a real answer, not a gap."
+          }
+        },
+        "required": [
+          "date",
+          "phase",
+          "phaseName",
+          "illumination",
+          "sign",
+          "element",
+          "dayType",
+          "transitions",
+          "recommendations"
+        ]
+      }
+    },
+    "timeZone": {
+      "type": "string",
+      "description": "The zone every \`date\` is labelled in. Fixed to the farm zone, and sent so a client never has to assume it.",
+      "example": "Europe/Sofia"
+    },
+    "maxDays": {
+      "type": "number",
+      "description": "The server's range cap, so a client can bound its own request instead of discovering the limit with a 400.",
+      "example": 62
+    }
+  },
+  "required": [
+    "days",
+    "timeZone",
+    "maxDays"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MachineList 1`] = `
 "{
   "type": "object",

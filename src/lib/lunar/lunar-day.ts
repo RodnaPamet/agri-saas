@@ -98,6 +98,16 @@ export function lunarDay(dayKey: string): LunarDay {
 }
 
 /**
+ * Days per `GET /api/lunar` request. A month view with both neighbours fits
+ * comfortably.
+ *
+ * Here rather than on the route because `lunarRange` is what enforces it and
+ * the OpenAPI spec module publishes it — and a spec module that imported the
+ * ROUTE would pull a handler, Prisma and the flag table into the generator.
+ */
+export const MAX_LUNAR_DAYS = 62;
+
+/**
  * Every day in `[from, to]` inclusive, as farm-local day keys.
  *
  * Bounded by the caller; the route caps the span. Stepping 36 hours and
