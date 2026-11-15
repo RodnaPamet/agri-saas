@@ -25,7 +25,7 @@
  * about a fetch that never happened, which is the one thing the verdict exists
  * to prevent. So a document older than the window is `unaudited`.
  */
-import { readFileSync, statSync } from 'fs';
+import { readFileSync, openSync, fstatSync, closeSync } from 'fs';
 
 import { logger } from '@/lib/observability/logger';
 import { ZarnoBorsaRow } from '@/lib/market/zarnoborsa-parse';
@@ -90,9 +90,28 @@ export async function runZarnoBorsaPull(
     let doc: HandoffDoc;
     let ageMinutes: number;
     try {
-        const stat = statSync(path);
-        ageMinutes = Math.round((now.getTime() - stat.mtimeMs) / 60_000);
-        doc = JSON.parse(readFileSync(path, 'utf8')) as HandoffDoc;
+        /*
+         * ONE DESCRIPTOR for both the age and the contents.
+         *
+         * Dropping `existsSync` was not enough, and CodeQL said so again:
+         * `statSync(path)` followed by `readFileSync(path)` is still two
+         * operations resolving the same name, so the file can change between
+         * them — and then the age belongs to one document and the bytes to
+         * another. For a reader whose entire job is deciding whether a
+         * document is too old to trust, that is the wrong pair to get wrong.
+         *
+         * `openSync` once, `fstatSync` and `readFileSync` on the DESCRIPTOR:
+         * both answers come from the same file, whatever happens to the path
+         * afterwards. `openSync` is also what raises `ENOENT`, so the
+         * no-file verdict still comes from the attempt rather than a check.
+         */
+        const fd = openSync(path, 'r');
+        try {
+            ageMinutes = Math.round((now.getTime() - fstatSync(fd).mtimeMs) / 60_000);
+            doc = JSON.parse(readFileSync(fd, 'utf8')) as HandoffDoc;
+        } finally {
+            closeSync(fd);
+        }
     } catch (err) {
         const code = (err as { code?: string } | null)?.code;
         if (code === 'ENOENT') {
