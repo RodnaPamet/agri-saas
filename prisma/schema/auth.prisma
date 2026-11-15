@@ -847,6 +847,37 @@ model User {
   /// bug worth a 400. Reject unknown on write, ignore unknown on read — the
   /// two rules answer different questions about who chose the value.
   newsTagPreferences            Json?
+
+  /// P9.7 (#2941) — the 07:15 digest of channel activity, opt-in.
+  ///
+  /// A COLUMN and not a table, for the reason `bottomTabOrder` above gives:
+  /// `UserNotificationPreference` is a table because it has per-farm rows with
+  /// their own lifecycle, and this is one value per person. A channel has no
+  /// tenant, so a per-farm row could not express it anyway.
+  ///
+  /// `@default(false)` is the OPT-IN direction stated in the schema rather
+  /// than in prose: absence reads as off, which is what #2941 asks for and the
+  /// opposite of P5.5a's slow-mode claims, where an absent claim reads as
+  /// not-slow. Here the conservative direction is silence.
+  ///
+  /// ADDITIVE, not a delivery mode. A person who wants batching instead of
+  /// per-event pushes sets `UserNotificationPreference.delivery =
+  /// DAILY_DIGEST`, which `resolveDelivery` already honours — expressing the
+  /// same choice twice would be two sources of truth for one decision.
+  channelDigestOptIn            Boolean   @default(false)
+
+  /// The last day a channel digest was sent to this person, in `Europe/Sofia`.
+  ///
+  /// The idempotence marker, and a DATE rather than a timestamp because the
+  /// question is "has today's gone out", not "when exactly". The job runs
+  /// every 15 minutes and acts once per person per day, so without this a
+  /// person would be pushed four times an hour from 07:15 onward.
+  ///
+  /// A column rather than a job-level cursor because the decision is PER
+  /// PERSON: 07:15 passes for everybody at the same instant, but a send can
+  /// fail for one person and succeed for the rest, and a single cursor would
+  /// either re-send to everybody or to nobody.
+  channelDigestSentOn           DateTime? @db.Date
   accounts                      Account[]
   ownedAssets                   Asset[]                      @relation("AssetOwner")
   auditLogs                     AuditLog[]

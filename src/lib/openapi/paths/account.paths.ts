@@ -501,6 +501,19 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                             })
                             .nullable(),
                         bottomTabOrder: BottomTabOrder,
+                        channelDigestOptIn: z.boolean().openapi({
+                            description:
+                                'Whether the caller receives the opt-in 07:15 '
+                                + '(Europe/Sofia) channel digest (#2941). ADDITIVE: '
+                                + '`true` means they ALSO get a morning recap of their '
+                                + 'channel mentions and replies, never that per-event '
+                                + 'pushes are suppressed — batching instead is the '
+                                + 'separate per-farm `DAILY_DIGEST` notification '
+                                + 'preference, so a client must not draw the two as one '
+                                + 'switch. Always a boolean: the column is NOT NULL with '
+                                + 'a `false` default, so there is no "never chosen" '
+                                + 'state. Write it with `setChannelDigestOptIn`.',
+                        }),
                         avatarUrl: AvatarUrl,
                         deletion: z
                             .object({
@@ -560,6 +573,40 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The stored arrangement, as persisted.',
             schema: z.object({ bottomTabOrder: BottomTabOrder }),
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/account/channel-digest',
+        operationId: 'setChannelDigestOptIn',
+        summary: "Set the caller's own channel-digest opt-in",
+        description:
+            'Acts ONLY on the authenticated user — there is no userId parameter, so one '
+            + "person can never change another's notification settings. Send "
+            + '`{ "optIn": true }` to receive the 07:15 (Europe/Sofia) digest of channel '
+            + 'mentions and replies, `{ "optIn": false }` to stop. The key is REQUIRED '
+            + 'and a missing or misspelled one is a 400 `INVALID_DIGEST_OPT_IN` rather '
+            + 'than a 200 that writes nothing, because a switch reporting success while '
+            + 'changing no column leaves the person believing they opted in and simply '
+            + 'never hearing anything. An UNKNOWN key is ignored rather than refused, so '
+            + 'a newer client sending an extra field keeps working against an older '
+            + 'server. '
+            + 'ADDITIVE — opting in does not suppress per-event pushes; batching '
+            + 'instead is the separate per-farm `DAILY_DIGEST` preference. '
+            + 'Turning it off does not rewrite the send ledger, so opting out and back '
+            + 'in on the same morning does not produce a second digest for that day. '
+            + 'Read the value back from `getCurrentUser`; there is no GET here.',
+        tags: ['Account'],
+        body: z.object({ optIn: z.boolean() }).openapi('SetChannelDigestOptInRequest'),
+        success: {
+            status: 200,
+            description: 'The stored opt-in, as persisted.',
+            schema: z.object({ optIn: z.boolean() }),
+        },
+        extraResponses: {
+            ...rawErrorResponses({}),
+            400: { description: '`INVALID_DIGEST_OPT_IN` — `optIn` is missing or not a boolean.' },
         },
     });
 

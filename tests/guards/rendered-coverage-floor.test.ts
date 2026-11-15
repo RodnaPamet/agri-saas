@@ -371,7 +371,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // is asserted FROZEN across a poll whose `lastReadAt` has moved past the
 // unread message — with a control that a caught-up reader gets no divider, so
 // "always on" cannot satisfy the freeze.
-const RENDERED_TEST_FLOOR = 283;
+// 283 -> 284 (#2941): `channel-digest-card.test.tsx` — the digest switch,
+// which IS the entry point for P9.7 stage C. Banked for the REVERT rather
+// than for the count: the switch is optimistic, so a failed write must flip
+// it BACK, and a switch that stays flipped reports an opt-in the column does
+// not hold — the person then never receives a digest and has no reason to
+// suspect why. Both directions are asserted, so a hard-coded
+// `setOptIn(false)` in the catch cannot satisfy the case.
+const RENDERED_TEST_FLOOR = 284;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
