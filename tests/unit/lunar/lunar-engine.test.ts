@@ -29,6 +29,11 @@ import {
     normaliseDegrees,
     signOfSiderealLongitude,
 } from '@/lib/lunar/zodiac';
+// The library supplies the INDEPENDENT tropical input the sidereal test
+// measures our transform against — see that test for why this is not a
+// cross-check in the same method.
+import { EclipticGeoMoon } from 'astronomy-engine';
+
 import { findSignChange, moonAt } from '@/lib/lunar/moon';
 import { CROP_GROUPS, RECOMMENDATIONS, RULES, adviceFor } from '@/lib/lunar/rules';
 import { LUNAR_TIME_ZONE, MAX_LUNAR_DAYS, lunarDay, lunarRange } from '@/lib/lunar/lunar-day';
@@ -139,21 +144,44 @@ describe('moonAt — phase and sidereal position', () => {
         expect(gap).toBeLessThan(5);
     });
 
-    it('is SIDEREAL — it disagrees with the tropical sign on most days', () => {
-        // The ayanamsa is ~24° of a 30° sign, so the sidereal sign is the
-        // previous one for roughly 24/30 of the zodiac. If the ayanamsa were
-        // never applied the two would agree ALWAYS and this fails — which is
-        // the one assertion here that would catch a silently tropical engine.
+    it('is SIDEREAL — measured against an INDEPENDENT tropical longitude', () => {
+        /*
+         * This assertion was vacuous in its first form and a mutation proved
+         * it: deleting the ayanamsa from `moonAt` left all 18 cases green.
+         *
+         * It had rebuilt the tropical value by adding the ayanamsa back to
+         * `m.siderealLongitude` — the value under test — so with a tropical
+         * `siderealLongitude` the comparison became `tropical` vs
+         * `tropical + 24°`, which still disagree most of the time. It was
+         * measuring that adding 24° usually crosses a sign boundary: a fact
+         * about arithmetic, true whatever the engine does.
+         *
+         * `EclipticGeoMoon` is the same library, and that is fine here — it
+         * supplies the INPUT while the thing under test is our TRANSFORM of
+         * it. What is not fine is deriving the expected output from the actual
+         * output, which is what the first version did.
+         */
         let disagreements = 0;
         const samples = 60;
         for (let i = 0; i < samples; i += 1) {
             const at = new Date(Date.UTC(2026, 2, 1) + i * DAY_MS);
             const m = moonAt(at);
-            const tropical = signOfSiderealLongitude(
-                normaliseDegrees(m.siderealLongitude + ayanamsaDegrees(at)),
+            const tropicalLon = normaliseDegrees(EclipticGeoMoon(at).lon);
+
+            // The transform itself, pinned: sidereal = tropical - ayanamsa.
+            expect(m.siderealLongitude).toBeCloseTo(
+                normaliseDegrees(tropicalLon - ayanamsaDegrees(at)),
+                6,
             );
-            if (tropical !== m.sign) disagreements += 1;
+            // And it is genuinely offset, not a relabelled tropical reading.
+            const offset = normaliseDegrees(tropicalLon - m.siderealLongitude);
+            expect(offset).toBeGreaterThan(23.5);
+            expect(offset).toBeLessThan(25);
+
+            if (signOfSiderealLongitude(tropicalLon) !== m.sign) disagreements += 1;
         }
+        // ~24° of a 30° sign, so the sidereal sign is the previous one for
+        // roughly 24/30 of the zodiac.
         expect(disagreements).toBeGreaterThan(samples * 0.6);
     });
 
