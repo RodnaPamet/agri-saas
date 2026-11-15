@@ -112,6 +112,29 @@ missing file — a signal wrong in the alarming direction, worse than the
 `deploy/apply.sh`. Note `docker image inspect …:latest` on the VM reads the
 LOCAL cache, not the registry; compare digests or read Watchtower's log.
 
+**A NEW ENV VAR NEEDS A CONTAINER RECREATE, AND NO NUMBER OF DEPLOYS WILL DO
+IT.** Watchtower rebuilds a container from the PREVIOUS CONTAINER'S CONFIG, so
+it never re-reads `env_file` — a variable appended to `/opt/agrent/.env` is
+invisible to every subsequent image update. Measured 2026-11-15:
+`PRIVACY_CONTROLLER_NAME` / `_ADDRESS` / `_PHONE` were appended at 12:16,
+Watchtower recreated `agrent-app` at 19:48 for an unrelated publish, and
+`printenv` in the NEW container showed only `PRIVACY_CONTACT_EMAIL` while the
+file listed all four keys. `docker compose up -d app` fixed it in one step.
+
+The failure shape is what makes this worth a paragraph: the value is correct in
+the file, the compose file declares `env_file`, the container is newer than the
+edit, and the page reading the var still serves its FALLBACK — which reads as a
+code bug. `/privacy` rendered "software operated by an organisation" instead of
+the controller for seven hours on exactly this.
+
+Two probes separate the two worlds without echoing anything:
+`docker compose config | sed -n 's/.*\(KEY\):.*/\1/p'` says whether compose
+WOULD pass it; `exec -T app printenv | sed -n 's/^\(KEY\)=.*/\1 PRESENT/p'`
+says whether the running container HAS it. Names only — `/opt/agrent/.env`
+must never be printed. And do not reason from `.Created` versus the `.env`
+mtime alone: another session may have written the file later, which makes a
+wrong explanation available.
+
 **The repo is canonical; drift is DETECTABLE, not policy.** The compose
 STRUCTURE lives at **`deploy/docker-compose.vm.yml`** in the repo and is
 kept byte-identical to the VM. Watchtower auto-updates ONLY the `app` +

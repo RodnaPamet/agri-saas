@@ -49,7 +49,7 @@ const getToken = jest.fn();
 jest.mock('next-auth/jwt', () => ({ getToken: (...a: any[]) => getToken(...a) }));
 
 import middleware from '../../src/middleware';
-import { isTermsAllowedPath } from '../../src/lib/auth/guard';
+import { isTermsAllowedPath, isPublicPath, LEGAL_POLICY_PATHS } from '../../src/lib/auth/guard';
 
 const ENV_SNAPSHOT: Record<string, string | undefined> = {
     RATE_LIMIT_MODE: process.env.RATE_LIMIT_MODE,
@@ -280,5 +280,68 @@ describe('§5 the allowlist is not a prefix in disguise', () => {
         for (const pathname of Object.values(GATED)) {
             expect(isTermsAllowedPath(pathname)).toBe(false);
         }
+    });
+});
+
+describe('§6 every policy page passes BOTH gates (#3085)', () => {
+    /*
+     * The two-list bug, fourth instance. `PUBLIC_PATH_EXACT` decides whether a
+     * visitor with no session may read a page; `isTermsAllowedPath` decides
+     * whether a signed-in person with an outstanding acceptance may. `/cookies`
+     * was added to the first and not the second, so it was publicly readable
+     * and still bounced a user held at `/accept-terms` back to the gate.
+     *
+     * The first three instances were each fixed by adding the missing entry,
+     * which is precisely what left a fourth available. So both gates now read
+     * `LEGAL_POLICY_PATHS`, and this ranges over that list rather than naming
+     * paths: a policy page added to the constant is covered the moment it
+     * exists, and one added to neither list fails here.
+     */
+    it('ranges over a real list, not an empty one', () => {
+        console.log(
+            `[terms-gate] ${LEGAL_POLICY_PATHS.length} policy path(s): ${LEGAL_POLICY_PATHS.join(' ')}`,
+        );
+        // A floor, because an empty constant would satisfy every assertion
+        // below over nothing — and it is the constant BOTH gates read, so an
+        // empty one would also silently close the pages to everybody.
+        expect(LEGAL_POLICY_PATHS.length).toBeGreaterThanOrEqual(3);
+        expect(LEGAL_POLICY_PATHS).toContain('/cookies');
+    });
+
+    it.each([...LEGAL_POLICY_PATHS])('%s is readable with no session', (path) => {
+        expect(isPublicPath(path)).toBe(true);
+    });
+
+    it.each([...LEGAL_POLICY_PATHS])('%s is readable while terms are pending', (path) => {
+        expect(isTermsAllowedPath(path)).toBe(true);
+    });
+
+    it('the two gates cannot disagree, because they read the same list', () => {
+        // The property, stated as a property rather than as three pairs: any
+        // path either gate admits BY VIRTUE OF being a policy page is admitted
+        // by the other. Re-enumerating them here would recreate the defect.
+        const admittedByBoth = LEGAL_POLICY_PATHS.filter(
+            (p) => isPublicPath(p) && isTermsAllowedPath(p),
+        );
+        expect(admittedByBoth).toEqual([...LEGAL_POLICY_PATHS]);
+    });
+
+    it('control: a NON-policy page is admitted by neither gate', () => {
+        // Without this, a gate that returned true for everything would satisfy
+        // every assertion above.
+        const notAPolicy = '/t/acme/dashboard';
+        expect(LEGAL_POLICY_PATHS).not.toContain(notAPolicy);
+        expect(isPublicPath(notAPolicy)).toBe(false);
+        expect(isTermsAllowedPath(notAPolicy)).toBe(false);
+    });
+
+    it('/dsa-contact is exempt but deliberately NOT a policy page', () => {
+        // It is a legal CONTACT POINT rather than a disclosure document, has no
+        // equivalent on the sign-up path, and keeps its own entry in both
+        // lists. Asserted so a later reader does not "tidy" it into the
+        // constant and widen what the name means.
+        expect(LEGAL_POLICY_PATHS).not.toContain('/dsa-contact');
+        expect(isTermsAllowedPath('/dsa-contact')).toBe(true);
+        expect(isPublicPath('/dsa-contact')).toBe(true);
     });
 });
