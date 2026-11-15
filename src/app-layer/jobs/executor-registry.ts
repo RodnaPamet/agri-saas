@@ -707,6 +707,28 @@ executorRegistry.register('channel-cards', async () => {
     );
 });
 
+// ── channel-digest ──────────────────────────────────────────────────
+//
+// P9.7's opt-in 07:15 recap (#2941). Tenantless for the same reason as
+// `channel-cards` above: a channel has no farm.
+
+executorRegistry.register('channel-digest', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runChannelDigest } = await import('./channel-digest');
+    const r = await runChannelDigest();
+    // scanned = people eligible by preference, actioned = digests sent,
+    // skipped = the rest. The job's own log line carries `dueNow` and the
+    // intermediate `due` / `withActivity` counts, because one triple cannot
+    // separate "outside the delivery window" from "nobody had activity" —
+    // and those two zeros mean opposite things.
+    return makeResult(
+        'channel-digest', startedAt, startMs,
+        r.candidates, r.sent, r.candidates - r.sent,
+        { due: r.due, withActivity: r.withActivity, sent: r.sent },
+    );
+});
+
 // ── exchange-expiry-sweep ───────────────────────────────────────────
 
 executorRegistry.register('exchange-expiry-sweep', async (payload) => {

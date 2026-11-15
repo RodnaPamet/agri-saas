@@ -299,7 +299,10 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // #2938 — P9.4's daily card generation. A channel is tenantless by
         // design, so this job ranges over every farm's shared surfaces and
         // has no tenant axis to scope.
-        'channel-cards'];
+        'channel-cards',
+        // #2941 — P9.7's 07:15 digest. Person-scoped: a channel has no farm,
+        // and the recipient is a person who may belong to several.
+        'channel-digest'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;

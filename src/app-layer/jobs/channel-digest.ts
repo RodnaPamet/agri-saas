@@ -50,7 +50,7 @@
  */
 import { enqueue } from '@/app-layer/jobs/queue';
 import { readMyActivity } from '@/app-layer/usecases/channels';
-import { farmToday } from '@/lib/calendar-day-key';
+import { FARM_TIME_ZONE, farmToday, farmTodayFloor } from '@/lib/calendar-day-key';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { translateFor } from '@/lib/i18n/server-messages';
@@ -60,8 +60,25 @@ import { logger } from '@/lib/observability/logger';
 export const DIGEST_HOUR = 7;
 export const DIGEST_MINUTE = 15;
 
-/** How far back a digest looks. */
+/** How far back a digest looks for activity. */
 export const DIGEST_WINDOW_HOURS = 24;
+
+/**
+ * How long after 07:15 a digest may still go out.
+ *
+ * THE GATE IS A WINDOW AND NOT «HAS 07:15 PASSED», which is what the first
+ * draft of this file asked. An open-ended gate is true at 23:00, so somebody
+ * whose first activity of the day arrived at 22:00 — and who therefore had
+ * nothing to report at 07:15, so was never stamped — would be sent a MORNING
+ * digest late at night. A digest that arrives at the wrong end of the day is
+ * worse than no digest: #2941's own failure case is a recap arriving at 06:15
+ * half the year, and 23:00 is the same defect an hour-and-a-half further out.
+ *
+ * An hour against a 15-minute schedule means four chances to deliver, so a
+ * worker down for one beat still sends. After the window the day is simply
+ * missed, which is the correct outcome for a promise about the morning.
+ */
+export const DIGEST_DELIVERY_WINDOW_MINUTES = 60;
 
 export interface ChannelDigestResult {
     /** People eligible by preference, before the clock is considered. */
@@ -74,7 +91,7 @@ export interface ChannelDigestResult {
 }
 
 /**
- * Has the person's local 07:15 passed, on the day `now` falls in?
+ * Is `now` inside the local delivery window that opens at 07:15?
  *
  * Exported and PURE, so the boundary is testable without a database — and the
  * test uses an instant whose UTC hour and Sofia hour differ, because every
@@ -82,14 +99,17 @@ export interface ChannelDigestResult {
  */
 export function digestDueAt(now: Date): boolean {
     const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Europe/Sofia',
+        timeZone: FARM_TIME_ZONE,
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,
     }).formatToParts(now);
     const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
     const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
-    return hour > DIGEST_HOUR || (hour === DIGEST_HOUR && minute >= DIGEST_MINUTE);
+    const minutesOfDay = hour * 60 + minute;
+    const opens = DIGEST_HOUR * 60 + DIGEST_MINUTE;
+    return minutesOfDay >= opens
+        && minutesOfDay < opens + DIGEST_DELIVERY_WINDOW_MINUTES;
 }
 
 export async function runChannelDigest(
@@ -112,8 +132,41 @@ export async function runChannelDigest(
     const candidates = await runWithoutRls({ reason: 'channel-digest' }, (db) =>
         db.user.findMany({
             where: {
-                deletedAt: null,
                 suspendedAt: null,
+                /*
+                 * `User` HAS NO `deletedAt`, and the first draft of this
+                 * clause used one. It typechecked — an extended-client `where`
+                 * key is not caught by `tsc`, the same class as the five wrong
+                 * `select` keys P5.6a shipped — and failed at runtime as a
+                 * `PrismaClientValidationError`. The four lifecycle columns
+                 * are `suspendedAt`, `deletionRequestedAt`, `terminatedAt` and
+                 * `pseudonymisedAt`; verify a column against the schema, never
+                 * against a green typecheck.
+                 */
+                /*
+                 * An ERASED account is excluded, and `suspendedAt` does not
+                 * cover it. A moderation TERMINATION sets `suspendedAt`, but a
+                 * self-service erasure sets `deletionRequestedAt` and then
+                 * `pseudonymisedAt` — and never `suspendedAt` — so a person who
+                 * asked to be deleted and was, while opted in, would stay a
+                 * digest candidate for ever. P5.6b keeps the `User` row alive
+                 * deliberately (Art 17(3)(b)), which is exactly why "the row
+                 * exists" cannot be read as "there is somebody to notify".
+                 */
+                pseudonymisedAt: null,
+                /*
+                 * Somebody inside the 30-day deletion grace period is excluded
+                 * too. #1655's freeze does not name notifications — it stops
+                 * new content and hides their listings — so this is a product
+                 * call rather than that rule: a daily «here is what you
+                 * missed» nudge to a person who has asked to be deleted is the
+                 * wrong thing to send them.
+                 *
+                 * It is also non-destructive, which is what makes it the safe
+                 * direction: cancelling the request clears the column, so they
+                 * resume receiving digests with nothing to restore.
+                 */
+                deletionRequestedAt: null,
                 OR: [
                     { channelDigestOptIn: true },
                     { notificationPreferences: { some: { delivery: 'DAILY_DIGEST' } } },
@@ -125,13 +178,34 @@ export async function runChannelDigest(
     );
     reading.candidates = candidates.length;
 
-    // The clock gate is the SAME for everybody — 07:15 Europe/Sofia passes at
-    // one instant — so it is asked once rather than per person.
+    const todayFloor = farmTodayFloor(now);
+
+    /*
+     * THE CLOCK GATE IS THE SAME INSTANT FOR EVERYBODY — local 07:15 passes
+     * once — so it is asked ONCE, before the loop, and the run leaves.
+     *
+     * Two reasons it is not a per-person `continue` inside the loop. It would
+     * be a second clock read against a `now` that has since moved, so a run
+     * straddling 07:15 would send to some of its candidates and not others —
+     * a flake rather than a policy. And a loop that iterates every candidate
+     * to skip them all is the shape that later grows a send inside it: the
+     * first draft of this file did exactly that, and removing the `continue`
+     * while leaving the loop in place would have sent every digest at
+     * midnight with nothing failing.
+     *
+     * The reading is still emitted, so a run before 07:15 reports
+     * `dueNow: false` BESIDE its candidate count rather than looking like a
+     * run that found nobody.
+     */
     const dueNow = digestDueAt(now);
-    const todayFloor = new Date(`${today}T00:00:00.000Z`);
+    if (!dueNow) {
+        logger.info('channel_digest.reading', {
+            component: 'channel-digest', day: today, dueNow, ...reading,
+        });
+        return reading;
+    }
 
     for (const person of candidates) {
-        if (!dueNow) continue;
         // Already sent today. A DATE comparison, so a person whose digest went
         // out at 07:15 is not pushed again at 07:30.
         if (person.channelDigestSentOn

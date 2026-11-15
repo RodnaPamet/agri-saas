@@ -65,6 +65,11 @@
       "documented": true
     },
     {
+      "path": "/api/account/channel-digest",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/account/deletion",
       "status": "live",
       "documented": true

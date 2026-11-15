@@ -192,6 +192,25 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        /*
+         * EVERY 15 MINUTES, not once at 07:15 UTC, because the promise is a
+         * LOCAL time. `Europe/Sofia` is UTC+2 or UTC+3 depending on the
+         * season, so a fixed UTC hour drifts by one across DST — and #2941
+         * names exactly that as the failure: "silently shipping a digest that
+         * arrives at 06:15 half the year".
+         *
+         * So the schedule is dumb and the JOB holds the clock: it asks whether
+         * local time is inside the 07:15 delivery window and leaves otherwise.
+         * Four runs fall inside that window, so a worker down for one beat
+         * still delivers. Same shape as `statement-dispatch`, where the queue
+         * is a column rather than a schedule.
+         */
+        name: 'channel-digest',
+        pattern: '*/15 * * * *',
+        description: 'Send the opt-in 07:15 channel digest (#2941)',
+        defaultPayload: {},
+    },
+    {
         name: 'account-erasure-sweep',
         pattern: '15 4 * * *',
         description: 'Pseudonymise accounts 30 days after a deletion request (#1597)',
