@@ -52,6 +52,49 @@ const REAL_LEDGER = path.join(REPO_ROOT, 'tests/e2e/known-flakes.json');
 const POINTER_TITLE = 'points at a closed issue';
 const REVIEW_TITLE = 'due for review';
 
+/*
+ * §1 and §2 run against the REAL ledger, so every clock and count below is
+ * DERIVED from it rather than written down.
+ *
+ * The first version of this file hardcoded `today: '2026-11-18'` and
+ * `'3 due for review'`, because three entries carried that date. Doing the
+ * review those dates exist to force — re-arguing the entries and setting new
+ * dates, which is exactly what the guard's own failure message demands — then
+ * broke five tests that had nothing to say about the review. A probe whose
+ * tests punish acting on the probe is a probe people route around, and the
+ * dates in a ledger are supposed to move.
+ *
+ * What is asserted is the probe's BEHAVIOUR — that the boundary is inclusive,
+ * that the two checks close on their own axes, that a number is printed once,
+ * that a denominator rides along — none of which is a fact about which specs
+ * happen to be flaky this month.
+ */
+const REAL = JSON.parse(fs.readFileSync(REAL_LEDGER, 'utf8')) as {
+    flakes: Array<{ spec: string; title: string; issue: number; review: string }>;
+};
+const TOTAL = REAL.flakes.length;
+/** UTC throughout: a local-midnight shift would move a date across a day. */
+const shiftDays = (iso: string, by: number): string =>
+    new Date(Date.parse(`${iso}T00:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10);
+const daysBetween = (from: string, to: string): number =>
+    Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+const BY_REVIEW = [...REAL.flakes].sort((a, b) => (a.review < b.review ? -1 : 1));
+/** The nearest review date, and how many entries come due on it. */
+const EARLIEST = BY_REVIEW[0].review;
+const DUE_AT_EARLIEST = REAL.flakes.filter((f) => f.review <= EARLIEST).length;
+/*
+ * Every count below is matched with a WORD BOUNDARY, never `toContain`. A
+ * derived count makes the naive form unsafe in a way a literal one hid:
+ * `toContain('3 due for review')` is satisfied by output reading
+ * `13 due for review`, so a probe over-reporting by ten would pass.
+ */
+const FIRST_DUE = BY_REVIEW[0];
+/** One day either side of the whole set: nothing due, then everything due. */
+const BEFORE_ANY = shiftDays(EARLIEST, -1);
+const AFTER_ALL = shiftDays(BY_REVIEW[BY_REVIEW.length - 1].review, 1);
+/** An issue the ledger actually points at — §2 needs one to force CLOSED. */
+const A_LEDGERED_ISSUE = String(FIRST_DUE.issue);
+
 interface Scenario {
     /**
      * The clock. REQUIRED in every scenario that cares, because every review
@@ -167,57 +210,69 @@ function entry(over: Record<string, unknown> = {}) {
 
 describe('§1 the review-date check reports, and only when a date has arrived', () => {
     it('reports nothing while every date is in the future', () => {
-        const r = run({ today: '2026-11-10' });
+        const r = run({ today: BEFORE_ANY });
         expect(r.status).toBe(0);
-        expect(r.out).toContain('0 due for review');
+        expect(r.out).toMatch(/\b0 due for review\b/);
         expect(r.out).not.toContain('DRY RUN: would create');
     });
 
     it('reports an entry on the day its date arrives — not the day after', () => {
         // The boundary is the whole point of a date: `>` instead of `>=` makes
         // the probe a day late every time, and a day late reads as working.
-        const r = run({ today: '2026-11-18' });
+        const r = run({ today: EARLIEST });
         expect(r.status).toBe(0);
-        expect(r.out).toContain('3 due for review');
+        expect(r.out).toMatch(new RegExp(`\\b${DUE_AT_EARLIEST} due for review\\b`));
         expect(r.out).toContain(`DRY RUN: would create "Flake ledger: an entry is ${REVIEW_TITLE}"`);
+        // The control for the boundary: one day earlier, the same ledger and
+        // the same clock mechanism report nothing. Without it, "due on the day"
+        // is satisfied by a probe that reports every entry always.
+        expect(run({ today: BEFORE_ANY }).out).toMatch(/\b0 due for review\b/);
     });
 
     it('names every due entry, with its spec and how far past it is', () => {
-        const r = run({ today: '2027-02-01' });
-        expect(r.out).toContain('4 due for review');
-        // 2026-11-18 -> 2027-02-01 is 75 days. A table row nobody can act on
-        // without opening the ledger is the thing this report exists to avoid.
-        expect(r.out).toMatch(/\| #1076 \| 2026-11-18 \| 75 \|/);
-        expect(r.out).toContain('entity-detail-layout.spec.ts');
+        const r = run({ today: AFTER_ALL });
+        expect(r.out).toMatch(new RegExp(`\\b${TOTAL} due for review\\b`));
+        // A table row nobody can act on without opening the ledger is the thing
+        // this report exists to avoid, so the row must carry the issue, the date
+        // and the overdue count — derived here from the entry that comes due
+        // first, against a clock one day past the whole set.
+        const overdue = daysBetween(FIRST_DUE.review, AFTER_ALL);
+        expect(overdue).toBeGreaterThan(0);
+        expect(r.out).toContain(`| #${FIRST_DUE.issue} | ${FIRST_DUE.review} | ${overdue} |`);
+        expect(r.out).toContain(FIRST_DUE.spec);
     });
 
     it('prints the DENOMINATOR beside the finding', () => {
         // A count of due entries with no population beside it cannot tell "one
         // of four" from "one of forty" — and a ledger that silently shrank
         // would report 0 due and look healthy.
-        const r = run({ today: '2026-11-10' });
-        expect(r.out).toMatch(/\[flake-ledger\] 4 ledgered; 0 due for review as of 2026-11-10/);
+        const r = run({ today: BEFORE_ANY });
+        expect(r.out).toContain(`[flake-ledger] ${TOTAL} ledgered; 0 due for review as of ${BEFORE_ANY}`);
     });
 });
 
 describe('§2 each check files and closes on its OWN axis', () => {
     it('closes only the review issue when reviews clear but a pointer is stale', () => {
         const r = run({
-            today: '2026-11-10',
-            states: { 1862: 'CLOSED' },
+            today: BEFORE_ANY,
+            states: { [A_LEDGERED_ISSUE]: 'CLOSED' },
             tracking: { pointer: '111', review: '222' },
         });
         expect(r.status).toBe(0);
         // The review issue closes — nothing is due.
         expect(r.out).toContain('DRY RUN: would close #222');
-        // The pointer issue does NOT: #1862 is still closed. A single shared
-        // tracking issue could not express this, which is why there are two.
+        // The pointer issue does NOT: a ledgered issue is still closed. A single
+        // shared tracking issue could not express this, which is why there are
+        // two. The issue forced CLOSED is read off the ledger, because forcing a
+        // number the ledger does not reference makes this scenario a no-op that
+        // passes — the first version named #1862, and pruning that entry turned
+        // the test green for the wrong reason.
         expect(r.out).toContain('DRY RUN: would comment on #111');
         expect(r.out).not.toContain('would close #111');
     });
 
     it('closes only the pointer issue when pointers clear but a review is due', () => {
-        const r = run({ today: '2026-11-18', tracking: { pointer: '111', review: '222' } });
+        const r = run({ today: EARLIEST, tracking: { pointer: '111', review: '222' } });
         expect(r.out).toContain('DRY RUN: would close #111');
         expect(r.out).toContain('DRY RUN: would comment on #222');
         expect(r.out).not.toContain('would close #222');
@@ -226,13 +281,13 @@ describe('§2 each check files and closes on its OWN axis', () => {
     it('names the issue number ONCE', () => {
         // #42424242 — see the header. The expansion that produced it is
         // invisible in any assertion that only checks the number OCCURS.
-        const r = run({ today: '2026-11-18', tracking: { review: '4242' } });
+        const r = run({ today: EARLIEST, tracking: { review: '4242' } });
         expect(r.out).toContain('would comment on #4242 ');
         expect(r.out).not.toContain('#42424242');
     });
 
     it('creates rather than comments when no tracking issue is open', () => {
-        const r = run({ today: '2026-11-18' });
+        const r = run({ today: EARLIEST });
         expect(r.out).toContain('DRY RUN: would create');
         expect(r.out).not.toContain('would comment on');
     });
@@ -333,15 +388,19 @@ describe('§4 controls — the harness and the real ledger', () => {
         // Without this, every assertion in §1 could be satisfied by a probe
         // that reports 0 due unconditionally — because on any real day it
         // would be right. The two answers must DIFFER on one ledger.
-        const future = run({ today: '2026-11-10' }).out;
-        const arrived = run({ today: '2026-11-18' }).out;
-        expect(future).toContain('0 due for review');
-        expect(arrived).toContain('3 due for review');
+        const future = run({ today: BEFORE_ANY }).out;
+        const arrived = run({ today: EARLIEST }).out;
+        expect(future).toMatch(/\b0 due for review\b/);
+        expect(arrived).toMatch(new RegExp(`\\b${DUE_AT_EARLIEST} due for review\\b`));
         expect(future).not.toEqual(arrived);
+        // And the counts must genuinely differ, which `0` vs a derived number
+        // only guarantees while that number is non-zero. An empty ledger, or a
+        // derivation that resolved to 0, would satisfy both lines above.
+        expect(DUE_AT_EARLIEST).toBeGreaterThan(0);
     });
 
     it('the stub was actually called — a silent no-op would pass §1 otherwise', () => {
-        const r = run({ today: '2026-11-10' });
+        const r = run({ today: BEFORE_ANY });
         expect(r.calls.some((c) => c.startsWith('issue view'))).toBe(true);
         expect(r.calls.some((c) => c.startsWith('issue list'))).toBe(true);
     });

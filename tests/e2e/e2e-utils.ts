@@ -1621,7 +1621,7 @@ async function describeListState(page: Page): Promise<string> {
                                     + ` toolbarTop=${g.toolbarTop === -1 ? 'absent' : g.toolbarTop}`,
                             )
                             .join('\n                       ')
-            }`
+            }\n`
         );
     } catch (e) {
         return `  (diagnostics unavailable: ${(e as Error).message.slice(0, 80)})`;
