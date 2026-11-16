@@ -20683,6 +20683,14 @@
             "description": "Which feed the quotes came from, e.g. `ec` or `alpha-vantage`. Series from different sources are NOT interchangeable: they quote different stages in different currencies, which is why they arrive as separate series rather than merged.",
             "example": "ec"
           },
+          "sourceUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where this figure was published, for an attribution link — the МЗХ bulletin PDF that printed it, say. NULL for most series and that is not an omission: `ec-agrifood` and `alpha-vantage` are API feeds with no per-series page, and inventing a plausible URL for them would link to something that answers a different question from \"where does this number come from\". Render the attribution as plain text when it is null rather than guessing a home page.\n\nIt MOVES: a source that republishes weekly repoints it at the current issue, so it is the bulletin that printed the figure you are showing, not the first one ever read.",
+            "example": "https://www.mzh.government.bg/media/filer_public/2026/11/11/operativen_analiz_2026-11-11.pdf"
+          },
           "region": {
             "type": "string",
             "description": "A COUNTRY code, not a Bulgarian oblast. Production carries `BG`, `EL`, `RO`, `EU` and — for Alpha Vantage — `GLOBAL`. The oblast codes used by Борса and the parcel registry do not appear here.",
@@ -20724,6 +20732,7 @@
         },
         "required": [
           "source",
+          "sourceUrl",
           "region",
           "stage",
           "unit",

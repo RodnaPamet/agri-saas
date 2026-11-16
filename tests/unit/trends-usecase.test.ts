@@ -98,6 +98,47 @@ describe('getPriceTrends', () => {
         expect(listings.points).toEqual([{ date: '2025-01-13', price: 350, count: 4 }]);
     });
 
+    it('carries sourceUrl through to the payload, and null when the row has none', async () => {
+        /*
+         * The field exists because of a correction: asked whether the series
+         * carried a source URL, I checked the COLUMN — populated, and
+         * repointed every run — and answered yes. It was never on the wire, so
+         * a client could not have linked its attribution however long it
+         * waited. Existing is not mounted.
+         *
+         * Both arms in one case on purpose: a test that only asserted the
+         * populated one would pass if the mapper hard-coded a string, and one
+         * that only asserted null would pass if the field were dropped
+         * entirely.
+         */
+        mockFindMany.mockResolvedValue([
+            {
+                source: 'mzh',
+                sourceUrl: 'https://www.mzh.government.bg/x.pdf',
+                region: 'BG',
+                stage: 'PURCHASE',
+                unit: 'EUR/t',
+                currency: 'EUR',
+                label: 'Хлебна пшеница',
+                points: [{ date: d('2026-11-04'), price: 187, meta: null }],
+            },
+            {
+                source: 'ec-agrifood',
+                sourceUrl: null,
+                region: 'BG',
+                stage: null,
+                unit: 'EUR/t',
+                currency: 'EUR',
+                label: 'wheat',
+                points: [{ date: d('2026-11-04'), price: 183, meta: null }],
+            },
+        ]);
+        const out = await getPriceTrends('wheat', 'all', 'bg');
+        const bySource = new Map(out.series.map((s) => [s.source, s.sourceUrl]));
+        expect(bySource.get('mzh')).toBe('https://www.mzh.government.bg/x.pdf');
+        expect(bySource.get('ec-agrifood')).toBeNull();
+    });
+
     it('drops series that have zero points in the window', async () => {
         mockFindMany.mockResolvedValue([
             { source: 'alpha-vantage', region: 'GLOBAL', stage: null, unit: 'USD/t', currency: 'USD', label: 'x', points: [] },
