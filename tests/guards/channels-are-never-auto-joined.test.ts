@@ -115,6 +115,33 @@ const ALLOWLISTED_JOIN_SITES: readonly AllowlistedSite[] = [
             + 'POST/DELETE /api/social/channels/{id}/join, which resolve the '
             + 'person with `getUserCtx` before anything is written.',
     },
+    {
+        file: 'scripts/seed-load-channels.ts',
+        reason:
+            'P9.10 (#2944). A LOAD FIXTURE, and the thing this guard forbids is '
+            + 'joining a PERSON to a channel without their act — there is no '
+            + 'person here. Every `userId` it writes is a synthetic '
+            + '`u-load-p910-<n>` that matches no `User` row, which is possible '
+            + 'at all because P9.1 gave these tenantless tables bare string '
+            + 'person columns with no relation to `User`. That is also why the '
+            + 'criterion needs 2,000 ROWS rather than 2,000 accounts: the '
+            + 'number is the channel\'s SIZE, which is what '
+            + '`Channel.memberCount` and any membership-scoped query have to '
+            + 'cope with.\n\n'
+            + 'Three things keep it off a real database. `LOAD_SEED_CONFIRM` '
+            + 'must carry an exact phrase, so the command cannot be arrived at '
+            + 'by tab-completion or a copied history line — the guard that a '
+            + 'hostname allowlist could not be, since the throwaway VM is '
+            + 'restored FROM a production dump and no property of the '
+            + 'connection string separates them. Every row is addressable by '
+            + 'the `load-p910` prefix. And `--teardown` deletes BY ID from a '
+            + 'state file, never by a pattern that could match a real channel.\n\n'
+            + 'It is in the population rather than exempt from it for the '
+            + 'reason the seed-channels note above gives: a seeder holding a '
+            + 'member list is one `createMany` from becoming the auto-join this '
+            + 'guard exists to prevent, so the entry is the place that argument '
+            + 'has to be made rather than a file the scan never reaches.',
+    },
 ];
 
 /**

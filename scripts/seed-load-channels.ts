@@ -103,12 +103,6 @@ async function seed(): Promise<void> {
     if (!Number.isInteger(members) || members < 1) throw new Error('--members must be a positive integer');
     if (!Number.isInteger(posts) || posts < 0) throw new Error('--posts must be a non-negative integer');
 
-    if (fs.existsSync(STATE_FILE)) {
-        throw new Error(
-            `${STATE_FILE} already exists. Tear the previous seed down first — ` +
-                `two seeds would leave the first one's rows with nothing recording them.`,
-        );
-    }
 
     const flagBefore = await readFlag();
 
@@ -165,7 +159,28 @@ async function seed(): Promise<void> {
     }
 
     const state: SeedState = { channelId, channelKey, members, posts, flagBefore };
-    fs.writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+    /*
+     * `flag: 'wx'` — EXCLUSIVE create, so "does it already exist" and "write
+     * it" are ONE syscall rather than a check followed by a write.
+     *
+     * The previous shape was `existsSync` then `writeFileSync`, which CodeQL
+     * flags as a file-system race and is: two resolutions of one path, so a
+     * second seed starting in between would leave the first one's rows with
+     * nothing recording them — precisely the state the check exists to
+     * prevent. Same class as the `openSync`+`fstatSync` fix in
+     * `zarnoborsa-pull.ts`, and the third time this has come up here.
+     */
+    try {
+        fs.writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, { flag: 'wx' });
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+            throw new Error(
+                `${STATE_FILE} already exists. Tear the previous seed down first — ` +
+                    `two seeds would leave the first one's rows with nothing recording them.`,
+            );
+        }
+        throw err;
+    }
 
     // The DENOMINATOR, printed. #2944 asks for the round-trip count beside the
     // percentile for the run; the same rule applies to the fixture — "2,000
@@ -187,13 +202,25 @@ async function seed(): Promise<void> {
 }
 
 async function teardown(): Promise<void> {
-    if (!fs.existsSync(STATE_FILE)) {
-        throw new Error(
-            `No state file at ${STATE_FILE}. Teardown deletes only what a seed run ` +
-                `recorded, so there is nothing safe to do here.`,
-        );
+    /*
+     * ONE resolution of the path, not two. `existsSync` then `readFileSync`
+     * asks the filesystem the same question twice and the answer can change
+     * in between — so the ENOENT IS the "no state file" branch rather than a
+     * separate check that precedes it.
+     */
+    let raw: string;
+    try {
+        raw = fs.readFileSync(STATE_FILE, 'utf8');
+    } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+            throw new Error(
+                `No state file at ${STATE_FILE}. Teardown deletes only what a seed run ` +
+                    `recorded, so there is nothing safe to do here.`,
+            );
+        }
+        throw err;
     }
-    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) as SeedState;
+    const state = JSON.parse(raw) as SeedState;
 
     // BY ID, never by a participant-style query — #2944 names this: a channel
     // is tenantless, so deleting a load tenant cascades to nothing, and a
