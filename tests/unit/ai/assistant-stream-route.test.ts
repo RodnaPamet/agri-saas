@@ -400,6 +400,78 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(system).toMatch(/never print it in brackets/i);
     });
 
+    it('the system block carries the shared Bulgarian prose rules (#3090)', async () => {
+        /*
+         * This surface had NONE of them. It carried one line of its own —
+         * "Answer in the language of the question" — so it got the language
+         * roughly right and none of the anti-Russian-drift protection the
+         * «проверь» report produced, nor the register the catalogue uses
+         * unanimously (134 formal strings, zero informal).
+         *
+         * Asserted on the system message the route actually sends, not on the
+         * route's source: the question is whether the rules REACH the model.
+         */
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(...ask({ question: 'Кога да сея пшеница?' }));
+        const [, , opts] = completeWithRouting.mock.calls[0] as [
+            unknown,
+            unknown,
+            { messages: { role: string; content: string }[] },
+        ];
+        const system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+
+        // The register, which is what the owner was shown the wrong side of.
+        expect(system).toMatch(/Вие/);
+        expect(system).toMatch(/never the informal «ти»/i);
+        // The anti-drift clauses, which are the reason the shared constant
+        // exists at all.
+        expect(system).toMatch(/Bulgarian is NOT Russian/i);
+        expect(system).toMatch(/проверь is Russian/);
+        // Conditionally phrased, because this surface answers in the
+        // question's language rather than a locale resolved up front.
+        expect(system).toMatch(/If any part of your answer is in Bulgarian/i);
+    });
+
+    it('forbids inventing agronomic ADVICE, not only a figure (#3090)', async () => {
+        // "Never invent a figure" is about the farm's numbers, and the owner
+        // was given an uncited sowing window that satisfied it perfectly.
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(...ask({ question: 'Кога да сея?' }));
+        const [, , opts] = completeWithRouting.mock.calls[0] as [
+            unknown,
+            unknown,
+            { messages: { role: string; content: string }[] },
+        ];
+        const system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+        expect(system).toMatch(/agronomic ADVICE/);
+        expect(system).toMatch(/sowing window/i);
+        expect(system).toMatch(/rather than producing a plausible range/i);
+    });
+
+    it('names the SIDEREAL lunar calendar as the only lunar authority (#3090)', async () => {
+        /*
+         * The serious half of the report. `/api/lunar` is on main and serves
+         * sidereal root/leaf/flower/fruit day types; an assistant offering a
+         * different "fertile signs" tradition gives two answers about one day
+         * with nothing telling the farmer which is the product's.
+         */
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(...ask({ question: 'Днес плодороден ли е знакът?' }));
+        const [, , opts] = completeWithRouting.mock.calls[0] as [
+            unknown,
+            unknown,
+            { messages: { role: string; content: string }[] },
+        ];
+        const system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+        expect(system).toMatch(/SIDEREAL/);
+        expect(system).toMatch(/only lunar\s+authority/i);
+        expect(system).toMatch(/fertile signs/i);
+        expect(system).toMatch(/Лунен\s+календар/);
+    });
+
     it('the profile RULE is always in the system block, and the block only when there is one', async () => {
         completeWithRouting.mockResolvedValue({ text: 'ок' });
         const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
