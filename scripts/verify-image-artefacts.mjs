@@ -88,6 +88,7 @@
  *         (rootDir defaults to /app, the image's WORKDIR)
  */
 import { existsSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 /**
@@ -105,6 +106,28 @@ const ARTEFACTS = [
     { file: 'machine-listener.mjs', floor: 18_000, measured: 37_839, why: 'telemetry ingest' },
     { file: 'worker-healthcheck.mjs', floor: 800, measured: 1_734, why: 'the container healthcheck RUNS this; a missing one marks the worker unhealthy' },
     { file: 'zarnoborsa-fetch.mjs', floor: 3_500, measured: 7_490, why: '#3081 — the bundle that was never built, with no symptom but absent prices' },
+];
+
+/**
+ * System binaries the runtime SHELLS OUT TO, checked by RUNNING them (#3136).
+ *
+ * `pdftotext` comes from `poppler-utils`, added to the runner stage by owner
+ * ruling, and `mzh-prices-pull` executes it on every МЗХ bulletin. A missing
+ * one produces no build error and no startup error: the job downloads the PDF,
+ * the subprocess fails, and the run reports `unreadable` — which is also what
+ * a bulletin whose shape changed reports. The prices simply stop, weeks later,
+ * for a reason nothing names.
+ *
+ * RUN rather than located on PATH, because `existsSync` cannot tell an
+ * executable from a file, nor a working binary from one whose shared
+ * libraries did not come with it. `-v` prints a version and exits 0.
+ */
+const BINARIES = [
+    {
+        cmd: 'pdftotext',
+        args: ['-v'],
+        why: 'mzh-prices-pull extracts the МЗХ bulletin with it (#3136)',
+    },
 ];
 
 /**
@@ -181,13 +204,47 @@ for (const { file, floor, measured, why } of ARTEFACTS) {
     console.log(`[verify-image-artefacts]   OK   ${file} ${size} bytes (floor ${floor})`);
 }
 
+for (const { cmd, args, why } of BINARIES) {
+    const run = spawnSync(cmd, args, { encoding: 'utf8' });
+    /*
+     * THREE outcomes, not two. `error` is the binary not being runnable at
+     * all; a non-zero status is it running and refusing; and `status === null`
+     * means a signal or a timeout, which is the PROBE breaking rather than an
+     * answer about the image. Reading that third case as absence is how a
+     * broken probe silently disables a check — `db-probe`'s lesson, where
+     * `spawnSync` returning `status: null` on timeout turned a slow machine
+     * into "no database" and skipped every integration suite.
+     */
+    if (run.error) {
+        fail(`${cmd} could not be executed (${run.error.message}). ${why}.`);
+        failed += 1;
+        continue;
+    }
+    if (run.status === null) {
+        fail(`${cmd} did not finish (signal ${run.signal}); the probe could not look. ${why}.`);
+        failed += 1;
+        continue;
+    }
+    if (run.status !== 0) {
+        fail(`${cmd} ${args.join(' ')} exited ${run.status}. ${why}.`);
+        failed += 1;
+        continue;
+    }
+    const version = `${run.stdout}${run.stderr}`.trim().split('\n')[0] || '(no version line)';
+    console.log(`[verify-image-artefacts]   OK   ${cmd} runs — ${version}`);
+}
+
 if (failed > 0) {
-    fail(`${failed} of ${ARTEFACTS.length} artefact(s) missing or short.`);
+    fail(
+        `${failed} of ${ARTEFACTS.length} artefact(s) and ${BINARIES.length} binar(ies) `
+            + `missing, short or unrunnable.`,
+    );
     process.exit(1);
 }
 
 // The DENOMINATOR, printed. A green run over three artefacts and a green run
 // over six are the same line without it.
 console.log(
-    `[verify-image-artefacts] OK — ${ARTEFACTS.length} artefact(s) present and above floor`,
+    `[verify-image-artefacts] OK — ${ARTEFACTS.length} artefact(s) present and above floor, `
+        + `${BINARIES.length} binar(ies) runnable`,
 );

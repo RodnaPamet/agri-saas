@@ -236,7 +236,15 @@ describe('Infrastructure Regression Guards', () => {
             // digest's local-time gate, because nothing here is PROMISED to a
             // person — seasonal drift moves when prices appear, which the row
             // dates make visible.
-            expect(SCHEDULED_JOBS).toHaveLength(40);
+            // 40 -> 41 by #3136: `mzh-prices-pull`, 05:40 UTC daily. DAILY for a
+            // WEEKLY bulletin on purpose — МЗХ publishes on no fixed weekday
+            // (measured across six issues, the publish date trails the
+            // bulletin date by between zero and one day), so a weekly cron
+            // would have to guess and a guess that is a day out reports
+            // `no-bulletin`, which is indistinguishable from a week with no
+            // bulletin. Repetition is free because the point is keyed on the
+            // table's own «към» date.
+            expect(SCHEDULED_JOBS).toHaveLength(41);
         });
 
         test('scheduled job names match expected set', () => {
@@ -337,6 +345,7 @@ describe('Infrastructure Regression Guards', () => {
                 // from conversations gone quiet for 30 minutes. The queue is
                 // "no extractedAt", so an empty run costs one indexed query.
                 'memory-extract',
+                'mzh-prices-pull',
                 // P5.5b — every 15 minutes, scores unscored DSA notices for
                 // abuse likelihood. SHADOW MODE: written, and read by nothing
                 // that decides anything.

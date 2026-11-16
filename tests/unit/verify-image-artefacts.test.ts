@@ -14,7 +14,7 @@
  * above their floors.**
  */
 import { execFile } from 'child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -30,9 +30,57 @@ const REAL_SIZES: Record<string, number> = {
     'zarnoborsa-fetch.mjs': 7_490,
 };
 
-function run(root: string): Promise<{ code: number; out: string; err: string }> {
+/**
+ * A directory holding an executable `pdftotext` that prints a version.
+ *
+ * CI's runner has NO poppler — it is installed in the IMAGE, which is where
+ * the real script runs. So requiring the host to have it made this suite
+ * assert a property of the RUNNER, and three previously-green cases went red
+ * on the first push: the script now exits 1 before reaching any artefact, so
+ * "EXIT 0 on a complete tree" and "a bundle that GREW is fine" failed for a
+ * reason that had nothing to do with bundles.
+ *
+ * A stub keeps the assertion about the SCRIPT — does it run the binary and
+ * report its version — and leaves "is poppler actually in the image" to the
+ * in-image run in CI's docker job, which is the only place that question can
+ * honestly be answered.
+ */
+function stubPdftotextDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'stub-bin-'));
+    const bin = join(dir, 'pdftotext');
+    writeFileSync(bin, '#!/bin/sh\necho "pdftotext version 99.0.0 (stub)"\n');
+    chmodSync(bin, 0o755);
+    return dir;
+}
+
+/**
+ * PATH with the stub FIRST, so the script finds it wherever this runs.
+ *
+ * `over` is a plain string map rather than `NodeJS.ProcessEnv`: this repo's
+ * `ProcessEnv` requires `NODE_ENV`, so a `= {}` default does not satisfy it
+ * and `tsc` refuses the signature. The spread below starts from the real
+ * `process.env`, which supplies it.
+ */
+function envWithStub(over: Record<string, string> = {}): NodeJS.ProcessEnv {
+    return { ...process.env, PATH: `${stubPdftotextDir()}:${process.env.PATH ?? ''}`, ...over };
+}
+
+function run(
+    root: string,
+    env?: NodeJS.ProcessEnv,
+): Promise<{ code: number; out: string; err: string }> {
     return new Promise((resolve) => {
-        execFile('node', [SCRIPT, root], (e, stdout, stderr) => {
+        /*
+         * `process.execPath`, not `'node'`.
+         *
+         * The binary-check case below scrubs PATH to make `pdftotext`
+         * unfindable — and with `'node'` that also hid node from THIS spawn,
+         * so the child never started and stderr came back empty. The test
+         * then failed for the right reason by accident while proving nothing
+         * about the script. An absolute interpreter keeps PATH governing only
+         * the lookup under test.
+         */
+        execFile(process.execPath, [SCRIPT, root], { env: env ?? envWithStub() }, (e, stdout, stderr) => {
             const code = e && typeof (e as { code?: number }).code === 'number'
                 ? (e as { code: number }).code
                 : e ? 1 : 0;
@@ -155,6 +203,47 @@ describe('verify-image-artefacts.mjs — executed, not read', () => {
             expect(r.code).toBe(1);
             expect(r.err).toContain('worker.mjs is ABSENT');
             expect(r.err).not.toContain('not the app image');
+        });
+    });
+
+    describe('the BINARY check — #3136', () => {
+        it('reports pdftotext RUNNING, with its version', async () => {
+            // The control. A check that only ever printed a name would pass
+            // against a file that is not executable at all.
+            const { code, out } = await run(makeGoodTree());
+            expect(code).toBe(0);
+            expect(out).toMatch(/pdftotext runs — pdftotext version/);
+            // The stub's version, so this asserts the script REPORTED what the
+            // binary said rather than printing a constant.
+            expect(out).toMatch(/99\.0\.0 \(stub\)/);
+        });
+
+        it('EXIT 1 when pdftotext is not on PATH', async () => {
+            // The whole reason this check exists: a missing `poppler-utils`
+            // produces no build error and no startup error. The job would
+            // download the bulletin, the subprocess would fail, and the run
+            // would report `unreadable` — which a changed bulletin also
+            // reports. Scrubbing PATH is how that absence is simulated
+            // without uninstalling anything.
+            const { code, err } = await run(makeGoodTree(), {
+                ...process.env,
+                PATH: mkdtempSync(join(tmpdir(), 'empty-path-')),
+            });
+            expect(code).toBe(1);
+            expect(err).toMatch(/pdftotext could not be executed/);
+            expect(err).toMatch(/mzh-prices-pull/);
+        });
+
+        it('counts the binary in its own failure line, not among the artefacts', async () => {
+            // A diagnosis that said "1 of 6 artefacts" for a missing binary
+            // would send an operator looking at `dist/` — the
+            // `uniform-failure-shape-blinds-the-client` shape the control
+            // above the artefact loop exists to prevent.
+            const { err } = await run(makeGoodTree(), {
+                ...process.env,
+                PATH: mkdtempSync(join(tmpdir(), 'empty-path-')),
+            });
+            expect(err).toMatch(/binar\(ies\) missing, short or unrunnable/);
         });
     });
 

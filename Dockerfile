@@ -219,7 +219,19 @@ ENV NEXT_TELEMETRY_DISABLED=1
 #
 # `upgrade` FIRST, then `add`: upgrading afterwards would leave whatever `add`
 # had just resolved against the stale index.
-RUN apk upgrade --no-cache && apk add --no-cache openssl
+#
+# `poppler-utils` supplies `pdftotext`, which `mzh-prices-pull` shells out to
+# (#3136). Owner ruling 2026-11-16, over a JavaScript PDF library and over
+# extending the ZarnoBorsa sidecar: `-layout` is what preserves the bulletin
+# table's COLUMNS, and column order is the only thing identifying the current
+# week's figure among five numbers in a row. It is also the tool the parser's
+# fixture was produced with, so what production extracts is byte-identical to
+# what the tests assert on.
+#
+# One apt-class dependency at IMAGE BUILD time rather than per run — the
+# distinction #3001 is open about for CI's per-job PGDG fetch. Alpine's `apk`
+# rather than Debian's `apt`, so it is not the same index that outage hit.
+RUN apk upgrade --no-cache && apk add --no-cache openssl poppler-utils
 
 # Non-root user
 RUN addgroup --system --gid 1001 nodejs && \

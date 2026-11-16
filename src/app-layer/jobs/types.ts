@@ -1028,6 +1028,18 @@ export interface ChannelDigestPayload {
  * `tenantId`, so `job-scope-audit` records it as platform-scoped rather than
  * as a job that forgot one.
  */
+/**
+ * mzh-prices-pull — МЗХ's weekly «Оперативен анализ» purchase prices (#3136).
+ *
+ * Tenantless, like its ZarnoBorsa sibling: `MarketPriceSeries` is a global
+ * catalogue with no `tenantId`, so `job-scope-audit` records it as
+ * platform-scoped rather than as a job that forgot one.
+ */
+export interface MzhPricesPullPayload {
+    /** No arguments — the bulletin to read and the clock are the job's own. */
+    _?: never;
+}
+
 export interface ZarnoBorsaPullPayload {
     /** No arguments — the path and the clock are the job's own. */
     _?: never;
@@ -1162,6 +1174,7 @@ export interface JobPayloadMap {
     'channel-cards': ChannelCardsPayload;
     'channel-digest': ChannelDigestPayload;
     'zarnoborsa-pull': ZarnoBorsaPullPayload;
+    'mzh-prices-pull': MzhPricesPullPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'mail-canary': MailCanaryPayload;
@@ -1313,6 +1326,24 @@ export const JOB_DEFAULTS: Record<JobName, {
         // job's own retry count, so a night whose Redis job was lost is
         // recovered by the following night rather than stranded. The cost is
         // latency, not loss.
+        attempts: 1,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'mzh-prices-pull': {
+        /*
+         * ONE attempt, and NOT for its sibling's reason.
+         *
+         * `zarnoborsa-pull` uses 1 because a retry re-reads the same handoff
+         * file and reaches the same verdict. Here a retry would re-DOWNLOAD a
+         * ~350 KB PDF from a government site and re-run a subprocess over it,
+         * so a transient failure is better served by the next scheduled run
+         * than by hammering МЗХ three times in a minute. The upsert is keyed
+         * on the table's own date, so a later run stores the same figures
+         * rather than duplicating them — which is what makes the next run a
+         * real retry rather than a hope.
+         */
         attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
