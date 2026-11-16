@@ -73,7 +73,14 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                 .object({
                     region: z.enum(['north', 'south']),
                     schemaVersion: z.number(),
-                    compiledAt: z.string().openapi({ example: '2026-11-16' }),
+                    compiledAt: z.string().openapi({
+                        // DAY resolution, which `timestamps-declare-their-format`
+                        // accepts as `format: date` — the dataset is compiled on a
+                        // day, not at an instant, and `date-time` would invent a
+                        // precision the value does not have.
+                        format: 'date',
+                        example: '2026-11-16',
+                    }),
                     conventions: z.array(z.string()).openapi({
                         description:
                             'The authoring rules this dataset was compiled under. Shipped with the data so a reader can see what the citations are worth.',
@@ -107,6 +114,13 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                                         description: 'Always present for `sowing`.',
                                     }),
                                     region: z.enum(['north', 'south', 'both']),
+                                    // `MM-DD`, deliberately NOT `format: date`:
+                                    // these recur annually and carry no year, so
+                                    // declaring them a date would be a false
+                                    // declaration a generated client would act on
+                                    // by parsing them. The absence is the honest
+                                    // answer here, and the format guard agrees —
+                                    // it does not ask for one.
                                     from: z.string().openapi({ example: '09-25' }),
                                     to: z.string().openapi({ example: '10-10' }),
                                     title: z

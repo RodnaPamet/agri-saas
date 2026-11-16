@@ -1358,6 +1358,7 @@
           },
           "compiledAt": {
             "type": "string",
+            "format": "date",
             "example": "2026-11-16"
           },
           "conventions": {
