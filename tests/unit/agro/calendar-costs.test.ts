@@ -22,7 +22,15 @@
  * could not have. The iOS session proposed that check; it is the reason
  * `publishedTotal` is in the schema.
  */
-import { BGN_PER_EUR, CALENDAR_COST_LINES, perDaEurCents } from '@/lib/agro/calendar/costs';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import {
+    BGN_PER_EUR,
+    CALENDAR_COST_LINES,
+    MAX_PUBLISHED_STOTINKI,
+    perDaEurCents,
+} from '@/lib/agro/calendar/costs';
 import { CALENDAR, calendarFor, servedCosts, validateDataset } from '@/lib/agro/calendar/load';
 
 /** The shipped dataset, deep-cloned so a mutation cannot leak between tests. */
@@ -151,6 +159,74 @@ describe('§2 the euro derivation', () => {
             expect(perDaEurCents(417779, area)).toBeNull();
         }
         expect(perDaEurCents(Number.NaN, 100)).toBeNull();
+    });
+
+    it('refuses a figure too large to convert EXACTLY, rather than losing precision', () => {
+        // The guarantee integer arithmetic buys is exactness, so the one input
+        // that would break it is refused instead of silently rounded by the
+        // float path it no longer has. The vine card's largest figure is its
+        // total, four orders of magnitude inside this bound.
+        expect(perDaEurCents(MAX_PUBLISHED_STOTINKI, 100)).not.toBeNull();
+        expect(perDaEurCents(MAX_PUBLISHED_STOTINKI + 1, 100)).toBeNull();
+        expect(vine().publishedTotal).toBeLessThan(MAX_PUBLISHED_STOTINKI);
+    });
+
+    it('refuses a non-integer figure or area outright', () => {
+        // Integer in, integer out. A fractional стотинка is not a thing the
+        // card can print, and accepting one would reintroduce the float.
+        expect(perDaEurCents(4177.79, 100)).toBeNull();
+        expect(perDaEurCents(417779, 100.5)).toBeNull();
+        expect(perDaEurCents(-1, 100)).toBeNull();
+    });
+
+    it('[calendar-costs] does the arithmetic in INTEGERS, not through the float peg', () => {
+        /*
+         * The house rule: "money is integer CENTS and rates are BASIS POINTS —
+         * never a float". `BGN_PER_EUR` is a float and exists so the rate is
+         * readable in one place; the computation uses `PEG_NUMERATOR` over
+         * `PEG_SCALE` instead.
+         *
+         * Asserted on the SOURCE because the two forms agree on every figure
+         * this card publishes — the agrent-ios session confirmed all six with
+         * Decimal arithmetic — so no behavioural test can tell them apart. The
+         * risk is a future edit reaching for the readable constant.
+         */
+        const src = fs.readFileSync(
+            path.resolve(__dirname, '../../../src/lib/agro/calendar/costs.ts'),
+            'utf8',
+        );
+        const body = src.slice(src.indexOf('export function perDaEurCents'));
+        const code = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+        console.log(`[calendar-costs] perDaEurCents body: ${code.split('\n').length} line(s) of code`);
+        expect(code).toContain('PEG_NUMERATOR');
+        expect(code).toContain('PEG_SCALE');
+        // The float must not appear in the function at all.
+        expect(code).not.toContain('BGN_PER_EUR');
+        expect(code).not.toMatch(/1\.95583/);
+    });
+
+    it('rounds half UP — pinned at the only kind of input that can show it', () => {
+        /*
+         * A mutation to half-DOWN passed every other test, and that is a
+         * property of the arithmetic rather than a gap in them.
+         *
+         * At the card's basis of 100 дка the exact quotient can NEVER land on
+         * a .5 boundary: it would need `2·st·100000 = odd·100·195583`, and
+         * since `gcd(100000, 195583) = 1` with the peg odd, that forces
+         * `st = odd × 97.7915` — not an integer. So for every figure any
+         * 100-дка card can print, half-up and half-down agree, and the
+         * direction is unobservable.
+         *
+         * It becomes observable at a contrived area, which is where the
+         * direction gets pinned. The iOS session renders half-up, so the two
+         * sides must agree on it even though today's data cannot reveal a
+         * disagreement.
+         */
+        // Exactly 0.5 euro cents: 195583 стотинки over 200 000 дка.
+        expect(perDaEurCents(195583, 200000)).toBe(1);
+        // And a hair either side, so this is a boundary and not a constant.
+        expect(perDaEurCents(195582, 200000)).toBe(0);
+        expect(perDaEurCents(195584, 200000)).toBe(1);
     });
 
     it('uses the legally fixed rate, not a market one', () => {

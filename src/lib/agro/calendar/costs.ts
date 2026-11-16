@@ -63,16 +63,48 @@ export const CALENDAR_COST_LINES = [
 export type CalendarCostLine = (typeof CALENDAR_COST_LINES)[number];
 
 /**
+ * The peg as an integer numerator over {@link PEG_SCALE} — 1.95583 exactly.
+ *
+ * The house rule is "money is integer CENTS and rates are BASIS POINTS —
+ * never a float". Basis points are the wrong unit here: 1.95583 is 19 558.3
+ * of them, so the peg needs a 1/100 000 scale to be exact. These two integers
+ * are that; {@link BGN_PER_EUR} above exists so the rate is readable and
+ * assertable in one place, and is not used in arithmetic.
+ */
+const PEG_NUMERATOR = 195583;
+const PEG_SCALE = 100000;
+
+/**
+ * The largest published figure this can convert exactly.
+ *
+ * Past it the intermediate would exceed `Number.MAX_SAFE_INTEGER` and the
+ * arithmetic would stop being exact — which is the one property integer
+ * arithmetic is here for, so `perDaEurCents` refuses rather than silently
+ * losing precision. The vine card's largest figure is its total, 11 109 297,
+ * against this bound of 45 035 996 273 — a margin of about 4 000x.
+ */
+export const MAX_PUBLISHED_STOTINKI = Math.floor(Number.MAX_SAFE_INTEGER / (PEG_SCALE * 2));
+
+/**
  * Euro cents per decare, from a published стотинки figure for an area.
  *
- * Integer arithmetic to the last step, then one `Math.round`. The input is
- * стотинки (integer), so the only division is the final one and there is
- * exactly one rounding — which is what makes the server the single authority
- * on the figure a client renders.
+ * INTEGER ARITHMETIC THROUGHOUT, with one round-half-up at the end —
+ * `floor((2·num + den) / (2·den))`, the same shape `quotePremium` uses for
+ * insurance premiums and for the same reason: the house rule forbids a float
+ * in a money path, so nobody has to reason about whether a division landed a
+ * hair under a rounding boundary.
+ *
+ * It changes no number today. Measured equal to the float form on every
+ * figure the vine card publishes — 2136, 16590, 30260, 2600, 5215, total
+ * 56801 — and the agrent-ios session reached the same six independently with
+ * Decimal arithmetic. What it removes is the need to trust that it never will.
  */
 export function perDaEurCents(publishedStotinki: number, areaDa: number): number | null {
-    if (!Number.isFinite(publishedStotinki) || !Number.isFinite(areaDa) || areaDa <= 0) {
-        return null;
-    }
-    return Math.round(publishedStotinki / areaDa / BGN_PER_EUR);
+    if (!Number.isInteger(publishedStotinki) || publishedStotinki < 0) return null;
+    if (!Number.isInteger(areaDa) || areaDa <= 0) return null;
+    if (publishedStotinki > MAX_PUBLISHED_STOTINKI) return null;
+    const numerator = publishedStotinki * PEG_SCALE;
+    const denominator = areaDa * PEG_NUMERATOR;
+    // Half UP, matching how the card presents its own figures.
+    return Math.floor((2 * numerator + denominator) / (2 * denominator));
 }
