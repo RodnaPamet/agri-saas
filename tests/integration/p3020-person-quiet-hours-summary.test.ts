@@ -4,7 +4,14 @@
  *
  * Owner ruling 2026-11-14, two parts: hold-and-summarise rather than drop, and
  * the summary's link is CONDITIONAL — exactly one held item links to that
- * item, several carry no link at all.
+ * item.
+ *
+ * The second part's "several carry no link at all" EXPIRED when
+ * `/channels/for-you` shipped (#3069): several items that are all channel
+ * activity now link there (#3074). A mixed night, and a night of direct
+ * messages alone, still carry none — «За Вас» renders no DMs, so the
+ * conservative half of the ruling survives exactly where no surface shows the
+ * population. #3133 is the open destination question for all-DM.
  *
  * ## What this file can and cannot prove
  *
@@ -286,7 +293,14 @@ describeFn('#3020 — a held person push becomes one 06:00 summary', () => {
             })).toBe(0);
         }, 60_000);
 
-        it('sends NO link when several items are held', async () => {
+        it('sends NO link when the night is MIXED', async () => {
+            // This case is unchanged by #3074 and its expectation was never
+            // stale: a mention plus a direct message has no surface that
+            // renders both, so the original ruling still governs it. #3074
+            // asked for this assertion to be INVERTED — correct for a
+            // count-based rule, wrong for the kind-aware one, because the
+            // scenario it holds is mixed rather than all-channel. Renamed so
+            // the next reader cannot mistake it for the several-items rule.
             fakeNow(OUTSIDE);
             await hold(HELD, { kind: 'CHANNEL_MENTION', channelId: 'ch-9', postId: 'po-9' });
             await hold(HELD, { kind: 'DIRECT_MESSAGE', conversationId: 'cv-1' });
@@ -296,9 +310,53 @@ describeFn('#3020 — a held person push becomes one 06:00 summary', () => {
 
             const sends = enqueuedOf('person-push-send');
             expect(sends).toHaveLength(1);
-            // The owner's rule: no destination is invented for a mixed night.
+            // No destination is invented for a mixed night.
             expect(sends[0]!.farmRelativePath).toBeNull();
             expect(String(sends[0]!.body)).toContain('Нови през нощта: 2');
+        }, 60_000);
+
+        it('links to «За Вас» when several items are ALL channel activity', async () => {
+            // #3074 — the premise of the no-link rule expired when
+            // `/channels/for-you` shipped (#3069), which renders exactly this
+            // population.
+            fakeNow(OUTSIDE);
+            await hold(HELD, { kind: 'CHANNEL_MENTION', channelId: 'ch-9', postId: 'po-9' });
+            await hold(HELD, { kind: 'CHANNEL_REPLY', channelId: 'ch-9', postId: 'po-8' });
+
+            const r = await runSummary(HELD);
+            expect(r).toEqual({ count: 2, delivered: 1 });
+            expect(enqueuedOf('person-push-send')[0]!.farmRelativePath)
+                .toBe('/channels/for-you');
+        }, 60_000);
+
+        it('sends NO link for a night of direct messages alone', async () => {
+            // The case that makes the rule kind-aware rather than count-based:
+            // «За Вас» renders no direct messages, so linking there would show
+            // this person NONE of what they were told about. #3133 carries
+            // whether `/exchange/threads` should serve it.
+            fakeNow(OUTSIDE);
+            await hold(HELD, { kind: 'DIRECT_MESSAGE', conversationId: 'cv-1' });
+            await hold(HELD, { kind: 'DIRECT_MESSAGE', conversationId: 'cv-2' });
+
+            const r = await runSummary(HELD);
+            expect(r).toEqual({ count: 2, delivered: 1 });
+            expect(enqueuedOf('person-push-send')[0]!.farmRelativePath).toBeNull();
+        }, 60_000);
+
+        it('reads EVERY unsettled row, not the two it fetched', async () => {
+            // The bug the bounded count exists to prevent. `rows` is
+            // `take: 2`, so two mentions followed by a DM looks all-channel
+            // from the fetched rows alone — and the DM is plausibly the item
+            // that mattered. Three rows, the DM third, so a kinds scan over
+            // `rows` would send this to «За Вас».
+            fakeNow(OUTSIDE);
+            await hold(HELD, { kind: 'CHANNEL_MENTION', channelId: 'ch-9', postId: 'po-1' });
+            await hold(HELD, { kind: 'CHANNEL_MENTION', channelId: 'ch-9', postId: 'po-2' });
+            await hold(HELD, { kind: 'DIRECT_MESSAGE', conversationId: 'cv-3' });
+
+            const r = await runSummary(HELD);
+            expect(r).toEqual({ count: 3, delivered: 1 });
+            expect(enqueuedOf('person-push-send')[0]!.farmRelativePath).toBeNull();
         }, 60_000);
 
         it('links to the conversation when the one item is a direct message', async () => {
