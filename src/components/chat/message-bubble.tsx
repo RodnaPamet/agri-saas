@@ -94,6 +94,17 @@ import { useDateFormat } from '@/lib/i18n/use-date-format';
 
 export interface MessageBubbleProps {
     readonly body: string | null;
+    /**
+     * An optional action rendered under the body — a channel card's «Отвори»
+     * (#3063). A real `<a>`, so it is keyboard reachable and the browser's own
+     * open-in-new-tab works; never a `<div onClick>`.
+     *
+     * NOT rendered on a deleted message, for the same reason P5.3 does not
+     * offer «Сигнализирай» on one: there is nothing left to open, and a link
+     * to the source of content that has been taken down is the one place it
+     * would still be reachable.
+     */
+    readonly action?: { label: string; href: string } | null;
     readonly createdAt: Date;
     readonly editedAt?: Date | null;
     readonly deletedAt?: Date | null;
@@ -167,6 +178,7 @@ export interface MessageBubbleProps {
 
 export function MessageBubble({
     body,
+    action,
     createdAt,
     editedAt,
     deletedAt,
@@ -313,6 +325,42 @@ export function MessageBubble({
                     )}
                 >
                     {isDeleted ? t('messageDeleted') : body}
+                    {/*
+                      * The action, INSIDE the bubble and under the body.
+                      *
+                      * `rel="noreferrer"` as well as `noopener`: the target is
+                      * a third-party news site, and the referrer would
+                      * otherwise carry the tenant-scoped channel URL the
+                      * reader was on.
+                      *
+                      * `text-content-accent` and `underline` rather than a
+                      * `<Button>`: this is a link to elsewhere, not an action
+                      * on the post, and the button vocabulary (Epic 51) is for
+                      * the latter. `focus-visible` is explicit because the
+                      * bubble sets its own tones and an inherited outline is
+                      * easy to lose.
+                      */}
+                    {!isDeleted && action ? (
+                        <a
+                            href={action.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={cn(
+                                'mt-tight block text-xs font-[560] underline',
+                                // `content-link`, not `content-accent` — there is
+                                // no such token, and Tailwind emits NOTHING for a
+                                // class naming one, so the link rendered in the
+                                // inherited bubble colour with no error anywhere.
+                                // jsdom has no Tailwind, so the rendered suite
+                                // cannot see this; `no-renegade-color-tokens` can.
+                                'text-content-link',
+                                'focus-visible:outline focus-visible:outline-2',
+                                'focus-visible:outline-offset-2',
+                            )}
+                        >
+                            {action.label}
+                        </a>
+                    ) : null}
                 </div>
 
                 <div
