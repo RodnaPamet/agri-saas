@@ -259,6 +259,72 @@ describe('absent vs unavailable — the decision this module exists for (#2421)'
         expect([...store.keys()].some((k) => k.startsWith('ortho:absent:'))).toBe(true);
     });
 
+    it('#3091 — a blank COVERAGE year falls back to an older year that has pixels', async () => {
+        /*
+         * The owner's "it does not work again", reproduced. Measured against
+         * the live service 2026-11-16 over farmland near Plovdiv:
+         *
+         *     Dates_2024        1 feature   -> coverage chose 2024
+         *     Orthoimagery_2024   909 bytes -> the source's BLANK tile
+         *     Orthoimagery_2023  7563 bytes -> real pixels
+         *
+         * The old code took the blank as final, cached it for a DAY, and the
+         * map stayed blank over an area with imagery one year back.
+         */
+        const { impl, seen } = router({
+            dates: (y) => jsonRes(coverageBody(y === 2024 ? 1 : 0)),
+            tile: (y) => (y === 2024 ? bytesRes(909) : bytesRes(7563)),
+        });
+        const t = await fetchOrthoTile(ctx, TILE.z, TILE.x, TILE.y, { fetchImpl: impl });
+
+        expect(t.kind).toBe('image');
+        // The year it SERVED, not the year coverage chose — a client renders
+        // the attribution from this.
+        expect(t.kind === 'image' && t.year).toBe(2023);
+        // And nothing was remembered as absent: the place has imagery.
+        expect([...store.keys()].some((k) => k.startsWith('ortho:absent:'))).toBe(false);
+        // It really did try the coverage year first.
+        expect(seen.some((u) => u.includes('Orthoimagery_2024'))).toBe(true);
+        expect(seen.some((u) => u.includes('Orthoimagery_2023'))).toBe(true);
+    });
+
+    it('#3091 — every candidate blank is STILL absent, and still remembered', async () => {
+        // The case the old comment was right about: an edge of every flight
+        // block we serve. The fallback must not turn a real absence into an
+        // endless walk, and the negative must still be cached or every
+        // uncovered tile re-asks the upstream for ever.
+        const { impl, seen } = router({
+            dates: (y) => jsonRes(coverageBody(y === 2024 ? 1 : 0)),
+            tile: () => bytesRes(909),
+        });
+        const t = await fetchOrthoTile(ctx, TILE.z, TILE.x, TILE.y, { fetchImpl: impl });
+
+        expect(t.kind).toBe('absent');
+        expect([...store.keys()].some((k) => k.startsWith('ortho:absent:'))).toBe(true);
+        // BOUNDED: three probes, not six. This runs per tile on a cache miss,
+        // and a screenful of tiles walking every year is a burst at a
+        // government service.
+        const tileCalls = seen.filter((u) => u.includes('Orthoimagery_')).length;
+        expect(tileCalls).toBeLessThanOrEqual(3);
+    });
+
+    it('#3091 — an UNAVAILABLE upstream stops the walk instead of concluding absence', async () => {
+        /*
+         * An outage says nothing about which year has pixels. Continuing would
+         * turn one failure into three requests and then cache a fact about the
+         * PLACE derived from a fact about the SERVICE — which is the
+         * distinction this whole module exists for (#2421).
+         */
+        const { impl } = router({
+            dates: (y) => jsonRes(coverageBody(y === 2024 ? 1 : 0)),
+            tile: () => new Response('nope', { status: 502 }),
+        });
+        const t = await fetchOrthoTile(ctx, TILE.z, TILE.x, TILE.y, { fetchImpl: impl });
+
+        expect(t.kind).toBe('unavailable');
+        expect([...store.keys()].some((k) => k.startsWith('ortho:absent:'))).toBe(false);
+    });
+
     it('no covering year is absent, and is remembered', async () => {
         const { impl } = router({ dates: () => jsonRes(coverageBody(0)) });
         const t = await fetchOrthoTile(ctx, TILE.z, TILE.x, TILE.y, { fetchImpl: impl });

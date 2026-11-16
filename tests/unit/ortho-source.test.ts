@@ -27,6 +27,30 @@ import {
 const BASE = 'http://example.test/geoserver/ows';
 const BBOX = { west: 24.39, south: 43.07, east: 24.41, north: 43.09 };
 
+describe('#3091 — the absent key carries a version, and it moved', () => {
+    it('is v2, so absences recorded under the OLD rule are discarded', () => {
+        /*
+         * The bump is what makes #3091's fix take effect rather than merely
+         * be correct. A remembered absence outlives its cause by
+         * ABSENT_TTL_SECONDS — a whole day — so a resolver change alone would
+         * leave the first request after a deploy still serving the blank the
+         * old code cached, which reads as "the fix did not work".
+         *
+         * Asserted HERE and not in `ortho-imagery.test.ts`, which MOCKS this
+         * module: an assertion there would be grading the mock. Same reason a
+         * dependency bump needs a path that runs the real thing.
+         */
+        expect(orthoTileAbsentKey(12, 2345, 1456)).toContain(':v2:');
+    });
+
+    it('still separates tiles from one another and from the tile cache', () => {
+        // A version bump must not collapse the keyspace: two tiles sharing an
+        // absence key would make one uncovered tile hide a covered neighbour.
+        expect(orthoTileAbsentKey(12, 1, 1)).not.toBe(orthoTileAbsentKey(12, 1, 2));
+        expect(orthoTileAbsentKey(12, 1, 1)).not.toBe(orthoTileCacheKey(2024, 12, 1, 1));
+    });
+});
+
 describe('the year window (#2421)', () => {
     it('searches SIX years, newest first, not three', () => {
         // The relayed shape said "the newest of the last three years". At the

@@ -285,7 +285,21 @@ export function orthoTileCacheKey(year: number, z: number, x: number, y: number)
  * flight year does, so this expires sooner than a tile does.
  */
 export function orthoTileAbsentKey(z: number, x: number, y: number): string {
-    return `ortho:absent:v1:${z}:${x}:${y}`;
+    /*
+     * v1 -> v2 by #3091, and the bump is what makes the fix take effect.
+     *
+     * A remembered absence outlives its cause by `ABSENT_TTL_SECONDS` — a
+     * whole day — so a resolver change alone would leave the first request
+     * after a deploy still serving the blank that the old code cached. That
+     * reads as "the fix did not work", which is the worst way for a fix to
+     * arrive.
+     *
+     * Bumping the version discards every absence recorded under the old,
+     * wrong rule in one move, without an invalidation script that would have
+     * to know which areas were affected. Same lever as `SWR_CACHE_VERSION`:
+     * the only thing that removes what is already written.
+     */
+    return `ortho:absent:v2:${z}:${x}:${y}`;
 }
 
 /** Coverage answers are per AREA, so the key is the rounded bbox. */
