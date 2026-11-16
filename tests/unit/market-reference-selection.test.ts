@@ -226,16 +226,25 @@ describe('МЗХ ranks above EC and below ZarnoBorsa (#3136)', () => {
         }
     });
 
-    it('CONTROL — an МЗХ row is SELECTED at all', async () => {
-        // The half that hides. A source missing from the query's
-        // `source: { in: [...] }` is never selected, so it is invisible
-        // rather than outranked — and #3136's first version had the rank and
-        // not the filter. With МЗХ as the only series, an unselected source
-        // yields NOTHING, which no ranking assertion above could distinguish
-        // from a ranking mistake.
-        feedRows([series({ id: 'mzh', stage: 'PURCHASE', price: 188, source: 'mzh' })]);
-        const refs = await getMarketReferences(['wheat']);
-        expect(refs.get('wheat')?.pricePerTonne).toBe(188);
+    it('the QUERY asks for mzh — the half the ranking tests cannot see', async () => {
+        // A source missing from `source: { in: [...] }` is never SELECTED, so
+        // it is invisible to the resolver rather than merely outranked, and
+        // #3136's first version had the rank and not the filter.
+        //
+        // This has to be asserted on the QUERY ARGUMENT, and my first attempt
+        // got that wrong in a way worth recording: it fed an МЗХ row and
+        // checked the answer was 188, under the name "an МЗХ row is SELECTED
+        // at all". That test cannot fail for a missing filter — `feedRows`
+        // mocks `findMany`, so the `where` clause never runs and the rows
+        // arrive whatever it says. Dropping mzh from the filter left it green.
+        // A mocked dependency cannot report that the dependency changed.
+        feedRows([]);
+        await getMarketReferences(['wheat']);
+        const arg = mockFindMany.mock.calls[0][0];
+        expect(arg.where.source.in).toContain('mzh');
+        // Beside its neighbours, so a filter narrowed to mzh alone fails too.
+        expect(arg.where.source.in).toContain('zarnoborsa');
+        expect(arg.where.source.in).toContain('ec-agrifood');
     });
 });
 
