@@ -45,7 +45,13 @@ const mockPrisma = {
     // mistaken for the block refusing the wrong party.
     exchangeMessage: { findMany: jest.fn(), count: jest.fn() },
     exchangeThreadRead: { updateMany: jest.fn(), create: jest.fn(), findFirst: jest.fn() },
-    user: { findMany: jest.fn() },
+    // `findUnique` for #2755: `requireParty` reads the counterparty's
+    // `deletionRequestedAt` on the caller's own transaction. null means
+    // AVAILABLE, which is the right default for a suite about blocks — and
+    // the delegate has to EXIST, because a mock without it throws
+    // `db.user.findUnique is not a function` and the failure reads as the
+    // block logic breaking.
+    user: { findMany: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
 };
 
 jest.mock('@/lib/db-context', () => ({
