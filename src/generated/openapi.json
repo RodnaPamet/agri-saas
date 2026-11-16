@@ -7702,6 +7702,9 @@
           "blocked": {
             "type": "boolean"
           },
+          "counterpartyUnavailable": {
+            "type": "boolean"
+          },
           "unreadCount": {
             "type": "integer"
           },
@@ -7726,6 +7729,7 @@
           "lastMessageAt",
           "closed",
           "blocked",
+          "counterpartyUnavailable",
           "unreadCount",
           "olderCursor",
           "messages"

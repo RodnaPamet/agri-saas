@@ -147,6 +147,21 @@ const Thread = z
          * them type into a void and collect a 403.
          */
         blocked: z.boolean(),
+        /**
+         * The OTHER party cannot answer, so this thread accepts no messages
+         * (#2755). A send is refused with 403 `THREAD_COUNTERPARTY_UNAVAILABLE`.
+         *
+         * Says NOTHING about why, and a client must not guess: a pending
+         * erasure and a moderation termination both produce it, and neither is
+         * the reader's business. The history stays readable — this is a closed
+         * composer, not a withdrawn conversation.
+         *
+         * It is about the other party, so the person who asked to be erased
+         * sees `false` here; they are refused by the grace-period gate
+         * instead. Computed per request, so it clears on the next read if the
+         * erasure is cancelled.
+         */
+        counterpartyUnavailable: z.boolean(),
         /** Counted for the CALLER, not their farm (#1298). */
         unreadCount: z.number().int(),
         /** Opaque position of the next OLDER page; null at the start of the thread. */

@@ -8063,6 +8063,9 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "blocked": {
       "type": "boolean"
     },
+    "counterpartyUnavailable": {
+      "type": "boolean"
+    },
     "unreadCount": {
       "type": "integer"
     },
@@ -8087,6 +8090,7 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "lastMessageAt",
     "closed",
     "blocked",
+    "counterpartyUnavailable",
     "unreadCount",
     "olderCursor",
     "messages"

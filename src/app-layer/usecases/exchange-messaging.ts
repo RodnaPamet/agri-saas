@@ -101,6 +101,11 @@ export interface ExchangeThreadView {
     /** Opaque position of the next OLDER page, or null at the start of the thread. */
     olderCursor: string | null;
     messages: ExchangeMessageView[];
+    /**
+     * The other party cannot answer at the moment, so the composer is closed
+     * (#2755). Deliberately says NOTHING about why — see `requireParty`.
+     */
+    counterpartyUnavailable: boolean;
 }
 
 /**
@@ -180,6 +185,53 @@ async function requireParty(db: PrismaTx, ctx: RequestContext, threadId: string)
     // because that decides whose pointer moves and what `mine` means.
     const principalUserId = isInquirer ? thread.inquirerUserId : thread.listing.sellerUserId;
 
+    /*
+     * #2755 — the OTHER party cannot answer, and the caller is told so
+     * NEUTRALLY.
+     *
+     * Owner ruling 2026-11-16. The grace-period freeze (#1655) refuses the
+     * leaving person at the mutation choke point, so until this landed a
+     * counterparty mid-negotiation sent into silence for up to thirty days
+     * with no explanation — the #1325 shape, and the gap CLAUDE.md named and
+     * then tracked nowhere.
+     *
+     * ## It says nothing about WHY, and cannot
+     *
+     * The flag is one boolean and the copy is «Другата страна не може да
+     * отговаря в момента». A pending erasure is the person's own business and
+     * they did not consent to its disclosure; naming it would also tell a
+     * third party about a moderation TERMINATION, which sets this same column
+     * (#1619). One neutral state covering both causes is the privacy
+     * property, not a vagueness to tidy up later.
+     *
+     * ## Why it is COMPUTED and stores nothing
+     *
+     * Read from `deletionRequestedAt` per request, so cancelling the erasure
+     * un-freezes the thread on the very next read with nothing to restore —
+     * the reasoning #1325 used to refuse a sweep, and the reason this needs no
+     * `suppressedFor*` column. Suppression columns exist where something must
+     * be put BACK; here nothing was taken away.
+     *
+     * ## Read on the CALLER'S transaction, never through `isDeletionPending`
+     *
+     * That helper reads the GLOBAL client, and a global-client read inside an
+     * open transaction wants a second pool connection — #1191's P0.8 deadlock
+     * at `PG_POOL_MAX`. So this is `db.user`, one connection, and it forgoes
+     * the helper's Redis cache deliberately: a cache hit is worth less than
+     * not deadlocking, and `User` carries no RLS (no policy, no FORCE) so the
+     * row is readable here rather than silently empty.
+     *
+     * One extra indexed read per thread read or write, including `markRead`.
+     * Paid here rather than at the two call sites that need it, because
+     * `requireParty` is why the read and the write cannot disagree about who
+     * may speak — two spellings of one rule is #1664.
+     */
+    const counterpartyUserId = isInquirer ? thread.listing.sellerUserId : thread.inquirerUserId;
+    const counterparty = await db.user.findUnique({
+        where: { id: counterpartyUserId },
+        select: { deletionRequestedAt: true },
+    });
+
     return {
         thread,
         role: (isInquirer ? 'inquirer' : 'seller') as 'inquirer' | 'seller',
@@ -187,6 +239,16 @@ async function requireParty(db: PrismaTx, ctx: RequestContext, threadId: string)
         principalUserId,
         /** The caller's OWN pointer, or null if they have never read it. */
         myLastReadAt: thread.reads[0]?.lastReadAt ?? null,
+        /** The person on the other side. Never the caller, even on a self-thread. */
+        counterpartyUserId,
+        /**
+         * The other party cannot answer. A missing row reads as AVAILABLE, the
+         * same direction `isDeletionPending` takes for an absent user: an
+         * erased account meets the refusals its caller already handles, and
+         * freezing a thread because a lookup found nothing would be the one
+         * fail direction that costs a live negotiation.
+         */
+        counterpartyUnavailable: Boolean(counterparty?.deletionRequestedAt),
     };
 }
 
@@ -530,7 +592,11 @@ export async function getExchangeThread(
     const before = decodeCursor(options.before);
 
     return runInTenantContext(ctx, async (db) => {
-        const { thread, role, myLastReadAt } = await requireParty(db, ctx, threadId);
+        const { thread, role, myLastReadAt, counterpartyUnavailable } = await requireParty(
+            db,
+            ctx,
+            threadId,
+        );
         const blocked = await isBlocked(db, {
             sellerTenantId: thread.listing.sellerTenantId,
             // The thread's own inquirer, not `ctx.userId`: this flag is what
@@ -614,6 +680,17 @@ export async function getExchangeThread(
             // screen needs to explain why their composer is refusing, rather
             // than letting them type into a void and collect an error.
             blocked,
+            // #2755 — returned for the reason `blocked` above is: a screen
+            // that knows why the composer is closed can say so, and one that
+            // does not lets the operator type into a void and collect an
+            // error.
+            //
+            // It is about the OTHER party, so the person who asked to be
+            // erased sees `false` here — their counterparty is fine. They are
+            // refused by the grace-period mutation gate instead (#1655), which
+            // is a different refusal with a different code, and that asymmetry
+            // is correct: one of them is leaving, the other is waiting.
+            counterpartyUnavailable,
             unreadCount,
             // Reversed: the query takes the NEWEST `limit`, the screen reads
             // oldest-first. Sorting ascending and taking `limit` would hand
@@ -987,7 +1064,31 @@ async function sendExchangeMessageImpl(
             }
         }
 
-        const { thread, role } = await requireParty(db, ctx, threadId);
+        const { thread, role, counterpartyUnavailable } = await requireParty(db, ctx, threadId);
+
+        /*
+         * #2755 — the other party cannot answer, so this thread takes no more
+         * messages. Owner ruling 2026-11-16.
+         *
+         * Refused for the counterparty's own sake rather than the leaving
+         * person's: the mutation choke point already refuses THEM
+         * (`isDeletionPending`), so without this the conversation was one-way
+         * into a wall for up to thirty days. Accepting a message nobody can
+         * ever answer is the worse half of the harm — it is not just unheard,
+         * it reads to the sender as delivered.
+         *
+         * A distinct code, unlike the person block's deliberate 404: there is
+         * nothing to conceal about the fact that an answer is not coming, only
+         * about the reason. The message carries no reason, and the client's
+         * copy is where the sentence lives.
+         */
+        if (counterpartyUnavailable) {
+            throw codedForbidden(
+                'THREAD_COUNTERPARTY_UNAVAILABLE',
+                'The other party cannot reply at the moment.',
+            );
+        }
+
         // Only the BLOCKED side is refused. The seller who pressed block can
         // still write in the thread — the control is "stop them reaching me",
         // not "freeze the record" — and a symmetric refusal would let a seller
