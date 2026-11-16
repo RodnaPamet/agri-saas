@@ -763,6 +763,7 @@ executorRegistry.register('mzh-prices-pull', async () => {
             asOf: r.asOf,
             unmappedLabels: r.unmappedLabels,
             noDataLabels: r.noDataLabels,
+            missingCommodities: r.missingCommodities,
         },
     );
 });

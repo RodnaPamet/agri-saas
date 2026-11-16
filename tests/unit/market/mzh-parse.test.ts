@@ -205,6 +205,25 @@ describe('parsePurchasePrices — the cases the real bulletin does not show', ()
         expect(parsed.unmappedLabels).toEqual(['Хлебна пшеничка']);
     });
 
+    it('does NOT see a row whose figures are not figures, and that is the trade-off', () => {
+        // `Ечемик 166 176 n/a - -` fails the LINE pattern, because the figure
+        // group admits no letters — so the row is skipped without reaching
+        // the no-data check, and `noDataLabels` stays empty.
+        //
+        // Deliberate. Widening the group to admit letters would make every
+        // Cyrillic heading in the slice look like a row and fill
+        // `unmappedLabels` with prose, which is a false alarm every week —
+        // strictly worse than this silence.
+        //
+        // The silence is covered one level up instead: the JOB compares what
+        // it stored against `COMMODITY_BY_LABEL` and reports a commodity that
+        // went missing for ANY reason, which is the property that matters.
+        const parsed = parsePurchasePrices(table('Ечемик   166   176   n/a   -   -\n'))!;
+        expect(parsed.rows).toEqual([]);
+        expect(parsed.noDataLabels).toEqual([]);
+        expect(parsed.unmappedLabels).toEqual([]);
+    });
+
     it('reads a Bulgarian decimal comma', () => {
         const parsed = parsePurchasePrices(
             table('Рапица                     424   487   475,50   11,9   -2,5\n'),

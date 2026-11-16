@@ -37,6 +37,7 @@ import { Prisma } from '@prisma/client';
 
 import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 import { fetchBulletinIndex, fetchPurchasePrices, MZH_ORIGIN, type MzhFetchOptions } from '@/lib/market/mzh-client';
+import { COMMODITY_BY_LABEL } from '@/lib/market/mzh-parse';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 
@@ -76,6 +77,17 @@ export interface MzhPricesPullResult {
     unmappedLabels: string[];
     /** Mapped labels whose current figure was «*» — «няма данни», never 0. */
     noDataLabels: string[];
+    /**
+     * Commodities in scope that this run did NOT store, for any reason.
+     *
+     * The catch-all, and the reason it exists: a row can go missing three
+     * ways — renamed (`unmappedLabels`), «няма данни» (`noDataLabels`), or
+     * unreadable figures, which the parser's line pattern skips SILENTLY
+     * because admitting letters there would make every Cyrillic heading look
+     * like a row. Only this comparison sees all three, so only this one stops
+     * a quietly shrinking bulletin reading as `clean`.
+     */
+    missingCommodities: string[];
     cacheKeysInvalidated: number;
     cacheInvalidationFailed: boolean;
 }
@@ -92,6 +104,7 @@ export async function runMzhPricesPull(
         asOf: null,
         unmappedLabels: [],
         noDataLabels: [],
+        missingCommodities: [],
         cacheKeysInvalidated: 0,
         cacheInvalidationFailed: false,
     };
@@ -176,7 +189,17 @@ export async function runMzhPricesPull(
         result.pointsWritten += 1;
     }
 
-    result.verdict = parsed.unmappedLabels.length > 0 ? 'partial' : 'clean';
+    const expected = new Set(Object.values(COMMODITY_BY_LABEL));
+    for (const c of parsed.rows.map((r) => r.commodity)) expected.delete(c);
+    result.missingCommodities = [...expected];
+
+    // `partial` for EITHER a renamed label or a commodity that simply did not
+    // arrive. A count alone cannot distinguish "МЗХ published fewer rows this
+    // week" from "we stopped recognising one", and both are findings.
+    result.verdict =
+        parsed.unmappedLabels.length > 0 || result.missingCommodities.length > 0
+            ? 'partial'
+            : 'clean';
 
     if (result.pointsWritten > 0) {
         /*
@@ -212,6 +235,7 @@ export async function runMzhPricesPull(
         received: result.received,
         unmappedLabels: result.unmappedLabels,
         noDataLabels: result.noDataLabels,
+        missingCommodities: result.missingCommodities,
         cacheKeysInvalidated: result.cacheKeysInvalidated,
         cacheInvalidationFailed: result.cacheInvalidationFailed,
     });

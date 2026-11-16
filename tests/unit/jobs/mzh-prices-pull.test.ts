@@ -196,6 +196,51 @@ describe('the three verdicts that are not success', () => {
     });
 });
 
+describe('a commodity that goes missing — the catch-all', () => {
+    const table = (body: string) =>
+        `Средни изкупни цени на основни зърнени и маслодайни култури\n`
+        + `към 30.09.2026 г., евро/тон без ДДС\n\n`
+        + body
+        + `\nИзточник: САПИ ЕООД\n`;
+
+    it('reports a row whose figures are UNREADABLE, which the parser skips silently', () => {
+        // The gap this check exists for. `Ечемик 166 176 n/a - -` fails the
+        // parser's line pattern, so it is not unmapped and not no-data — it is
+        // simply not there. Without this comparison the run would report
+        // `clean` over four commodities and nothing would ever say which one
+        // stopped arriving.
+        return runMzhPricesPull({
+            fetchImpl: fetchDouble(INDEX_HTML),
+            extractText: async () =>
+                table(
+                    'Хлебна пшеница   176   189   188   6,9   -0,5\n'
+                    + 'Ечемик           166   176   n/a   -     -\n'
+                    + 'Царевица         196   192   195   -0,7  1,6\n'
+                    + 'Слънчоглед       482   488   486   0,8   -0,4\n'
+                    + 'Рапица           424   487   475   11,9  -2,5\n',
+                ),
+        }).then((r) => {
+            expect(r.verdict).toBe('partial');
+            expect(r.pointsWritten).toBe(4);
+            expect(r.missingCommodities).toEqual(['barley']);
+            // NOT reported as a renamed row, because it was not renamed.
+            expect(r.unmappedLabels).toEqual([]);
+            expect(r.noDataLabels).toEqual([]);
+        });
+    });
+
+    it('CONTROL — reports nothing missing when all five arrive', async () => {
+        // Without this the assertion above is satisfied by a check that always
+        // reports something missing.
+        const r = await runMzhPricesPull({
+            fetchImpl: fetchDouble(INDEX_HTML),
+            extractText: async () => BULLETIN,
+        });
+        expect(r.missingCommodities).toEqual([]);
+        expect(r.verdict).toBe('clean');
+    });
+});
+
 describe('failure handling', () => {
     it('a failed cache drop does not undo the prices', async () => {
         invalidate.mockRejectedValue(new Error('redis is down'));
@@ -229,9 +274,16 @@ describe('failure handling', () => {
             fetchImpl: fetchDouble(INDEX_HTML),
             extractText: async () => empty,
         });
-        expect(r.verdict).toBe('clean');
+        // `partial`, not `clean`. This expectation said `clean` until the
+        // missing-commodity check landed, and `clean` was the wrong answer: a
+        // week that stored NOTHING is a finding whatever the cause, and the
+        // four commodities the table did not even print are named.
+        expect(r.verdict).toBe('partial');
         expect(r.pointsWritten).toBe(0);
         expect(r.noDataLabels).toEqual(['Царевица']);
+        expect(r.missingCommodities.sort()).toEqual(
+            ['barley', 'maize', 'rapeseed', 'sunflower', 'wheat'].sort(),
+        );
         expect(upsertPoint).not.toHaveBeenCalled();
         // No write, so no cache drop — invalidating here would be work for
         // nothing and would hide a genuinely empty week behind a busy log.
