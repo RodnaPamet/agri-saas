@@ -105,12 +105,24 @@ describe('every code-bearing field is resolved, not passed through', () => {
         // Tool entries are the 4-space-indented keys of the registry literal.
         const blocks = TOOLS.split(/\n    (?=[a-z_]+: \{\n)/);
         const toolsThatResolve = blocks.filter((b) => b.includes(NEEDLE));
-        const occurrences = [...TOOLS.matchAll(new RegExp(NEEDLE.replace(/[().]/g, '\\$&'), 'g'))];
+        /*
+         * `split`, NOT a RegExp built from the needle. The first version was
+         * `new RegExp(NEEDLE.replace(/[().]/g, '\\$&'), 'g')`, which CodeQL
+         * flagged HIGH: that character class escapes `(`, `)` and `.` and not
+         * the backslash itself, so a needle containing one would build a
+         * pattern meaning something other than the literal text. The needle
+         * here happens to contain none — which is exactly the kind of "safe
+         * today" that stops being true when somebody edits the string.
+         *
+         * Counting separators needs no escaping and cannot be wrong about any
+         * input, so the defect class is removed rather than patched.
+         */
+        const occurrences = TOOLS.split(NEEDLE).length - 1;
         // Control: the split must actually have found tools, or both sides are
         // zero and this passes over nothing — the empty-population defect.
         expect(blocks.length).toBeGreaterThan(5);
         expect(toolsThatResolve.length).toBeGreaterThan(0);
-        expect(occurrences).toHaveLength(toolsThatResolve.length);
+        expect(occurrences).toBe(toolsThatResolve.length);
 
         /*
          * And not inside a row callback. The old form matched `async (r)` only,
