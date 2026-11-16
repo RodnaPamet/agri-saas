@@ -4053,6 +4053,44 @@ exports[`API contract — per-schema snapshots schema: CatalogItemWriteAck 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ChangePasswordRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "currentPassword": {
+      "type": "string",
+      "minLength": 1
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "currentPassword",
+    "newPassword"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ChangePasswordResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "reauthRequired": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "reauthRequired"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ChannelListItem 1`] = `
 "{
   "type": "object",
@@ -7153,6 +7191,14 @@ exports[`API contract — per-schema snapshots schema: EikCheckResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EmailVerificationRedirect 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "description": "Empty — the outcome travels in the Location header’s query string."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EmptyBody 1`] = `
 "{
   "type": "object",
@@ -10056,6 +10102,35 @@ exports[`API contract — per-schema snapshots schema: ForgetPointResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ForgotPasswordRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email"
+    }
+  },
+  "required": [
+    "email"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ForgotPasswordResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: GddDay 1`] = `
 "{
   "type": "object",
@@ -12770,6 +12845,28 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
     }
   },
   "description": "Partial update for a field-journal entry. Every field optional. When quantities / locationIds / equipmentIds are supplied they fully REPLACE the existing set (full-replace semantics, matching the create shape)."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LogoutRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "description": "Empty. Send \`{}\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LogoutResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ]
 }"
 `;
 
@@ -18973,6 +19070,69 @@ exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ResendVerificationRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email"
+    }
+  },
+  "required": [
+    "email"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ResendVerificationResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ResetPasswordRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 1
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "token",
+    "newPassword"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ResetPasswordResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RespondToConversation 1`] = `
 "{
   "type": "object",
@@ -19358,6 +19518,29 @@ exports[`API contract — per-schema snapshots schema: SetPromotionPublishedBody
   "required": [
     "published"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetUiLanguageRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "language"
+  ],
+  "description": "One of the deployment’s locales — \`bg\` or \`en\` today."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetUiLanguageResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": {}
 }"
 `;
 
@@ -22047,6 +22230,29 @@ exports[`API contract — per-schema snapshots schema: UpdateMemberCertificatesR
       "maxLength": 200
     }
   }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateOwnProfileRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "firstName": {
+      "type": "string"
+    },
+    "lastName": {
+      "type": "string"
+    }
+  },
+  "description": "Either field alone is valid. Both omitted is accepted and changes nothing."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateOwnProfileResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "additionalProperties": {}
 }"
 `;
 

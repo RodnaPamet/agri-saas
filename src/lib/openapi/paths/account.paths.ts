@@ -555,6 +555,144 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'patch',
+        path: '/api/account/profile',
+        operationId: 'updateOwnProfileName',
+        summary: "Set the caller's own display name",
+        description:
+            'Acts ONLY on the authenticated session user — there is no userId parameter, so one '
+            + 'user can never write another’s profile. Account-level rather than tenant-scoped, '
+            + 'so no permission key applies and a MECHANISATOR is correctly NOT refused: the '
+            + 'operator confinement covers tenant surfaces, and a person’s own name is not one.'
+            + '\n\nBoth fields are OPTIONAL and either may be sent alone. The stored name is '
+            + 'what the UI renders for the caller; it is encrypted at rest, which is why no other '
+            + 'route hands it out for a third party.'
+            + '\n\nAuthenticated through `getUserCtx`, not a bare session read, which refuses '
+            + 'three callers a plain `auth()` would answer: an `iflk_` API key presented as a '
+            + 'person credential, an MFA-pending session, and the operator-only persona on a '
+            + 'social surface.',
+        tags: ['Account'],
+        body: z
+            .object({
+                firstName: z.string().optional(),
+                lastName: z.string().optional(),
+            })
+            .openapi('UpdateOwnProfileRequest', {
+                description:
+                    'Either field alone is valid. Both omitted is accepted and changes nothing.',
+            }),
+        extraResponses: rawErrorResponses({
+            400: 'The payload did not parse, or a name exceeded the maximum length.',
+        }),
+        success: {
+            status: 200,
+            description: 'The stored name as it now reads.',
+            schema: z.object({}).passthrough().openapi('UpdateOwnProfileResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/account/language',
+        operationId: 'setOwnUiLanguage',
+        summary: "Set the caller's own interface language",
+        description:
+            'Acts ONLY on the authenticated user, like every other `/api/account/**` route.'
+            + '\n\n**This is the value every outbound email is written in.** `uiLanguage` is '
+            + 'what `resolveRecipientLocale` reads, so changing it changes the language of '
+            + 'notifications, digests and Art 17 statements — not just the screen. Its fallback '
+            + 'is `bg`, deliberately NOT the `en` used for unauthenticated surfaces.'
+            + '\n\nThe response also SETS a locale cookie, which is what makes the web render '
+            + 'in the new language immediately. A native client can ignore the cookie; the '
+            + 'stored column is the durable answer and is what `/api/auth/me` reports.'
+            + '\n\nThe accepted values are the deployment’s locale set, currently `bg` and '
+            + '`en`. Anything else is a 400 rather than a silent fallback — a mistyped locale '
+            + 'that quietly became English is how somebody ends up reading their compliance '
+            + 'notices in the wrong language.',
+        tags: ['Account'],
+        body: z
+            .object({ language: z.string() })
+            .openapi('SetUiLanguageRequest', {
+                description: 'One of the deployment’s locales — `bg` or `en` today.',
+            }),
+        extraResponses: rawErrorResponses({
+            400: 'The payload did not parse, or the language is not one this deployment serves.',
+        }),
+        success: {
+            status: 200,
+            description: 'The stored language. A locale cookie is set alongside it.',
+            schema: z.object({}).passthrough().openapi('SetUiLanguageResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/change-password',
+        operationId: 'changeOwnPassword',
+        summary: "Change the caller's own password",
+        description:
+            'Requires the CURRENT password in the body as well as the new one — an authenticated '
+            + 'session alone is not enough, which is what stops a stolen session from locking the '
+            + 'owner out of their own account.'
+            + '\n\nThe new password is screened the same way sign-up screens one: the length '
+            + 'policy AND a breach check against HIBP by k-anonymity. Every route in this '
+            + 'codebase that ingests a user-chosen password must do both, and a guardrail '
+            + 'enforces it.'
+            + '\n\n**Succeeding here revokes EVERY session for the account,** including the one '
+            + 'that made the call — a `sessionVersion` bump plus `revokedAt` on every live row. '
+            + 'The response says so with `reauthRequired: true`, and a client that ignores it '
+            + 'will show a signed-in shell whose next request 401s. Sign in again.'
+            + '\n\nRefusals are 400s the user can act on: the current password was wrong, the '
+            + 'new one failed the policy, or it was found in a breach corpus. Show them rather '
+            + 'than retrying.',
+        tags: ['Auth'],
+        body: z
+            .object({
+                currentPassword: z.string().min(1),
+                newPassword: z.string().min(1),
+            })
+            .openapi('ChangePasswordRequest'),
+        extraResponses: rawErrorResponses({
+            400:
+                'The current password was wrong, or the new one failed the length policy or the '
+                + 'breach screen. The body says which.',
+            401: 'No authenticated session.',
+        }),
+        success: {
+            status: 200,
+            description:
+                'Changed. `reauthRequired` is always true — every session was revoked, this one '
+                + 'included.',
+            schema: z
+                .object({ ok: z.boolean(), reauthRequired: z.boolean() })
+                .openapi('ChangePasswordResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/logout',
+        operationId: 'logout',
+        summary: 'Clear the session cookie',
+        description:
+            'Takes an EMPTY body and clears the browser session cookie.'
+            + '\n\n**It does not revoke a native token pair.** A bearer credential outlives this '
+            + 'call, because the pair is bound to a `UserSession` row rather than to the cookie — '
+            + 'so a native client signing out must call `/api/auth/native/revoke`, and treating '
+            + 'this route as "signed out everywhere" leaves a working refresh token on the '
+            + 'device. That asymmetry is the one thing worth reading here.',
+        tags: ['Auth'],
+        body: z.object({}).openapi('LogoutRequest', {
+            description: 'Empty. Send `{}`.',
+        }),
+        success: {
+            status: 200,
+            description: 'The cookie is cleared. Any native token pair is untouched.',
+            schema: z.object({ success: z.boolean() }).openapi('LogoutResponse'),
+        },
+    });
+
+    op(registry, {
         method: 'put',
         path: '/api/account/bottom-tabs',
         operationId: 'setBottomTabOrder',
