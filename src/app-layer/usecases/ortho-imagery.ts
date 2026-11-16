@@ -11,6 +11,7 @@
 import type { RequestContext } from '../types';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { getRedis } from '@/lib/redis';
+import { logger } from '@/lib/observability';
 import { notFound } from '@/lib/errors/types';
 import { tileTo3857Bbox, tileToLonLatBbox, isTileInBulgaria } from '@/lib/geo/cadastre-tiles';
 import { bboxTouchesBulgaria } from '@/lib/geo/ortho-bbox';
@@ -47,6 +48,22 @@ const TILE_TTL_SECONDS = 604_800; // 7 days
  * photographed in March is still reported bare in April.
  */
 const ABSENT_TTL_SECONDS = 86_400; // 1 day
+
+/**
+ * How many years back a blank tile may be chased before the absence is
+ * believed (#3091).
+ *
+ * THREE, which is a cost bound and not a guess about МЗХ. The measured case
+ * needed exactly two — coverage chose 2024, 2024 was blank, 2023 had pixels —
+ * and three leaves a year of slack for a newly-published year sitting above a
+ * blank one, which is what 2025 and `2025_TB` appearing suggests happens.
+ *
+ * Bounded at all because this runs per TILE on a cache miss: six years across
+ * a screenful of tiles is a burst at a government service, and the first
+ * non-blank year is cached per-year afterwards so the walk is paid once per
+ * tile rather than per request.
+ */
+const TILE_YEAR_MAX_PROBES = 3;
 
 /** Coverage is per area and changes on the same cadence as a new flight. */
 const COVERAGE_TTL_SECONDS = 86_400;
@@ -345,67 +362,145 @@ export async function fetchOrthoTile(
         return { kind: 'absent' };
     }
 
-    const tileKey = orthoTileCacheKey(coverage.year, z, x, y);
-    if (redis) {
-        try {
-            const hit = await redis.get(tileKey);
-            if (hit) {
-                return {
-                    kind: 'image',
-                    // Base64 because a Redis string round-trip can corrupt raw
-                    // binary under the default encoding — the same reason the
-                    // cadastre proxy stores tiles this way.
-                    bytes: Buffer.from(hit, 'base64'),
-                    contentType: 'image/jpeg',
-                    year: coverage.year,
-                };
+    /*
+     * THE COVERAGE YEAR IS A HINT, NOT AN ANSWER — #3091.
+     *
+     * `resolveOrthoCoverage` breaks on the newest year whose
+     * `VectorData:Dates_<year>` returns a feature, and that vector answer does
+     * NOT predict whether the raster has pixels. Measured against the live
+     * service 2026-11-16 over farmland near Plovdiv:
+     *
+     *     Dates_2024        1 feature   -> coverage chose 2024
+     *     Orthoimagery_2024   909 bytes -> the source's BLANK tile
+     *     Orthoimagery_2023  7563 bytes -> real pixels, never requested
+     *
+     * The previous code took the blank as final and cached it, so the map went
+     * blank over areas that have imagery one year back, and STAYED blank for
+     * the absent key's day-long TTL. That is the owner's "it does not work
+     * again": МЗХ publishing a new year — 2025 and 2025_TB are both advertised
+     * now — flips a working area to blank with no change on our side.
+     *
+     * So the fetch walks the coverage year and then OLDER years, and only an
+     * absence established across all of them is an absence. The old comment
+     * was right about its own case — an edge of a flight block, where no year
+     * has pixels — and that case still ends in `rememberAbsent`.
+     */
+    const startAt = ORTHO_YEARS.indexOf(coverage.year);
+    const candidates = startAt === -1
+        // A cached coverage year no longer in ORTHO_YEARS: try the list from
+        // the top rather than nothing, so a retired year degrades to a probe
+        // instead of a blank map.
+        ? [...ORTHO_YEARS].slice(0, TILE_YEAR_MAX_PROBES)
+        : ORTHO_YEARS.slice(startAt, startAt + TILE_YEAR_MAX_PROBES);
+
+    let lastContentType: string | null = null;
+    for (const year of candidates) {
+        const tileKey = orthoTileCacheKey(year, z, x, y);
+        if (redis) {
+            try {
+                const hit = await redis.get(tileKey);
+                if (hit) {
+                    return {
+                        kind: 'image',
+                        // Base64 because a Redis string round-trip can corrupt
+                        // raw binary under the default encoding — the same
+                        // reason the cadastre proxy stores tiles this way.
+                        bytes: Buffer.from(hit, 'base64'),
+                        contentType: 'image/jpeg',
+                        year,
+                    };
+                }
+            } catch {
+                /* fall through and fetch */
             }
-        } catch {
-            /* fall through and fetch */
         }
-    }
 
-    const res = await upstream(
-        buildOrthoTileUrl(src.url, coverage.year, tileTo3857Bbox(z, x, y)),
-        deps,
-        'image/jpeg,*/*',
-    );
-    if (!res) return { kind: 'unavailable' };
-    if (!res.ok) return { kind: 'unavailable' };
+        const res = await upstream(
+            buildOrthoTileUrl(src.url, year, tileTo3857Bbox(z, x, y)),
+            deps,
+            'image/jpeg,*/*',
+        );
+        /*
+         * UNAVAILABLE STOPS THE WALK rather than moving to the next year.
+         *
+         * An upstream that is down says nothing about which year has pixels,
+         * and continuing would turn one outage into six requests and then
+         * report `absent` — caching a fact about the place from a fact about
+         * the service. The existing code's comment on the coverage path makes
+         * the same distinction.
+         */
+        if (!res) return { kind: 'unavailable' };
+        if (!res.ok) return { kind: 'unavailable' };
 
-    const bytes = Buffer.from(await res.arrayBuffer());
+        const bytes = Buffer.from(await res.arrayBuffer());
+        lastContentType = res.headers.get('content-type');
 
-    if (isBlankOrthoTile(bytes.byteLength)) {
-        // A 200 carrying the source's blank tile. The area is covered by this
-        // year's flight polygon and still has no pixels here — an edge of the
-        // flight block. Final, and cached as such.
-        await rememberAbsent(absentKey);
-        return { kind: 'absent' };
-    }
+        if (isBlankOrthoTile(bytes.byteLength)) {
+            // This year has no pixels here. Try an older one before concluding
+            // anything about the place.
+            continue;
+        }
 
-    if (redis) {
-        try {
-            const count = await redis.incr(TILE_COUNT_KEY);
-            if (count <= TILE_CACHE_MAX_ENTRIES) {
-                await redis.set(tileKey, bytes.toString('base64'), 'EX', TILE_TTL_SECONDS);
-            } else {
-                // Past the ceiling: serve, do not store, and give the counter
-                // back so it reports the cache's size rather than the number
-                // of attempts.
-                await redis.decr(TILE_COUNT_KEY);
+        if (redis) {
+            try {
+                const count = await redis.incr(TILE_COUNT_KEY);
+                if (count <= TILE_CACHE_MAX_ENTRIES) {
+                    await redis.set(tileKey, bytes.toString('base64'), 'EX', TILE_TTL_SECONDS);
+                } else {
+                    // Past the ceiling: serve, do not store, and give the
+                    // counter back so it reports the cache's size rather than
+                    // the number of attempts.
+                    await redis.decr(TILE_COUNT_KEY);
+                }
+            } catch {
+                /* served uncached */
             }
-        } catch {
-            /* served uncached */
         }
+
+        if (year !== coverage.year) {
+            /*
+             * THE FALLBACK EARNED ITS KEEP HERE, and this is the only line
+             * this module logs.
+             *
+             * It fires exactly when the coverage year was blank and an older
+             * year had pixels — the case that used to serve a cached absence
+             * and leave the map blank for a day. Rare by construction, so it
+             * does not drown; and the flag is cohort-gated to the owner and
+             * the testers, so without it nobody learns the fallback ran.
+             */
+            logger.info('ortho.tile_served_from_older_year', {
+                component: 'ortho',
+                z,
+                x,
+                y,
+                coverageYear: coverage.year,
+                servedYear: year,
+            });
+        }
+
+        return {
+            kind: 'image',
+            bytes,
+            contentType: lastContentType ?? 'image/jpeg',
+            year,
+        };
     }
 
-    return {
-        kind: 'image',
-        bytes,
-        contentType: res.headers.get('content-type') ?? 'image/jpeg',
-        year: coverage.year,
-    };
+    /*
+     * EVERY candidate year was blank. NOW it is a fact about the place — an
+     * edge of every flight block we serve — and is cached as such.
+     *
+     * NOT logged, deliberately. This module's own comment says no coverage is
+     * "the common answer over two thirds of the country for any given year",
+     * so a line here would fire for most tiles of most pans and bury the one
+     * signal worth reading. That signal is the OPPOSITE case and is logged
+     * where it happens: the fallback finding pixels in an older year, which
+     * is precisely where the old code went blank.
+     */
+    await rememberAbsent(absentKey);
+    return { kind: 'absent' };
 }
+
 
 async function rememberAbsent(key: string): Promise<void> {
     const redis = getRedis();
