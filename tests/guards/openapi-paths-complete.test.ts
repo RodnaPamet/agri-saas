@@ -206,7 +206,32 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // bulk-delete route — the third time this spec's silence has cost that client
 // (after `beforeId` and `channel-search`). Documenting a path is the only
 // direction this number moves on its own.
-const UNDOCUMENTED_CEILING = 209;
+// Lowered 209 -> 200 by #3080: NINE client-facing auth and account paths are
+// described now — `/api/auth/token`, `logout`, `change-password`,
+// `forgot-password`, `reset-password`, `verify-email`, `verify-email/resend`,
+// and `/api/account/{profile,language}`.
+//
+// `/api/auth/token` is the one that mattered: the spec had described
+// `/api/auth/token/refresh` all along, so it said how to RENEW a native
+// credential and not how to OBTAIN one — and that mint is the primitive the
+// whole system-browser handoff is built on.
+//
+// Chosen by MEASUREMENT rather than by the prefix count #3080 opens with.
+// That issue puts 132 of the 209 under `/api/t/**` and reads them as "the
+// surface a client is most likely to reach"; measured per family, every
+// family a phone actually calls is already fully described — journal 0 of 13,
+// locations 0 of 26, parcels 0 of 21, agro 0 of 20, social 0 of 26, exchange
+// 0 of 14. The tenant backlog is `evidence`, `assets`, `tasks`, `admin`,
+// `knowledge`, `automation`, `processes` and `security`: the web console and
+// the GRC-era inheritance. The client-facing gap was in `/api/auth/**` and
+// `/api/account/**`, which the prefix count buries at 11 and 2.
+//
+// The four SSO redirect paths stay baselined deliberately: a browser-redirect
+// start/callback pair is not something a client codes against.
+//
+// COUNTED from the file, not subtracted — the instruction this block gives
+// after #2578, and the reason the previous value was once one too high.
+const UNDOCUMENTED_CEILING = 200;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

@@ -490,14 +490,35 @@ describe('HIBP coverage guardrail — structural scan', () => {
             // proving it, because this one cannot be deleted without somebody
             // noticing the signup route changed.
             'src/app/api/auth/register/start/route.ts -> src/lib/schemas/index.ts',
+            // #3080 moved the two password-management bodies into
+            // `@/lib/schemas` as well, because `request-body-declared-once`
+            // caps dual declarations at ZERO and these were the last ones —
+            // the route parsed a schema it declared itself while the OpenAPI
+            // entry declared a second copy of the same body.
+            //
+            // So all three now reach their password fields through an import,
+            // and the import-following matcher is exercised by the whole
+            // policed set rather than by one route plus a fixture. That is a
+            // strengthening of this control, not a relaxation: if the matcher
+            // ever reverts to reading route files only, three real routes go
+            // blind instead of one.
+            //
+            // `change-password` appears TWICE because it has two password
+            // fields — `currentPassword` and `newPassword` — and both are
+            // reached through the same import.
+            'src/app/api/auth/change-password/route.ts -> src/lib/schemas/index.ts',
+            'src/app/api/auth/change-password/route.ts -> src/lib/schemas/index.ts',
+            'src/app/api/auth/reset-password/route.ts -> src/lib/schemas/index.ts',
         ]);
 
         // The real-route multi-hop chain this used to assert
         // (`auth/register` → AuthActionSchema → AuthRegisterSchema) went with
-        // the route in #1376, and no surviving route reaches a password field
-        // through an import: the two password-management routes declare theirs
-        // inline, and `register/start` uses manual type checks. So the
-        // import-following matcher is proved by the synthetic cross-module
+        // the route in #1376. The sentence that followed — "no surviving route
+        // reaches a password field through an import" — stopped being true at
+        // #1378 for `register/start` and is now false for all three, since
+        // #3080 moved both password-management bodies into `@/lib/schemas`.
+        // Kept as history because it records WHY the synthetic case exists.
+        // So the import-following matcher is proved by the synthetic cross-module
         // case above, which has real teeth — it fails if the matcher is
         // reverted to reading route files only — rather than by a chain that
         // no longer exists.

@@ -48,6 +48,15 @@ interface Spec {
  * envelope, not one nobody got round to coding.
  */
 const NON_CODE: Readonly<Record<string, string>> = {
+    'POST /api/auth/token':
+        'Answers a BARE body — `{ "error": "session_not_tracked" }` — not the ' +
+        '`{ error: { code } }` envelope, so there is no UPPER_SNAKE `code` to name. ' +
+        'The identifier is that literal, which the description names in backticks, ' +
+        'and the description says what it means: the session carries no ' +
+        '`UserSession` lineage, so no revocable credential can be minted from it. ' +
+        'Identical in shape and in value to its `native/complete` neighbour below, ' +
+        'which is the precedent rather than a coincidence — both are pre-envelope ' +
+        'auth routes in the same family (#3080).',
     'GET /api/auth/native/complete':
         'Answers a BARE body rather than the `{ error: { code } }` envelope — ' +
         'the native hand-off is pre-session, so there is no envelope to carry a ' +

@@ -147,6 +147,31 @@ const Thread = z
          * them type into a void and collect a 403.
          */
         blocked: z.boolean(),
+        /**
+         * The OTHER party cannot answer, so this thread accepts no messages
+         * (#2755). A send is refused with 403 `THREAD_COUNTERPARTY_UNAVAILABLE`.
+         *
+         * Says NOTHING about why, and a client must not guess: a pending
+         * erasure and a moderation termination both produce it, and neither is
+         * the reader's business. The history stays readable — this is a closed
+         * composer, not a withdrawn conversation.
+         *
+         * It is about the other party, so the person who asked to be erased
+         * sees `false` here; they are refused by the grace-period gate
+         * instead. Computed per request, so it clears on the next read if the
+         * erasure is cancelled.
+         */
+        counterpartyUnavailable: z.boolean().openapi({
+            description:
+                'The OTHER party cannot answer, so this thread accepts no messages — a '
+                + 'send is refused with 403 `THREAD_COUNTERPARTY_UNAVAILABLE`. Says '
+                + 'NOTHING about why, and a client must not guess: a pending erasure and '
+                + 'a moderation termination both produce it. The history stays READABLE '
+                + '— a closed composer, not a withdrawn conversation. It is about the '
+                + 'other party, so the person who asked to be erased sees `false` here '
+                + 'and is refused by the grace-period gate instead. Computed per '
+                + 'request, so it clears on the next read if the erasure is cancelled.',
+        }),
         /** Counted for the CALLER, not their farm (#1298). */
         unreadCount: z.number().int(),
         /** Opaque position of the next OLDER page; null at the start of the thread. */
@@ -321,7 +346,16 @@ export function registerExchangeMessagingPaths(registry: OpenAPIRegistry): void 
             '"you wrote nothing" — the honest message is nearer "that message has no text in it".' +
             '\n\nThe bound was documented as 8000 until now — exactly 2x the real limit — so a client ' +
             'trusting the spec sent 6000 characters and was refused with a code the spec did not list ' +
-            '(#1391).',
+            '(#1391).' +
+            '\n\n**403 `THREAD_COUNTERPARTY_UNAVAILABLE` — the other party cannot answer (#2755).** ' +
+            'Distinct from the two block refusals above and from the 404 a person block returns: ' +
+            'there is nothing to conceal about an answer not coming, only about the reason. The ' +
+            'message names no reason and a client must not infer one — a pending erasure and a ' +
+            'moderation termination both produce it. The thread stays READABLE, so render it as a ' +
+            'closed composer with an explanation, never as a withdrawn conversation. ' +
+            '`counterpartyUnavailable` on the thread read is the same state, so a client can close ' +
+            'the composer before the operator types rather than collecting this 403 afterwards. It ' +
+            'clears by itself if the erasure is cancelled.',
         tags: ['Exchange messaging'],
         params: ThreadParams,
         headers: z.object({

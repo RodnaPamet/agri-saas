@@ -4053,6 +4053,45 @@ exports[`API contract — per-schema snapshots schema: CatalogItemWriteAck 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ChangePasswordRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "currentPassword": {
+      "type": "string",
+      "minLength": 1
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "currentPassword",
+    "newPassword"
+  ],
+  "description": "The CURRENT password is required as well as the new one: an authenticated session alone is not enough, which is what stops a stolen session locking the owner out. The new password is screened against the length policy AND a breach corpus."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ChangePasswordResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "reauthRequired": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "reauthRequired"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ChannelListItem 1`] = `
 "{
   "type": "object",
@@ -7153,6 +7192,14 @@ exports[`API contract — per-schema snapshots schema: EikCheckResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EmailVerificationRedirect 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "description": "Empty — the outcome travels in the Location header’s query string."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EmptyBody 1`] = `
 "{
   "type": "object",
@@ -8063,6 +8110,10 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "blocked": {
       "type": "boolean"
     },
+    "counterpartyUnavailable": {
+      "type": "boolean",
+      "description": "The OTHER party cannot answer, so this thread accepts no messages — a send is refused with 403 \`THREAD_COUNTERPARTY_UNAVAILABLE\`. Says NOTHING about why, and a client must not guess: a pending erasure and a moderation termination both produce it. The history stays READABLE — a closed composer, not a withdrawn conversation. It is about the other party, so the person who asked to be erased sees \`false\` here and is refused by the grace-period gate instead. Computed per request, so it clears on the next read if the erasure is cancelled."
+    },
     "unreadCount": {
       "type": "integer"
     },
@@ -8087,6 +8138,7 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "lastMessageAt",
     "closed",
     "blocked",
+    "counterpartyUnavailable",
     "unreadCount",
     "olderCursor",
     "messages"
@@ -10048,6 +10100,36 @@ exports[`API contract — per-schema snapshots schema: ForgetPointResult 1`] = `
       "enum": [
         true
       ]
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ForgotPasswordRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email"
+    }
+  },
+  "required": [
+    "email"
+  ],
+  "description": "The address to send a reset link to. The response is identical whatever this contains, so it cannot be used to learn whether an address is registered."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ForgotPasswordResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
     }
   },
   "required": [
@@ -12770,6 +12852,28 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
     }
   },
   "description": "Partial update for a field-journal entry. Every field optional. When quantities / locationIds / equipmentIds are supplied they fully REPLACE the existing set (full-replace semantics, matching the create shape)."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LogoutRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {},
+  "description": "Empty. Send \`{}\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: LogoutResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ]
 }"
 `;
 
@@ -18973,6 +19077,70 @@ exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ResendVerificationRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "format": "email"
+    }
+  },
+  "required": [
+    "email"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ResendVerificationResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ResetPasswordRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "token": {
+      "type": "string",
+      "minLength": 1
+    },
+    "newPassword": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "token",
+    "newPassword"
+  ],
+  "description": "The token from the emailed link, single-use and 1-hour, plus the new password. Succeeding revokes every session for the account."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ResetPasswordResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RespondToConversation 1`] = `
 "{
   "type": "object",
@@ -19357,6 +19525,40 @@ exports[`API contract — per-schema snapshots schema: SetPromotionPublishedBody
   },
   "required": [
     "published"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetUiLanguageRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "enum": [
+        "en",
+        "bg"
+      ]
+    }
+  },
+  "required": [
+    "language"
+  ],
+  "description": "The caller's own interface language, and the language every outbound email to them is written in — \`resolveRecipientLocale\` reads this column. One of the deployment's locales; anything else is a 400 rather than a silent fallback."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetUiLanguageResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "uiLanguage": {
+      "type": "string",
+      "description": "The stored locale. This is the durable answer; the cookie set alongside it is only what makes the web re-render immediately."
+    }
+  },
+  "required": [
+    "uiLanguage"
   ]
 }"
 `;
@@ -22047,6 +22249,38 @@ exports[`API contract — per-schema snapshots schema: UpdateMemberCertificatesR
       "maxLength": 200
     }
   }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateOwnProfileRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "firstName": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "lastName": {
+      "type": "string",
+      "maxLength": 100
+    }
+  },
+  "description": "The caller's own display name. Either field alone is valid, and both omitted is accepted and changes nothing. There is no userId — this route acts only on the authenticated session user."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateOwnProfileResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The stored display name as it now reads — the two fields joined, which is what every surface renders. Encrypted at rest, which is why no route hands out another person’s."
+    }
+  },
+  "required": [
+    "name"
+  ]
 }"
 `;
 

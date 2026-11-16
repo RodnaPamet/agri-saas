@@ -44,7 +44,11 @@ const mockPrisma = {
     // #1348 — `getExchangeThread` resolves a display name for every sender in
     // the page. Without this the whole suite throws on `user.findMany` of
     // undefined, which is a mock gap rather than a behaviour change.
-    user: { findMany: jest.fn() },
+    // `findUnique` for #2755 — `requireParty` reads the counterparty's
+    // `deletionRequestedAt`. null is AVAILABLE, the right default for every
+    // case here, and the delegate must exist or the whole suite throws
+    // `db.user.findUnique is not a function`.
+    user: { findMany: jest.fn(), findUnique: jest.fn().mockResolvedValue(null) },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, prisma: mockPrisma, default: mockPrisma }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));

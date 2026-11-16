@@ -82,12 +82,12 @@
     {
       "path": "/api/account/language",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/account/profile",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/admin/agri-events",
@@ -227,17 +227,17 @@
     {
       "path": "/api/auth/change-password",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/auth/forgot-password",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/auth/logout",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/auth/me",
@@ -298,7 +298,7 @@
     {
       "path": "/api/auth/reset-password",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/auth/sso/oidc/callback",
@@ -328,7 +328,7 @@
     {
       "path": "/api/auth/token",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/auth/token/refresh",
@@ -343,12 +343,12 @@
     {
       "path": "/api/auth/verify-email",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/auth/verify-email/resend",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/docs",

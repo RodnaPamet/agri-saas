@@ -359,6 +359,58 @@ export function registerAuthNativePaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'post',
+        path: '/api/auth/token',
+        operationId: 'issueNativeTokenFromSession',
+        summary: 'Mint a token pair from the current session',
+        description:
+            'THE PRIMITIVE the system-browser handoff is built on, and the one route in this '
+            + 'family that takes no body at all. A caller holding a valid session — a cookie, or '
+            + 'an existing bearer — exchanges it for an access + refresh pair bound to the SAME '
+            + '`UserSession` row, so the native credential is a CONTINUATION of that session '
+            + 'rather than a second one. Revoking the session therefore kills the pair, which is '
+            + 'the property the whole design exists for.'
+            + '\n\nA bearer authenticates this call as well as a cookie, deliberately: a native '
+            + 'client rotating to a fresh device pair is the same operation.'
+            + '\n\n**The claims are RE-ENCODED, never rebuilt.** `applyMembershipClaims` is the '
+            + 'only producer of `memberships` / `membershipsTruncated`, and a second producer '
+            + 'that missed its ACTIVE filter or its 50-item slice would be silently MORE '
+            + 'permissive than the cookie it came from. So the access token carries the session’s '
+            + 'existing claims with a short lifetime stamped on them — which also means this '
+            + 'route cannot be used to refresh stale authority into something broader.'
+            + '\n\n**409 `session_not_tracked` is not an error to retry.** It means the session '
+            + 'carries no `userSessionId` lineage, so no REVOCABLE credential can be minted from '
+            + 'it; issuing one anyway would be an unkillable token, which is the exact failure '
+            + 'this refuses. Sign in again to get a tracked session.'
+            + '\n\n**Two rate limits apply and neither is redundant.** Middleware caps '
+            + '`/api/auth/token*` at 10/min per (IP, ua-hash) before the handler runs — the right '
+            + 'key pre-authentication — and `LOGIN_LIMIT` adds a per-(IP, userId) cap for a '
+            + 'caller who is already authenticated. The stricter governs; neither key shape alone '
+            + 'covers both.'
+            + '\n\nUndocumented until #3080, which is worth saying because `/api/auth/token/'
+            + 'refresh` below HAS been described all along: the spec described how to renew a '
+            + 'credential and not how to obtain one.',
+        tags: ['Auth'],
+        extraResponses: rawErrorResponses({
+            401:
+                '`Unauthorized` — no session, a session carrying `token.error`, or a session row '
+                + 'that is revoked or expired (`session_invalid`). The live row is re-checked '
+                + 'here, so this fails CLOSED where per-request bearer verification does not.',
+            409:
+                '`session_not_tracked` — the session has no `UserSession` lineage. Not '
+                + 'retryable; sign in again.',
+        }),
+        success: {
+            status: 200,
+            description:
+                'A pair bound to the caller’s existing session. Persist `refreshToken` before '
+                + 'discarding anything, and treat `expiresIn` as the access token’s life in '
+                + 'seconds.',
+            schema: NativeTokenPair,
+        },
+    });
+
+    op(registry, {
+        method: 'post',
         path: '/api/auth/token/refresh',
         extraResponses: rawErrorResponses({
             401:
