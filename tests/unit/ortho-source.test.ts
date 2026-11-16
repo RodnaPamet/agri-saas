@@ -21,6 +21,7 @@ import {
     orthoCoverageCacheKey,
     orthoTileAbsentKey,
     orthoTileCacheKey,
+    orthoFeatureFlightDate,
     sofiaFlightDate,
 } from '@/lib/geo/ortho-source';
 
@@ -225,5 +226,105 @@ describe('the flight date (#2421)', () => {
         expect(sofiaFlightDate(undefined)).toBeNull();
         expect(sofiaFlightDate('')).toBeNull();
         expect(sofiaFlightDate('not a date')).toBeNull();
+    });
+});
+
+describe('the flight date across FOUR upstream schemas (#3097)', () => {
+    /**
+     * Measured live 2026-11-16 against the six `VectorData:Dates_<year>`
+     * layers at ~43.08N 24.40E and ~43.55N 27.83E. These are the values the
+     * Ministry actually returns, not constructed examples.
+     */
+    const MEASURED = [
+        { layer: 'Dates_2025', properties: { FlightDate: '25/06/2025', Area: 5485.7 }, day: '2025-06-25' },
+        { layer: 'Dates_2023', properties: { Area: 1, Date: '2023-10-13T21:00:00Z' }, day: '2023-10-14' },
+        { layer: 'Dates_2022', properties: { Date: '28/08/2022' }, day: '2022-08-28' },
+        { layer: 'Dates_2020', properties: { EXT_ID: 13, DATE: '200818' }, day: '2020-08-18' },
+    ] as const;
+
+    it.each(MEASURED)('reads $layer -> $day', ({ properties, day }) => {
+        expect(orthoFeatureFlightDate(properties)).toBe(day);
+    });
+
+    it('THE SILENT ONE — a DD/MM day of 12 or less is not read as MM/DD', () => {
+        // This is the case the whole issue turns on, and the only one that
+        // fails QUIETLY: `Date.parse('05/08/2022')` returns 8 MAY, a valid
+        // date three months from the flight, so a suite built only from
+        // `28/08/2022` (day > 12, therefore NaN, therefore null) passes
+        // against the broken parser. Twelve days in every thirty-one.
+        expect(sofiaFlightDate('05/08/2022')).toBe('2022-08-05');
+        expect(sofiaFlightDate('12/08/2022')).toBe('2022-08-12');
+        expect(sofiaFlightDate('01/01/2021')).toBe('2021-01-01');
+    });
+
+    it('and Date.parse WOULD disagree — the discriminator', () => {
+        // Without this the assertion above is satisfied by any implementation
+        // that happens to agree, which is exactly what went wrong: the old
+        // one agreed on every day above the twelfth by returning null.
+        expect(new Date(Date.parse('05/08/2022')).getUTCMonth()).toBe(4); // May
+        expect(Number.isNaN(Date.parse('28/08/2022'))).toBe(true);
+    });
+
+    it('a bare YYMMDD is not a six-digit YEAR', () => {
+        // `Date.parse('200818')` is the year two hundred thousand and
+        // eighteen, so reading the 2020 layer's key WITHOUT fixing the parser
+        // would have shipped a new defect in place of the old one. That
+        // interaction is why the key and the format are one change.
+        expect(sofiaFlightDate('200818')).toBe('2020-08-18');
+
+        // The discriminator, measured through the OLD implementation's exact
+        // formatter so it pins the user-visible string rather than an
+        // intermediate: it did not fail, it rendered a six-digit year.
+        const legacy = Date.parse('200818');
+        expect(Number.isNaN(legacy)).toBe(false);
+        expect(
+            new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Europe/Sofia',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+            }).format(new Date(legacy)),
+        ).toBe('200818-01-01');
+    });
+
+    it('a number-typed DATE column is read too', () => {
+        // GeoServer types a column, not a value: `200818` arrived as a string
+        // at both probe points and an integer column is the same six digits.
+        expect(orthoFeatureFlightDate({ EXT_ID: 13, DATE: 200818 })).toBe('2020-08-18');
+    });
+
+    it('selects by KEY NAME, so a six-digit id cannot become a date', () => {
+        // `EXT_ID` is a small integer today and nothing stops it reaching six
+        // digits; scanning every VALUE for something YYMMDD-shaped would read
+        // id 200818 as 18 August 2020 with nothing failing.
+        expect(orthoFeatureFlightDate({ EXT_ID: 200818, Area: 5485.7 })).toBeNull();
+    });
+
+    it('an unreadable key does not end the search', () => {
+        // A feature carrying both must not lose the readable one to iteration
+        // order.
+        expect(ortheBoth()).toBe('2025-06-25');
+        function ortheBoth(): string | null {
+            return orthoFeatureFlightDate({ DATE: 'rubbish', FlightDate: '25/06/2025' });
+        }
+    });
+
+    it('PATTERN-MATCHING IS NOT VALIDATION — a non-day is refused', () => {
+        // `31/02/2022` matches DD/MM/YYYY perfectly, and `Date.UTC` rolls it
+        // forward to 3 March rather than refusing. The round trip is what
+        // separates a date from three numbers.
+        expect(sofiaFlightDate('31/02/2022')).toBeNull();
+        expect(sofiaFlightDate('00/08/2022')).toBeNull();
+        expect(sofiaFlightDate('28/13/2022')).toBeNull();
+        expect(sofiaFlightDate('200230')).toBeNull();
+    });
+
+    it('a missing or empty property set is a null date, not a throw', () => {
+        expect(orthoFeatureFlightDate(undefined)).toBeNull();
+        expect(orthoFeatureFlightDate(null)).toBeNull();
+        expect(orthoFeatureFlightDate({})).toBeNull();
+        expect(orthoFeatureFlightDate({ Area: 5485.7, EXT_ID: 13 })).toBeNull();
+        expect(orthoFeatureFlightDate({ Date: null })).toBeNull();
+        expect(orthoFeatureFlightDate({ Date: '   ' })).toBeNull();
     });
 });
