@@ -30,9 +30,22 @@ const REAL_SIZES: Record<string, number> = {
     'zarnoborsa-fetch.mjs': 7_490,
 };
 
-function run(root: string): Promise<{ code: number; out: string; err: string }> {
+function run(
+    root: string,
+    env?: NodeJS.ProcessEnv,
+): Promise<{ code: number; out: string; err: string }> {
     return new Promise((resolve) => {
-        execFile('node', [SCRIPT, root], (e, stdout, stderr) => {
+        /*
+         * `process.execPath`, not `'node'`.
+         *
+         * The binary-check case below scrubs PATH to make `pdftotext`
+         * unfindable — and with `'node'` that also hid node from THIS spawn,
+         * so the child never started and stderr came back empty. The test
+         * then failed for the right reason by accident while proving nothing
+         * about the script. An absolute interpreter keeps PATH governing only
+         * the lookup under test.
+         */
+        execFile(process.execPath, [SCRIPT, root], { env: env ?? process.env }, (e, stdout, stderr) => {
             const code = e && typeof (e as { code?: number }).code === 'number'
                 ? (e as { code: number }).code
                 : e ? 1 : 0;
@@ -155,6 +168,44 @@ describe('verify-image-artefacts.mjs — executed, not read', () => {
             expect(r.code).toBe(1);
             expect(r.err).toContain('worker.mjs is ABSENT');
             expect(r.err).not.toContain('not the app image');
+        });
+    });
+
+    describe('the BINARY check — #3136', () => {
+        it('reports pdftotext RUNNING, with its version', async () => {
+            // The control. A check that only ever printed a name would pass
+            // against a file that is not executable at all.
+            const { code, out } = await run(makeGoodTree());
+            expect(code).toBe(0);
+            expect(out).toMatch(/pdftotext runs — pdftotext version/);
+        });
+
+        it('EXIT 1 when pdftotext is not on PATH', async () => {
+            // The whole reason this check exists: a missing `poppler-utils`
+            // produces no build error and no startup error. The job would
+            // download the bulletin, the subprocess would fail, and the run
+            // would report `unreadable` — which a changed bulletin also
+            // reports. Scrubbing PATH is how that absence is simulated
+            // without uninstalling anything.
+            const { code, err } = await run(makeGoodTree(), {
+                ...process.env,
+                PATH: mkdtempSync(join(tmpdir(), 'empty-path-')),
+            });
+            expect(code).toBe(1);
+            expect(err).toMatch(/pdftotext could not be executed/);
+            expect(err).toMatch(/mzh-prices-pull/);
+        });
+
+        it('counts the binary in its own failure line, not among the artefacts', async () => {
+            // A diagnosis that said "1 of 6 artefacts" for a missing binary
+            // would send an operator looking at `dist/` — the
+            // `uniform-failure-shape-blinds-the-client` shape the control
+            // above the artefact loop exists to prevent.
+            const { err } = await run(makeGoodTree(), {
+                ...process.env,
+                PATH: mkdtempSync(join(tmpdir(), 'empty-path-')),
+            });
+            expect(err).toMatch(/binar\(ies\) missing, short or unrunnable/);
         });
     });
 

@@ -740,6 +740,33 @@ executorRegistry.register('zarnoborsa-pull', async () => {
     );
 });
 
+// ── mzh-prices-pull ─────────────────────────────────────────────────
+//
+// #3136. Reads МЗХ's weekly «Оперативен анализ» and stores the purchase
+// prices. Tenantless: the price catalogue has no farm.
+
+executorRegistry.register('mzh-prices-pull', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runMzhPricesPull } = await import('./mzh-prices-pull');
+    const r = await runMzhPricesPull();
+    // scanned = rows the grain table offered, actioned = points written,
+    // skipped = the difference. The job's own log line carries the VERDICT,
+    // because this triple cannot tell an unpublished week from an unreadable
+    // bulletin — and those want different responses.
+    return makeResult(
+        'mzh-prices-pull', startedAt, startMs,
+        r.received, r.pointsWritten, Math.max(0, r.received - r.pointsWritten),
+        {
+            verdict: r.verdict,
+            bulletinDate: r.bulletinDate,
+            asOf: r.asOf,
+            unmappedLabels: r.unmappedLabels,
+            noDataLabels: r.noDataLabels,
+        },
+    );
+});
+
 // ── channel-digest ──────────────────────────────────────────────────
 //
 // P9.7's opt-in 07:15 recap (#2941). Tenantless for the same reason as
