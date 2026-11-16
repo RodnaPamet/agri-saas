@@ -28,6 +28,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
 /** The only subtree that may convert a published lev figure. */
@@ -54,10 +55,16 @@ const FARM_MONEY_FILES: readonly string[] = [
  */
 const IMPORTS_PEG = /import\s*\{[^}]*\bBGN_PER_EUR\b[^}]*\}\s*from/;
 
-/** Comments blanked, because all five files DISCUSS the peg at length. */
-function blankComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
+/**
+ * Comments blanked, because all five files DISCUSS the peg at length.
+ *
+ * The SHARED helper, not a local regex. A hand-rolled stripper here was
+ * block-first, which `comment-stripper-order` refuses for #1497's reason: a
+ * line comment containing `/*` opens a fake block and swallows the code after
+ * it. `strings: false` keeps string literals, because an import specifier is
+ * one and the detector reads it.
+ */
+const blankComments = (src: string): string => blankNonCode(src, { strings: false });
 
 const FILES = collectSourceFiles({
     roots: ['src'],
@@ -130,9 +137,7 @@ describe('the calendar peg stays out of the farm\'s money (#637)', () => {
         const offenders: string[] = [];
         for (const rel of FARM_MONEY_FILES) {
             const raw = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
-            const code = raw
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/(^|[^:])\/\/.*$/gm, '$1');
+            const code = blankComments(raw);
             if (/1\.95583/.test(code)) offenders.push(rel);
         }
         expect(offenders).toEqual([]);
@@ -146,9 +151,7 @@ describe('the calendar peg stays out of the farm\'s money (#637)', () => {
             path.join(REPO_ROOT, 'src/lib/agro/calendar/costs.ts'),
             'utf8',
         );
-        const code = sample
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        const code = blankComments(sample);
         // The real declaration survives stripping...
         expect(code).toMatch(/export const BGN_PER_EUR = 1\.95583;/);
         // ...and the docblock's prose does not.

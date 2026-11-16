@@ -25,6 +25,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../../helpers/blank-non-code';
 import {
     BGN_PER_EUR,
     CALENDAR_COST_LINES,
@@ -196,7 +197,10 @@ describe('§2 the euro derivation', () => {
             'utf8',
         );
         const body = src.slice(src.indexOf('export function perDaEurCents'));
-        const code = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+        // The SHARED stripper: a local block-first one is refused by
+        // `comment-stripper-order` (#1497), because a line comment containing
+        // `/*` opens a fake block and eats the code after it.
+        const code = blankNonCode(body, { strings: false });
         console.log(`[calendar-costs] perDaEurCents body: ${code.split('\n').length} line(s) of code`);
         expect(code).toContain('PEG_NUMERATOR');
         expect(code).toContain('PEG_SCALE');
