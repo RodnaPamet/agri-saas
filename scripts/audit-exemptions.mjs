@@ -119,6 +119,36 @@ const REAL_EXEMPT = [
     // executes, and a stale entry would have sat here unexercised.
     // `tests/guardrails/pptx-no-image-embedding.test.ts` now holds the
     // invariant instead: the dependency may not come back silently.
+    {
+        id: 'GHSA-mfr8-8qww-v76h',
+        package: 'next',
+        reason:
+            'Information disclosure across root params when a `\'use cache\'` function is '
+            + 'called through `unstable_cache()`. Published 2026-11-16 against next '
+            + '>=16.3.0 <=16.4.4; we are on 16.4.4.\n\n'
+            + 'UNREACHABLE, measured rather than argued: ZERO `unstable_cache` call sites '
+            + 'under src/ or scripts/, and no `\'use cache\'` directive anywhere — the one '
+            + 'grep hit for "use cache" is the prose "reuse cached" in a soil docblock. '
+            + 'The vector needs BOTH, so there is no path to it in this codebase.\n\n'
+            + 'EXEMPTED RATHER THAN FIXED, which is the unusual half and the reason this '
+            + 'entry is long. 16.4.5 is published and the bump was built and tested '
+            + '(#3145): it REPRODUCIBLY breaks `tests/e2e/mobile/offline-basemap.spec.ts` '
+            + '— the «Offline map saved» toast never appears within 30s on both mobile '
+            + 'projects, through all three attempts `retries: 2` allows, and again on a '
+            + 'clean re-run of the same commit. That spec is NOT in the known-flake '
+            + 'ledger and main is green on it across four consecutive runs, so "flaky" '
+            + 'is not supportable. The spec\'s own comment notes an all-204 pack still '
+            + 'shows that toast, so the download path is not completing at all rather '
+            + 'than completing empty.\n\n'
+            + 'So the choice was between shipping a dependency change that breaks a map '
+            + 'download for reasons nobody has explained, and holding an advisory that '
+            + 'cannot be reached from here. The second is the smaller risk, and it is '
+            + 'TEMPORARY: #3147 carries the bump and the regression.\n\n'
+            + 'Re-check on the review date whether 16.4.6+ fixes the E2E failure, or '
+            + 'whether the failure turns out to be ours. Do NOT simply extend this '
+            + 'entry — rule 4 requires deleting and re-arguing it.',
+        review: '2026-11-24',
+    },
 ];
 
 // Test-only override, same shape as `AUDIT_JSON_OVERRIDE` below — lets
