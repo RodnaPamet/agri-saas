@@ -28,22 +28,41 @@
  * still in the bell either way"; there is no bell here, so dropping would be
  * the only loss of the interruption.
  *
- * ## The link is CONDITIONAL — owner ruling, same day
+ * ## The link is CONDITIONAL — owner ruling, and one third of it has EXPIRED
  *
  * Exactly one unsettled item links to that item: the five-segment
- * `/channels/{channelId}/posts/{postId}` (#3030) or the DM thread. Two or more
- * carry NO link and simply open the app.
+ * `/channels/{channelId}/posts/{postId}` (#3030) or the DM thread.
  *
- * The farm summary sends `/t/{slug}/notifications`, a LIST page, and there is
- * no person-scoped equivalent — no «Активност» surface exists (P9.7/#2941
- * would own it) and `/exchange/threads` lists direct messages and exchange
- * threads but no channel mentions, so a summary that was entirely mentions
- * would land somewhere showing none of them. Rather than invent a destination
- * we send none.
+ * The original ruling (2026-11-14) gave two or more items NO link, and the
+ * reason it gave was that no surface rendered several at once: *"`/exchange
+ * /threads` lists direct messages and exchange threads but no channel
+ * mentions, so a summary that was entirely mentions would land somewhere
+ * showing none of them. Rather than invent a destination we send none."*
  *
- * Exactly-one-or-none also means there is no "most recent wins" tie-break to
- * get wrong, which a "link to the newest of N" rule would have needed — and a
- * strict `>` tie-break never fires on ties.
+ * «За Вас» (`/channels/for-you`, #3069) is now that surface, so the premise
+ * expired and the ruling's own reasoning points the other way (#3074). This is
+ * `a-safety-argument-expires-silently`: the ruling was right when made,
+ * nothing failed when it stopped being right, and only re-reading the reason
+ * against today's routes surfaces it.
+ *
+ * ## It is the KINDS that decide, not the count
+ *
+ * «За Вас» renders replies to the caller's posts and mentions of them. It
+ * renders NO direct messages — `/api/social/activity` is channel activity. So
+ * `count > 1` alone is the wrong test, and sending every multi-item night
+ * there would commit the exact error the original ruling avoided, one surface
+ * over: a night of two DMs would land on a page showing neither.
+ *
+ * Several items therefore link to «За Вас» only when EVERY one of them is
+ * channel activity. A mixed night, or a night of direct messages alone, still
+ * carries no link — the conservative half of the ruling survives for precisely
+ * the cases that have no destination yet. An all-DM night has a plausible one
+ * in `/exchange/threads`; that is a destination ruling rather than an expired
+ * premise, so it is #3133 and not assumed here.
+ *
+ * None of this needs a "most recent wins" tie-break, which a "link to the
+ * newest of N" rule would have needed — and a strict `>` tie-break never
+ * fires on ties.
  *
  * ## The copy names a COUNT after a label, deliberately
  *
@@ -59,6 +78,8 @@
  * reach the same conclusion, so leaving them would grow the table without
  * bound. A send that THROWS leaves them NULL, which is the per-row retry.
  */
+import type { PersonPushDeferralKind } from '@prisma/client';
+
 import { enqueue } from '@/app-layer/jobs/queue';
 import { prisma } from '@/lib/prisma';
 import type { PersonPushSummaryPayload } from '@/app-layer/jobs/types';
@@ -96,6 +117,58 @@ export function deferralPath(row: {
     return null;
 }
 
+/**
+ * The kinds «За Вас» actually renders.
+ *
+ * An ALLOWLIST, derived from what the surface shows, rather than "everything
+ * that is not a DM": `PersonPushDeferralKind` has three members today, and a
+ * fourth must be a deliberate decision about whether that page lists it. An
+ * open-ended `!== 'DIRECT_MESSAGE'` would silently enrol it and link a push to
+ * a page showing none of its items — the same reasoning as
+ * `PERSISTABLE_PATHS`, where a forgotten allowlist entry costs one refetch and
+ * a forgotten denylist entry is the defect.
+ */
+export const FOR_YOU_KINDS: readonly PersonPushDeferralKind[] = [
+    'CHANNEL_MENTION',
+    'CHANNEL_REPLY',
+];
+
+/** «За Вас» — every channel reply and mention for the caller, newest first. */
+export const FOR_YOU_PATH = '/channels/for-you';
+
+/**
+ * Where the summary push lands, farm-relative, or null for "just open the app".
+ *
+ * `offSurfaceCount` is the number of unsettled rows whose kind «За Вас» does
+ * NOT render, and it is a COUNT rather than a scan of `rows` because `rows` is
+ * `take: 2` — enough to answer "is there exactly one", which is all the
+ * original rule needed, and not enough to answer "is every one of them channel
+ * activity". Reading the kinds off those two rows would send a night of two
+ * mentions and one DM to a page showing two of its three items, and the third
+ * would be the one a farmer was actually waiting for.
+ *
+ * Exported because the no-link branch is unobservable from the push itself: a
+ * missing destination and a destination that shows nothing look identical to
+ * the person tapping it.
+ */
+export function summaryPath(input: {
+    count: number;
+    offSurfaceCount: number;
+    first: {
+        kind: string;
+        channelId: string | null;
+        postId: string | null;
+        conversationId: string | null;
+    } | null;
+}): string | null {
+    if (input.count === 0) return null;
+    // One item lands on the item itself, which is strictly better than any
+    // aggregate: the post, not a list containing the post.
+    if (input.count === 1) return input.first ? deferralPath(input.first) : null;
+    // Several — and only where the surface renders all of them.
+    return input.offSurfaceCount === 0 ? FOR_YOU_PATH : null;
+}
+
 export async function runPersonPushSummary(
     input: PersonPushSummaryPayload,
 ): Promise<PersonPushSummaryResult> {
@@ -105,11 +178,11 @@ export async function runPersonPushSummary(
     // "is it exactly one" decides the link, so a second row is proof of
     // "several" without reading the rest. The COUNT is a separate aggregate
     // because the copy names a real number, not "2+".
-    const { rows, count } = await runWithoutRls(
+    const { rows, count, offSurfaceCount } = await runWithoutRls(
         { reason: 'person-push-deferral' },
         async (db) => {
             const where = { recipientUserId, settledAt: null } as const;
-            const [found, total] = await Promise.all([
+            const [found, total, offSurface] = await Promise.all([
                 db.personPushDeferral.findMany({
                     where,
                     orderBy: { createdAt: 'asc' },
@@ -123,8 +196,18 @@ export async function runPersonPushSummary(
                     },
                 }),
                 db.personPushDeferral.count({ where }),
+                // Rows «За Вас» would not show. Counted in the DATABASE and
+                // bounded, because the destination rule is about EVERY
+                // unsettled row and `take: 2` cannot see past the second.
+                db.personPushDeferral.count({
+                    // Spread, because Prisma's `notIn` takes a MUTABLE array
+                    // and the allowlist is `readonly` — which it stays: a
+                    // module constant another file can push onto is not an
+                    // allowlist. One copy per run, against a count query.
+                    where: { ...where, kind: { notIn: [...FOR_YOU_KINDS] } },
+                }),
             ]);
-            return { rows: found, count: total };
+            return { rows: found, count: total, offSurfaceCount: offSurface };
         },
     );
 
@@ -187,8 +270,9 @@ export async function runPersonPushSummary(
     });
     const locale = resolveRecipientLocale(user?.uiLanguage);
 
-    // Exactly one -> that item. Several -> nothing. See the docblock.
-    const farmRelativePath = count === 1 && rows[0] ? deferralPath(rows[0]) : null;
+    // One -> that item. Several, all channel activity -> «За Вас». Mixed, or
+    // direct messages alone -> nothing. See the docblock.
+    const farmRelativePath = summaryPath({ count, offSurfaceCount, first: rows[0] ?? null });
 
     // Delegated to `person-push-send` rather than sending here, so the farm
     // slug resolution, the two transports and the no-link fallback stay in ONE
