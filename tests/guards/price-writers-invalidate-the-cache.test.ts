@@ -148,7 +148,6 @@ describe('every MarketPricePoint writer drops the read cache (#3126)', () => {
     const writers = files.filter((f) => POINT_WRITE.test(code(f)));
 
     it('prints its denominator', () => {
-        // eslint-disable-next-line no-console
         console.log(
             `[price-writers] ${files.length} src file(s); ${writers.length} write ` +
                 `MarketPricePoint; ${Object.keys(EXEMPT).length} exempt`,
