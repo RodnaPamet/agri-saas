@@ -25,13 +25,9 @@ import {
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { consumePasswordReset } from '@/lib/auth/password-management';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
-
-const ResetPasswordSchema = z
-    .object({
-        token: z.string().min(1),
-        newPassword: z.string().min(1),
-    })
-    .strip();
+// Declared ONCE in `@/lib/schemas` so this parse and the OpenAPI entry
+// cannot drift — `request-body-declared-once` (#1555), cap zero.
+import { ResetPasswordSchema } from '@/lib/schemas';
 
 export const POST = withApiErrorHandling(
     withValidatedBody(ResetPasswordSchema, async (_req, _ctx, body) => {

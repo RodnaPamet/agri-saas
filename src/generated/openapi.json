@@ -3882,7 +3882,8 @@
         "required": [
           "currentPassword",
           "newPassword"
-        ]
+        ],
+        "description": "The CURRENT password is required as well as the new one: an authenticated session alone is not enough, which is what stops a stolen session locking the owner out. The new password is screened against the length policy AND a breach corpus."
       },
       "ChangePasswordResponse": {
         "type": "object",
@@ -9608,7 +9609,8 @@
         },
         "required": [
           "email"
-        ]
+        ],
+        "description": "The address to send a reset link to. The response is identical whatever this contains, so it cannot be used to learn whether an address is registered."
       },
       "ForgotPasswordResponse": {
         "type": "object",
@@ -18094,7 +18096,8 @@
         "required": [
           "token",
           "newPassword"
-        ]
+        ],
+        "description": "The token from the emailed link, single-use and 1-hour, plus the new password. Succeeding revokes every session for the account."
       },
       "ResetPasswordResponse": {
         "type": "object",
@@ -18463,18 +18466,29 @@
         "type": "object",
         "properties": {
           "language": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "en",
+              "bg"
+            ]
           }
         },
         "required": [
           "language"
         ],
-        "description": "One of the deployment’s locales — `bg` or `en` today."
+        "description": "The caller's own interface language, and the language every outbound email to them is written in — `resolveRecipientLocale` reads this column. One of the deployment's locales; anything else is a 400 rather than a silent fallback."
       },
       "SetUiLanguageResponse": {
         "type": "object",
-        "properties": {},
-        "additionalProperties": {}
+        "properties": {
+          "uiLanguage": {
+            "type": "string",
+            "description": "The stored locale. This is the durable answer; the cookie set alongside it is only what makes the web re-render immediately."
+          }
+        },
+        "required": [
+          "uiLanguage"
+        ]
       },
       "SoilProfile": {
         "type": [
@@ -21016,18 +21030,27 @@
         "type": "object",
         "properties": {
           "firstName": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "lastName": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           }
         },
-        "description": "Either field alone is valid. Both omitted is accepted and changes nothing."
+        "description": "The caller's own display name. Either field alone is valid, and both omitted is accepted and changes nothing. There is no userId — this route acts only on the authenticated session user."
       },
       "UpdateOwnProfileResponse": {
         "type": "object",
-        "properties": {},
-        "additionalProperties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The stored display name as it now reads — the two fields joined, which is what every surface renders. Encrypted at rest, which is why no route hands out another person’s."
+          }
+        },
+        "required": [
+          "name"
+        ]
       },
       "UpdateParcelCropSeason": {
         "type": "object",
@@ -53564,7 +53587,7 @@
       "post": {
         "operationId": "requestPasswordReset",
         "summary": "Ask for a password-reset link",
-        "description": "Step 1 of the reset flow. Mints a single-use, 1-hour token for the address and emails the link.\n\n**The answer is ALWAYS `{ \"ok\": true }`,** whatever happened — unknown address, an OAuth-only account with no password, a mailer failure. That uniformity IS the feature: any variation in status, body or latency would make this an account-enumeration oracle on an unauthenticated route. So a client must NOT tell the user \"we have sent you an email\" as a statement of fact, and must never branch on this response to decide whether an address is registered — the honest copy is nearer \"if that address has an account, a link is on its way\".\n\nRate-limited at 5/hour per IP (`EMAIL_DISPATCH_LIMIT`), the standard mitigation for an unauthenticated route that sends mail to an address the caller chose. A tripped limit is also absorbed into the same `ok: true`.",
+        "description": "Step 1 of the reset flow. Mints a single-use, 1-hour token for the address and emails the link.\n\n**The answer is ALWAYS `{ \"ok\": true }`,** whatever happened — unknown address, an OAuth-only account with no password, a mailer failure. That uniformity IS the feature — variation in status, body or latency would make this an account-enumeration oracle on an unauthenticated route. So a client must NOT tell the user \"we have sent you an email\" as a statement of fact, and must never branch on this response to decide whether an address is registered — the honest copy is nearer \"if that address has an account, a link is on its way\".\n\nRate-limited at 5/hour per IP (`EMAIL_DISPATCH_LIMIT`), the standard mitigation for an unauthenticated route that sends mail to an address the caller chose. A tripped limit is also absorbed into the same `ok: true`.",
         "tags": [
           "Auth"
         ],

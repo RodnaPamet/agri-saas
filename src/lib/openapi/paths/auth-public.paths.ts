@@ -16,7 +16,11 @@
  * better place.
  */
 import { z } from '@/lib/openapi/zod';
-import { AuthRegisterStartSchema } from '@/lib/schemas';
+import {
+    AuthRegisterStartSchema,
+    ForgotPasswordSchema,
+    ResetPasswordSchema,
+} from '@/lib/schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op, rawErrorResponses } from './helpers';
 
@@ -121,7 +125,7 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
             + 'emails the link.'
             + '\n\n**The answer is ALWAYS `{ "ok": true }`,** whatever happened — unknown '
             + 'address, an OAuth-only account with no password, a mailer failure. That '
-            + 'uniformity IS the feature: any variation in status, body or latency would make '
+            + 'uniformity IS the feature — variation in status, body or latency would make '
             + 'this an account-enumeration oracle on an unauthenticated route. So a client must '
             + 'NOT tell the user "we have sent you an email" as a statement of fact, and must '
             + 'never branch on this response to decide whether an address is registered — the '
@@ -131,9 +135,8 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
             + 'chose. A tripped limit is also absorbed into the same `ok: true`.',
         tags: ['Auth'],
         security: NO_AUTH,
-        body: z
-            .object({ email: z.string().email() })
-            .openapi('ForgotPasswordRequest'),
+        // The route's own schema, imported — not a second copy (#1555).
+        body: ForgotPasswordSchema,
         success: {
             status: 200,
             description:
@@ -164,9 +167,7 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
             + 'breach corpus. Do not retry it; show it.',
         tags: ['Auth'],
         security: NO_AUTH,
-        body: z
-            .object({ token: z.string().min(1), newPassword: z.string().min(1) })
-            .openapi('ResetPasswordRequest'),
+        body: ResetPasswordSchema,
         extraResponses: rawErrorResponses({
             400:
                 'The token was invalid or expired, or the new password failed the policy or the '

@@ -26,7 +26,12 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { MAX_BOTTOM_TABS } from '@/lib/account/bottom-tabs';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
-import { EditRememberedPointSchema } from '@/lib/schemas';
+import {
+    ChangePasswordSchema,
+    EditRememberedPointSchema,
+    ProfileNameSchema,
+    UiLanguageSchema,
+} from '@/lib/schemas';
 import { codedErrorResponses, op, rawErrorResponses } from './helpers';
 
 /**
@@ -572,22 +577,27 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             + 'person credential, an MFA-pending session, and the operator-only persona on a '
             + 'social surface.',
         tags: ['Account'],
-        body: z
-            .object({
-                firstName: z.string().optional(),
-                lastName: z.string().optional(),
-            })
-            .openapi('UpdateOwnProfileRequest', {
-                description:
-                    'Either field alone is valid. Both omitted is accepted and changes nothing.',
-            }),
+        // The SAME schema the route parses — `request-body-declared-once`
+        // (#1555) caps dual declarations at zero, and a second hand-written
+        // copy here is how a spec comes to describe a body the handler does
+        // not accept.
+        body: ProfileNameSchema,
         extraResponses: rawErrorResponses({
             400: 'The payload did not parse, or a name exceeded the maximum length.',
         }),
         success: {
             status: 200,
             description: 'The stored name as it now reads.',
-            schema: z.object({}).passthrough().openapi('UpdateOwnProfileResponse'),
+            schema: z
+                .object({
+                    name: z.string().openapi({
+                        description:
+                            'The stored display name as it now reads — the two fields joined, '
+                            + 'which is what every surface renders. Encrypted at rest, which is '
+                            + 'why no route hands out another person’s.',
+                    }),
+                })
+                .openapi('UpdateOwnProfileResponse'),
         },
     });
 
@@ -610,18 +620,22 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             + 'that quietly became English is how somebody ends up reading their compliance '
             + 'notices in the wrong language.',
         tags: ['Account'],
-        body: z
-            .object({ language: z.string() })
-            .openapi('SetUiLanguageRequest', {
-                description: 'One of the deployment’s locales — `bg` or `en` today.',
-            }),
+        body: UiLanguageSchema,
         extraResponses: rawErrorResponses({
             400: 'The payload did not parse, or the language is not one this deployment serves.',
         }),
         success: {
             status: 200,
             description: 'The stored language. A locale cookie is set alongside it.',
-            schema: z.object({}).passthrough().openapi('SetUiLanguageResponse'),
+            schema: z
+                .object({
+                    uiLanguage: z.string().openapi({
+                        description:
+                            'The stored locale. This is the durable answer; the cookie set '
+                            + 'alongside it is only what makes the web re-render immediately.',
+                    }),
+                })
+                .openapi('SetUiLanguageResponse'),
         },
     });
 
@@ -646,12 +660,7 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             + 'new one failed the policy, or it was found in a breach corpus. Show them rather '
             + 'than retrying.',
         tags: ['Auth'],
-        body: z
-            .object({
-                currentPassword: z.string().min(1),
-                newPassword: z.string().min(1),
-            })
-            .openapi('ChangePasswordRequest'),
+        body: ChangePasswordSchema,
         extraResponses: rawErrorResponses({
             400:
                 'The current password was wrong, or the new one failed the length policy or the '

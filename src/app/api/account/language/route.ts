@@ -20,12 +20,11 @@ import { jsonResponse } from '@/lib/api-response';
 import {badRequest } from '@/lib/errors/types';
 import { updateOwnUiLanguage } from '@/lib/account/language';
 import { LOCALE_COOKIE, LOCALES, LOCALE_COOKIE_MAX_AGE_SECONDS } from '@/lib/i18n/locales';
+// Declared ONCE in `@/lib/schemas` so this parse and the OpenAPI entry
+// cannot drift — `request-body-declared-once` (#1555), cap zero.
+import { UiLanguageSchema } from '@/lib/schemas';
 
 /** One year, in seconds — matches the middleware seed lifetime. */
-
-const LanguageSchema = z.object({
-    language: z.enum(LOCALES),
-});
 
 export const PUT = withApiErrorHandling(async (req: NextRequest) => {
     // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
@@ -35,7 +34,7 @@ export const PUT = withApiErrorHandling(async (req: NextRequest) => {
     // `account` surface, so a MECHANISATOR is correctly NOT refused.
     const ctx = await getUserCtx(req);
 
-    const parsed = LanguageSchema.safeParse(await req.json().catch(() => null));
+    const parsed = UiLanguageSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) throw badRequest('Invalid language payload.');
 
     const result = await updateOwnUiLanguage(ctx.userId, parsed.data.language);

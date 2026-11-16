@@ -4069,7 +4069,8 @@ exports[`API contract — per-schema snapshots schema: ChangePasswordRequest 1`]
   "required": [
     "currentPassword",
     "newPassword"
-  ]
+  ],
+  "description": "The CURRENT password is required as well as the new one: an authenticated session alone is not enough, which is what stops a stolen session locking the owner out. The new password is screened against the length policy AND a breach corpus."
 }"
 `;
 
@@ -10113,7 +10114,8 @@ exports[`API contract — per-schema snapshots schema: ForgotPasswordRequest 1`]
   },
   "required": [
     "email"
-  ]
+  ],
+  "description": "The address to send a reset link to. The response is identical whatever this contains, so it cannot be used to learn whether an address is registered."
 }"
 `;
 
@@ -19115,7 +19117,8 @@ exports[`API contract — per-schema snapshots schema: ResetPasswordRequest 1`] 
   "required": [
     "token",
     "newPassword"
-  ]
+  ],
+  "description": "The token from the emailed link, single-use and 1-hour, plus the new password. Succeeding revokes every session for the account."
 }"
 `;
 
@@ -19526,21 +19529,32 @@ exports[`API contract — per-schema snapshots schema: SetUiLanguageRequest 1`] 
   "type": "object",
   "properties": {
     "language": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "en",
+        "bg"
+      ]
     }
   },
   "required": [
     "language"
   ],
-  "description": "One of the deployment’s locales — \`bg\` or \`en\` today."
+  "description": "The caller's own interface language, and the language every outbound email to them is written in — \`resolveRecipientLocale\` reads this column. One of the deployment's locales; anything else is a 400 rather than a silent fallback."
 }"
 `;
 
 exports[`API contract — per-schema snapshots schema: SetUiLanguageResponse 1`] = `
 "{
   "type": "object",
-  "properties": {},
-  "additionalProperties": {}
+  "properties": {
+    "uiLanguage": {
+      "type": "string",
+      "description": "The stored locale. This is the durable answer; the cookie set alongside it is only what makes the web re-render immediately."
+    }
+  },
+  "required": [
+    "uiLanguage"
+  ]
 }"
 `;
 
@@ -22238,21 +22252,30 @@ exports[`API contract — per-schema snapshots schema: UpdateOwnProfileRequest 1
   "type": "object",
   "properties": {
     "firstName": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 100
     },
     "lastName": {
-      "type": "string"
+      "type": "string",
+      "maxLength": 100
     }
   },
-  "description": "Either field alone is valid. Both omitted is accepted and changes nothing."
+  "description": "The caller's own display name. Either field alone is valid, and both omitted is accepted and changes nothing. There is no userId — this route acts only on the authenticated session user."
 }"
 `;
 
 exports[`API contract — per-schema snapshots schema: UpdateOwnProfileResponse 1`] = `
 "{
   "type": "object",
-  "properties": {},
-  "additionalProperties": {}
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The stored display name as it now reads — the two fields joined, which is what every surface renders. Encrypted at rest, which is why no route hands out another person’s."
+    }
+  },
+  "required": [
+    "name"
+  ]
 }"
 `;
 

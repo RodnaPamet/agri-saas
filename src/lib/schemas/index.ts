@@ -19,10 +19,82 @@ import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
 import { instantTimestamp, clearableTimestamp, requestTimestamp } from './timestamp';
 import { FARM_NAME_MAX } from './farm-limits';
 import { REMEMBERED_POINT_MAX_CHARS } from './assistant-memory-limits';
+import { DISPLAY_NAME_MAX } from '@/lib/account/profile';
+import { LOCALES } from '@/lib/i18n/locales';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
 });
+
+// ─── Account and credentials ───
+//
+// Declared HERE rather than in each route, so the route that parses the body
+// and the spec that describes it cannot drift — `request-body-declared-once`
+// (#1555) holds that at a cap of zero, and these five were the last dual
+// declarations. Every one keeps `.strip()`, so an unknown key is dropped
+// rather than rejected: a newer client sending an extra field keeps working,
+// which is the posture `bottom-tabs` already takes.
+
+export const ProfileNameSchema = z
+    .object({
+        firstName: z.string().max(DISPLAY_NAME_MAX).optional(),
+        lastName: z.string().max(DISPLAY_NAME_MAX).optional(),
+    })
+    .strip()
+    .openapi('UpdateOwnProfileRequest', {
+        description:
+            "The caller's own display name. Either field alone is valid, and both omitted is "
+            + 'accepted and changes nothing. There is no userId — this route acts only on the '
+            + 'authenticated session user.',
+    });
+
+export const UiLanguageSchema = z
+    .object({
+        language: z.enum(LOCALES),
+    })
+    .strip()
+    .openapi('SetUiLanguageRequest', {
+        description:
+            "The caller's own interface language, and the language every outbound email to them "
+            + 'is written in — `resolveRecipientLocale` reads this column. One of the '
+            + "deployment's locales; anything else is a 400 rather than a silent fallback.",
+    });
+
+export const ChangePasswordSchema = z
+    .object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(1),
+    })
+    .strip()
+    .openapi('ChangePasswordRequest', {
+        description:
+            'The CURRENT password is required as well as the new one: an authenticated session '
+            + 'alone is not enough, which is what stops a stolen session locking the owner out. '
+            + 'The new password is screened against the length policy AND a breach corpus.',
+    });
+
+export const ForgotPasswordSchema = z
+    .object({
+        email: z.string().trim().email(),
+    })
+    .strip()
+    .openapi('ForgotPasswordRequest', {
+        description:
+            'The address to send a reset link to. The response is identical whatever this '
+            + 'contains, so it cannot be used to learn whether an address is registered.',
+    });
+
+export const ResetPasswordSchema = z
+    .object({
+        token: z.string().min(1),
+        newPassword: z.string().min(1),
+    })
+    .strip()
+    .openapi('ResetPasswordRequest', {
+        description:
+            'The token from the emailed link, single-use and 1-hour, plus the new password. '
+            + 'Succeeding revokes every session for the account.',
+    });
 
 // ─── Assets ───
 

@@ -14,11 +14,9 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import {badRequest } from '@/lib/errors/types';
 import { updateOwnDisplayName, DISPLAY_NAME_MAX } from '@/lib/account/profile';
-
-const ProfileNameSchema = z.object({
-    firstName: z.string().max(DISPLAY_NAME_MAX).optional(),
-    lastName: z.string().max(DISPLAY_NAME_MAX).optional(),
-});
+// Declared ONCE in `@/lib/schemas` so this parse and the OpenAPI entry
+// cannot drift — `request-body-declared-once` (#1555), cap zero.
+import { ProfileNameSchema } from '@/lib/schemas';
 
 export const PATCH = withApiErrorHandling(async (req: NextRequest) => {
     // `getUserCtx`, not `auth()` (#1579). It refuses three callers this route
