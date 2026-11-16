@@ -37,6 +37,7 @@ import { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 import { ZarnoBorsaRow } from '@/lib/market/zarnoborsa-parse';
+import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 import {
     ZARNOBORSA_MARKETS,
     zarnoBorsaCommodity,
@@ -54,6 +55,22 @@ export const ZARNOBORSA_UNIT = 'EUR/t';
 export type IngestVerdict = 'clean' | 'partial' | 'unaudited';
 
 export interface ZarnoBorsaIngestResult {
+    /**
+     * Cache keys dropped after the write (#3126).
+     *
+     * Reported rather than inferred, for the reason every other number in this
+     * reading is: `pointsWritten: 10` beside `cacheKeysInvalidated: 0` is an
+     * ingest nobody can see, and the pair says so in one line.
+     */
+    cacheKeysInvalidated: number;
+    /**
+     * True when the drop was ATTEMPTED and threw.
+     *
+     * Separate from `cacheKeysInvalidated: 0`, which legitimately means there
+     * was nothing cached to drop. Collapsing them would make a Redis outage
+     * indistinguishable from a quiet cache.
+     */
+    cacheInvalidationFailed: boolean;
     verdict: IngestVerdict;
     /** Rows handed in. */
     received: number;
@@ -90,6 +107,8 @@ export async function ingestZarnoBorsaRows(
         mapped: 0,
         seriesTouched: 0,
         pointsWritten: 0,
+        cacheKeysInvalidated: 0,
+        cacheInvalidationFailed: false,
         unmappedProducts: [],
     };
 
@@ -228,5 +247,45 @@ export async function ingestZarnoBorsaRows(
      * ids so the difference is visible without a second investigation.
      */
     result.verdict = unmapped.size > 0 ? 'partial' : 'clean';
+
+    /*
+     * DROP THE CACHED READ PAYLOADS FOR WHAT WE JUST WROTE (#3126).
+     *
+     * `getPriceTrends` serves `trends:prices:v3:<locale>:<commodity>:<range>`
+     * from Redis for SIX HOURS, so without this the whole ingest is invisible
+     * until each key expires. That is not hypothetical: the owner opened
+     * Тенденции, saw the EC price from 19 October, and reported "prices are
+     * still not live" while ten ZarnoBorsa series sat in the database.
+     *
+     * `market-prices-pull` has done this since it was written; the pattern was
+     * simply not carried over, and measuring found THREE of four writers
+     * missing it — the two platform-admin paths included, where a human is at
+     * the console waiting for their correction to appear.
+     *
+     * THE COMMODITIES ARE THE ONES ACTUALLY WRITTEN, never a fixed list. A
+     * fixed list is the same staleness one level up: it goes wrong the first
+     * time the market map gains a commodity, and silently, because the only
+     * symptom is a chart that does not move.
+     *
+     * BEST-EFFORT, like every other post-write announcement here: the points
+     * are committed by the time this runs, and losing a cache drop must not
+     * fail an ingest that succeeded. A failure leaves the old payload to
+     * expire on its own TTL, which is the pre-#3126 behaviour.
+     *
+     * The failure is recorded SEPARATELY rather than as `0`, because
+     * `cacheKeysInvalidated: 0` already means "there was nothing to drop" —
+     * a legitimate and common state. One number cannot carry both, and
+     * `zarnoborsa-pull` spreads this whole result into its log line, so both
+     * fields surface with no change there.
+     */
+    if (result.pointsWritten > 0) {
+        const touched = [...new Set(mapped.map((m) => m.commodity))];
+        try {
+            result.cacheKeysInvalidated = await invalidatePriceTrendsCache(touched);
+        } catch {
+            result.cacheInvalidationFailed = true;
+        }
+    }
+
     return result;
 }

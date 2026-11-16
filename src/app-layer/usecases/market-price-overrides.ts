@@ -55,6 +55,8 @@ import { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { assertPlatformSupport } from '@/lib/auth/platform-support';
 import { runInTenantContext } from '@/lib/db-context';
+import { afterCommit } from '@/lib/db/after-commit';
+import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, internal } from '@/lib/errors/types';
 import { commodityMeta, type CommodityFeed } from '@/lib/market/commodity-vocabulary';
@@ -310,6 +312,17 @@ export async function upsertOverrideDay(
             },
         });
 
+        /*
+         * DROP THE CACHED READ PAYLOAD (#3126). After commit, not before: a
+         * read arriving between an early invalidation and the commit would
+         * re-populate from the PRE-write state and pin the old value for the
+         * full six-hour TTL — worse than not invalidating. `afterCommit`
+         * defers properly here because `runInTenantContext` opens a scope.
+         */
+        afterCommit('market.invalidate_trends_cache', () =>
+            invalidatePriceTrendsCache(series.map((x) => x.commodity)),
+        );
+
         return { written: series.length, series };
     });
 }
@@ -427,6 +440,21 @@ export async function clearOverride(
                     `${live.length} series, stamped ${stamped.count} and ${marked.count}`,
             );
         }
+
+        /*
+         * AND ON WITHDRAWAL (#3126), which is the worse half.
+         *
+         * Clearing an override is meant to RESTORE the real price. Without
+         * this the cache keeps serving the overridden figure for up to six
+         * hours, so the one action whose entire purpose is to undo a wrong
+         * number appears to do nothing — and an operator who then clears it
+         * again, or re-enters the real value by hand, is debugging a cache.
+         *
+         * After commit, for the reason the write path gives.
+         */
+        afterCommit('market.invalidate_trends_cache', () =>
+            invalidatePriceTrendsCache([commodity]),
+        );
 
         return { commodity, cleared: true, pointsWithdrawn };
     });
