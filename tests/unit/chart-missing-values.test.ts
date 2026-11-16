@@ -25,6 +25,7 @@ import type { Data, Series } from '@/components/ui/charts';
 function series(stage: string, points: Array<[string, number]>): TrendSeries {
     return {
         source: 'ec-agrifood',
+        sourceUrl: null,
         region: 'BG',
         stage,
         unit: 'EUR/t',

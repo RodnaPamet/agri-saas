@@ -115,6 +115,23 @@ export interface TrendPoint {
 
 export interface TrendSeries {
     source: string;
+    /**
+     * Where the figure was published, or null.
+     *
+     * Added #3143 after a correction worth recording: asked whether the series
+     * carried one, I checked the COLUMN — which is populated, and which
+     * `mzh-prices-pull` repoints at the current issue on every run — and said
+     * yes. The column was never on the wire, so the client could not have
+     * linked its attribution however long it waited. Existing is not mounted:
+     * the question was about the payload and the answer described the
+     * database.
+     *
+     * Nullable because most series have none. `ec-agrifood` and
+     * `alpha-vantage` are API feeds with no per-series page, and a plausible
+     * URL invented for them would be a link that answers a different question
+     * from "where does this number come from".
+     */
+    sourceUrl: string | null;
     region: string;
     stage: string | null;
     unit: string;
@@ -169,6 +186,8 @@ async function readFromDb(
         where: { commodity, clearedAt: null },
         take: MAX_SERIES,
         orderBy: [{ source: 'asc' }, { region: 'asc' }, { stage: 'asc' }],
+        // `sourceUrl` rides the row that is already being read — no extra
+        // query, and nothing else needs it resolved.
         include: {
             points: {
                 // Points carry their OWN `clearedAt`, and the series filter
@@ -257,6 +276,7 @@ async function readFromDb(
     const mapped: TrendSeries[] = series
         .map((s) => ({
             source: s.source,
+            sourceUrl: s.sourceUrl ?? null,
             region: s.region,
             stage: s.stage,
             unit: s.unit,
