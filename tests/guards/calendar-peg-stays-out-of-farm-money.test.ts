@@ -22,6 +22,14 @@
  * that moment the farm's own money would be converted at a peg four other
  * modules say was deleted, and nothing would fail.
  *
+ * THAT CHANGE IS NOW RULED OUT (owner, 2026-11-16): the figures stay reference
+ * data in the calendar, with no «Нов разход» suggestion, because the calculator
+ * has no vineyard crop, «Материали…» combines plant protection with
+ * fertilisers, and the wage lines are farm-wide salaries. So this guard is not
+ * redundant — it is STRONGER. An import outside the allowed subtree now
+ * contradicts an explicit decision rather than a risk somebody foresaw, and
+ * the ruling is the kind that gets revisited, so the fence should outlast it.
+ *
  * So: the import is allowed in exactly one subtree, and the farm-money paths
  * are asserted clean by name as well as by pattern.
  */
