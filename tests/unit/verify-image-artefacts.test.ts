@@ -53,8 +53,15 @@ function stubPdftotextDir(): string {
     return dir;
 }
 
-/** PATH with the stub FIRST, so the script finds it wherever this runs. */
-function envWithStub(over: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+/**
+ * PATH with the stub FIRST, so the script finds it wherever this runs.
+ *
+ * `over` is a plain string map rather than `NodeJS.ProcessEnv`: this repo's
+ * `ProcessEnv` requires `NODE_ENV`, so a `= {}` default does not satisfy it
+ * and `tsc` refuses the signature. The spread below starts from the real
+ * `process.env`, which supplies it.
+ */
+function envWithStub(over: Record<string, string> = {}): NodeJS.ProcessEnv {
     return { ...process.env, PATH: `${stubPdftotextDir()}:${process.env.PATH ?? ''}`, ...over };
 }
 
