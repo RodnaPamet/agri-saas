@@ -52,6 +52,8 @@ import { resolvePlatformSystemUserId } from '@/lib/auth/system-user';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
+import { getRedis } from '@/lib/redis';
+import { recordCardHealth } from '@/lib/channels/card-health-record';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { getMarketNews } from '@/app-layer/usecases/trends';
@@ -237,6 +239,22 @@ export async function runChannelCards(now: Date = new Date()): Promise<ChannelCa
         eventCreated: event.created,
         eventDormant: event.dormant,
     });
+
+    /*
+     * And the same reading, durably, for `/api/readyz` to report (#2944).
+     *
+     * The LOG is queryable and nothing watches it — which is the ninth
+     * instance of that in this repo: a counter that exists and nothing
+     * consumes. `recordCardHealth` never throws, because the cards are already
+     * written by the time it runs and losing the run's outcome to a monitoring
+     * write is not a trade worth making.
+     *
+     * It writes the SAME `byKind` the log reports, deliberately: the probe's
+     * whole property is `withContent > created`, and a probe that re-derived
+     * eligibility would be a second spelling of a rule whose divergence is
+     * silent — the #1664 shape. One producer, two consumers.
+     */
+    await recordCardHealth(getRedis(), now, dayKey, byKind);
 
     return { cards, byKind };
 }

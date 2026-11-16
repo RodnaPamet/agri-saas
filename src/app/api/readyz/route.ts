@@ -99,6 +99,7 @@ import { platformConsoleCapability } from '@/lib/auth/platform-console-capabilit
 import { featureFlagsCapability } from '@/lib/feature-flags-capability';
 import { mailCanaryCapability } from '@/lib/email/mail-canary-capability';
 import { workerHeartbeatCapability } from '@/app-layer/jobs/worker-heartbeat-capability';
+import { cardHealthCapability } from '@/lib/channels/card-health-capability';
 import { documentStorageCapability } from '@/lib/documents/storage-capability';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
@@ -377,6 +378,15 @@ export async function GET() {
     // Same client as `mailCanary` above, for the same reason it takes one.
     const worker = await workerHeartbeatCapability(getRedis ? getRedis() : null);
 
+    // #2944 — WATCHED, never gated, and OUTSIDE `checks`/`failed` like every
+    // sibling here. A quiet news feed is a content problem, not an outage of
+    // this service, and this endpoint is the GCP uptime check's target.
+    //
+    // Same client as `mailCanary` and `worker` above, for the same reason they
+    // take one: `null` when Redis is unconfigured, which the capability
+    // reports as `unknown` rather than inventing a card problem.
+    const cardHealth = await cardHealthCapability(getRedis ? getRedis() : null);
+
     // #2495 step 3 — WATCHED, not gated, and OUTSIDE `checks`/`failed` like
     // every sibling here. A band rather than the byte total, because this
     // endpoint is probed unauthenticated from six regions and roughly how
@@ -423,6 +433,7 @@ export async function GET() {
                 mailCanary,
                 worker,
                 documentStorage,
+                cardHealth,
             },
             latencyMs: Date.now() - start,
         },
