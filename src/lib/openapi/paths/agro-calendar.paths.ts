@@ -1,6 +1,20 @@
 /**
- * `/api/agro-calendar` — «Агрономически календар», published agronomy with a
- * citation per window.
+ * `/api/agro-calendar` — «Агрономически календар», published Bulgarian
+ * agronomy by crop and region.
+ *
+ * ## Citations are NOT served (owner instruction 2026-11-16)
+ *
+ * Every window in the DATASET is cited and the loader refuses one that is
+ * not — that rule is unchanged and lives in `calendar/schema.ts`. What this
+ * endpoint no longer returns is the citation itself: no `cites` on a window,
+ * no `cite` on a costs block, and no `sources` map. The references were
+ * rendering as «МЗХ, 2024, стр. 190» under each window on the phone and the
+ * owner asked for them off the screen; the payload is the only place that
+ * settles it for every client at once.
+ *
+ * So "published WITH SOURCES" still describes how the data is AUTHORED, and
+ * no longer describes what is displayed. Those read as opposites at a glance,
+ * which is why it is written down here rather than left to inference.
  *
  * Its own module rather than an addition to `agro.paths.ts`, which documents
  * the FARM's own agronomy — readings, signals, parcel analysis, all
@@ -19,19 +33,6 @@ import { op } from './helpers';
 import { CALENDAR_UNITS } from '@/lib/agro/calendar/schema';
 import { CALENDAR_COST_LINES } from '@/lib/agro/calendar/costs';
 
-const Citation = z
-    .object({
-        source: z.string().openapi({
-            description: 'A key in the `sources` map of this same response.',
-            example: 'mzh-ip-2024',
-        }),
-        page: z.union([z.number(), z.string()]).openapi({
-            description: 'The page carrying the figure. A string where the source cites a span.',
-            example: 20,
-        }),
-    })
-    .openapi('AgroCalendarCitation');
-
 export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -45,7 +46,7 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
             '\n\n**`from > to` MEANS THE WINDOW WRAPS THE YEAR.** Ten of the windows do — pruning runs 15 December to 30 March. A client comparing `from <= today <= to` lexically gets those exactly backwards and reports pruning season for the eight months it is not. Treat a wrapped window as `today >= from OR today <= to`.' +
             '\n\n**Dates are `MM-DD` with no year**, because the windows recur annually.' +
             '\n\n**Units are as the source writes them and are never converted** — `seeds/m2` for cereals, `plants/m2` for rapeseed, `plants/da` for sunflower. A converted figure is a number no cited page supports. The set is closed, so a client can switch on it exhaustively.' +
-            '\n\n**`cites` is one ordered list** — the window\'s primary citation followed by any additional ones. A harvest window\'s start and completion often come from two different weekly bulletins, so there is no meaningful "primary"; rendering only the first would hide the evidence for the other endpoint.' +
+            '\n\n**No citations are returned** (owner instruction 2026-11-16). A window used to carry `cites` and the response a `sources` map, which clients rendered as «МЗХ, 2024, стр. 190» under each entry. The dataset is still cited per window and the loader still refuses an uncited one — the provenance is internal now, not displayed. Do not reintroduce a source line from any other field.' +
             '\n\n`conventions` ships with the data and states the authoring rules it was compiled under, including that a window without a page supporting it is left OUT rather than served uncited. The server refuses to load a dataset that breaks either rule, so a window you receive always resolves to a real source.' +
             '\n\nBehind the `agro.calendar` feature flag, which 404s while off: a 404 means "not enabled", not "wrong URL".' +
             '\n\n**Stage 1 of two.** This serves the committed base. Admin corrections — global, audited, per-window, each carrying a required `basis` — arrive in stage 2, and an overridden window will be marked so «Коригирано от Agrent» can render INSTEAD of a source citation rather than beside a stale one.',
@@ -86,15 +87,6 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                         description:
                             'The authoring rules this dataset was compiled under. Shipped with the data so a reader can see what the citations are worth.',
                     }),
-                    sources: z.record(
-                        z.string(),
-                        z.object({
-                            title: z.string(),
-                            publisher: z.string().openapi({ example: 'МЗХ' }),
-                            url: z.string(),
-                            published: z.string().optional(),
-                        }),
-                    ),
                     crops: z.array(
                         z.object({
                             key: z.string().openapi({ example: 'wheat-bread' }),
@@ -114,7 +106,6 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                                         description:
                                             'The area and units the card prints its figures for. `published` values below are for THIS area, in these units — nothing is pre-divided.',
                                     }),
-                                    cite: Citation,
                                     lines: z.array(
                                         z.object({
                                             key: z.enum(CALENDAR_COST_LINES),
@@ -199,10 +190,6 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                                             unit: z.enum(CALENDAR_UNITS),
                                         })
                                         .optional(),
-                                    cites: z.array(Citation).openapi({
-                                        description:
-                                            'Never empty. Ordered: the primary citation first, then any additional pages.',
-                                    }),
                                 }),
                             ),
                         }),

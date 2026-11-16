@@ -46,6 +46,12 @@ import { CALENDAR, calendarCropKeys, calendarFor } from '@/lib/agro/calendar/loa
  * response so «Коригирано от Agrent» renders instead of a source. Until then
  * every window here is the cited base.
  */
+/** Drop a `cite` key, whatever else the object carries. See the handler. */
+function stripCite<T extends { cite?: unknown }>(value: T): Omit<T, 'cite'> {
+    const { cite: _cite, ...rest } = value;
+    return rest;
+}
+
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const ctx = await getUserCtx(req);
     await assertFeatureEnabled('agro.calendar', ctx.userId);
@@ -77,6 +83,45 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         crop,
     });
 
+    /*
+     * CITATIONS ARE NOT SERVED — owner instruction 2026-11-16.
+     *
+     * Each window renders «МЗХ, 2024, стр. 190» under its text on the phone,
+     * and the owner asked for those references off the screen. The phone
+     * renders what it is sent, so the honest place to stop them is here
+     * rather than in a client: anything still in the payload would come back
+     * the moment another client drew it.
+     *
+     * ## The DATASET keeps every citation, and the rule still binds
+     *
+     * This strips the SERVED shape only. `cite` stays required by the schema,
+     * the loader still REFUSES a dataset with an uncited window or a citation
+     * naming an absent source, and the authoring rule — "a window without a
+     * page that supports it is left out, not served uncited" — is untouched.
+     * That ruling (2026-11-15/16) was about what may be WRITTEN; this one is
+     * about what is DISPLAYED, and they are not in conflict: the provenance
+     * still exists, it is simply internal.
+     *
+     * Worth being explicit, because "publish WITH SOURCES" and "do not show
+     * the sources" read as opposites at a glance. What survives is the
+     * guarantee that every figure here is one a cited page supports; what
+     * goes is the line of small print under it.
+     *
+     * `citedSourceUrls()` is unaffected — it reads `CALENDAR.crops`, the raw
+     * dataset, not this served shape, so #639's hand-off keeps working.
+     */
+    const servedCrops = crops.map((c) => ({
+        ...c,
+        windows: c.windows.map(({ cites: _cites, ...w }) => w),
+        // `costs.cite` is the OTHER citation, and it is one level up from
+        // where a first pass looks: the cost LINES carry none, the costs block
+        // as a whole carries one. Stripping only the windows would have left
+        // «МЗХ, 2024, стр. 21» under the cost card while removing it
+        // everywhere else — a half-removal that reads as an oversight on the
+        // one screen it survives on.
+        ...(c.costs ? { costs: stripCite(c.costs) } : {}),
+    }));
+
     // ETagged and effectively immutable until the dataset changes — the
     // committed file IS the answer, so a phone re-opening the screen gets a
     // 304. Stage 2's overrides will make it mutable, which is the point at
@@ -86,7 +131,8 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         schemaVersion: CALENDAR.schemaVersion,
         compiledAt: CALENDAR.compiledAt,
         conventions: CALENDAR.conventions,
-        sources: CALENDAR.sources,
-        crops,
+        // `sources` goes with the per-window `cites` above: a bibliography
+        // with nothing citing it is a list of books on a farming screen.
+        crops: servedCrops,
     });
 });

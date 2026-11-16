@@ -1408,32 +1408,6 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
       },
       "description": "The authoring rules this dataset was compiled under. Shipped with the data so a reader can see what the citations are worth."
     },
-    "sources": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "publisher": {
-            "type": "string",
-            "example": "МЗХ"
-          },
-          "url": {
-            "type": "string"
-          },
-          "published": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "title",
-          "publisher",
-          "url"
-        ]
-      }
-    },
     "crops": {
       "type": "array",
       "items": {
@@ -1499,9 +1473,6 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
                 ],
                 "description": "The area and units the card prints its figures for. \`published\` values below are for THIS area, in these units — nothing is pre-divided."
               },
-              "cite": {
-                "$ref": "#/components/schemas/AgroCalendarCitation"
-              },
               "lines": {
                 "type": "array",
                 "items": {
@@ -1553,7 +1524,6 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
             },
             "required": [
               "basis",
-              "cite",
               "lines",
               "publishedTotal",
               "perDaEurCentsTotal"
@@ -1720,13 +1690,6 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
                     "max",
                     "unit"
                   ]
-                },
-                "cites": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AgroCalendarCitation"
-                  },
-                  "description": "Never empty. Ordered: the primary citation first, then any additional pages."
                 }
               },
               "required": [
@@ -1734,8 +1697,7 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
                 "kind",
                 "region",
                 "from",
-                "to",
-                "cites"
+                "to"
               ]
             }
           }
@@ -1754,37 +1716,7 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
     "schemaVersion",
     "compiledAt",
     "conventions",
-    "sources",
     "crops"
-  ]
-}"
-`;
-
-exports[`API contract — per-schema snapshots schema: AgroCalendarCitation 1`] = `
-"{
-  "type": "object",
-  "properties": {
-    "source": {
-      "type": "string",
-      "description": "A key in the \`sources\` map of this same response.",
-      "example": "mzh-ip-2024"
-    },
-    "page": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ],
-      "description": "The page carrying the figure. A string where the source cites a span.",
-      "example": 20
-    }
-  },
-  "required": [
-    "source",
-    "page"
   ]
 }"
 `;

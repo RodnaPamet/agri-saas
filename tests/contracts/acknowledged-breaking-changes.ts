@@ -89,6 +89,40 @@ export interface AcknowledgedBreakingChange {
  */
 export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
     {
+        kind: 'property-removed',
+        schema: 'AgroCalendar',
+        contractVersion: 3,
+        pr: 3139,
+        date: '2026-11-16',
+        why:
+            'The calendar no longer serves citations \u2014 owner instruction 2026-11-16, '
+            + 'given directly in session while looking at the screen that renders them. '
+            + 'Covers all three removed properties on this schema: `sources`, '
+            + '`crops[].windows[].cites` and `crops[].costs.cite`, which are one '
+            + 'decision rather than three.\n\n'
+            + 'What a client loses is the \u00abМЗХ, 2024, стр. 190\u00bb line under each '
+            + 'window. What it does NOT lose is the guarantee behind it: `cite` is still '
+            + 'required by the dataset schema and the loader still REFUSES a dataset with '
+            + 'an uncited window or a citation naming an absent source, so every figure '
+            + 'served is still one a cited page supports. The provenance became internal, '
+            + 'not absent \u2014 which is why this is a display decision and not a '
+            + 'retreat from "published WITH SOURCES".\n\n'
+            + 'The removal is at the SERVE boundary for a reason: the phone renders what '
+            + 'it is sent, so anything left in the payload comes back the moment another '
+            + 'client draws it.',
+    },
+    {
+        kind: 'schema-removed',
+        schema: 'AgroCalendarCitation',
+        contractVersion: 3,
+        pr: 3139,
+        date: '2026-11-16',
+        why:
+            'The component only ever described the citations removed above, so it has no '
+            + 'remaining referent \u2014 leaving it would publish a type nothing returns. '
+            + 'Same owner instruction, same date.',
+    },
+    {
         kind: 'enum-narrowed',
         schema: 'ActOnNotice',
         property: 'actionKind',

@@ -1368,32 +1368,6 @@
             },
             "description": "The authoring rules this dataset was compiled under. Shipped with the data so a reader can see what the citations are worth."
           },
-          "sources": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string"
-                },
-                "publisher": {
-                  "type": "string",
-                  "example": "МЗХ"
-                },
-                "url": {
-                  "type": "string"
-                },
-                "published": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "title",
-                "publisher",
-                "url"
-              ]
-            }
-          },
           "crops": {
             "type": "array",
             "items": {
@@ -1459,9 +1433,6 @@
                       ],
                       "description": "The area and units the card prints its figures for. `published` values below are for THIS area, in these units — nothing is pre-divided."
                     },
-                    "cite": {
-                      "$ref": "#/components/schemas/AgroCalendarCitation"
-                    },
                     "lines": {
                       "type": "array",
                       "items": {
@@ -1513,7 +1484,6 @@
                   },
                   "required": [
                     "basis",
-                    "cite",
                     "lines",
                     "publishedTotal",
                     "perDaEurCentsTotal"
@@ -1680,13 +1650,6 @@
                           "max",
                           "unit"
                         ]
-                      },
-                      "cites": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/AgroCalendarCitation"
-                        },
-                        "description": "Never empty. Ordered: the primary citation first, then any additional pages."
                       }
                     },
                     "required": [
@@ -1694,8 +1657,7 @@
                       "kind",
                       "region",
                       "from",
-                      "to",
-                      "cites"
+                      "to"
                     ]
                   }
                 }
@@ -1714,34 +1676,7 @@
           "schemaVersion",
           "compiledAt",
           "conventions",
-          "sources",
           "crops"
-        ]
-      },
-      "AgroCalendarCitation": {
-        "type": "object",
-        "properties": {
-          "source": {
-            "type": "string",
-            "description": "A key in the `sources` map of this same response.",
-            "example": "mzh-ip-2024"
-          },
-          "page": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              }
-            ],
-            "description": "The page carrying the figure. A string where the source cites a span.",
-            "example": 20
-          }
-        },
-        "required": [
-          "source",
-          "page"
         ]
       },
       "AgroSignals": {
@@ -61267,7 +61202,7 @@
       "get": {
         "operationId": "getAgroCalendar",
         "summary": "Sowing, field-work and harvest windows for a Bulgarian region",
-        "description": "Published agronomy for field crops, vegetables and perennials: sowing windows with early/optimal/late bands plus rate and depth, field work by stage, and harvest windows. **Every window carries a citation.**\n\n**Person-scoped and farm-free**, like `GET /api/lunar`: no `tenantSlug`, and the answer is identical for every farm in a region. It works before a farmer has created a farm, which is why it is not a tenant route.\n\n**The REGION is chosen by the client**, from the farm's own blocks. It is deliberately not resolved server-side: that would need the farm this route does without, and a farm with blocks in both halves of the country has no single region to inherit. An unrecognised `region` is a **400, never a default** — defaulting would serve one half of the country's sowing dates to the other half silently.\n\n**`from > to` MEANS THE WINDOW WRAPS THE YEAR.** Ten of the windows do — pruning runs 15 December to 30 March. A client comparing `from <= today <= to` lexically gets those exactly backwards and reports pruning season for the eight months it is not. Treat a wrapped window as `today >= from OR today <= to`.\n\n**Dates are `MM-DD` with no year**, because the windows recur annually.\n\n**Units are as the source writes them and are never converted** — `seeds/m2` for cereals, `plants/m2` for rapeseed, `plants/da` for sunflower. A converted figure is a number no cited page supports. The set is closed, so a client can switch on it exhaustively.\n\n**`cites` is one ordered list** — the window's primary citation followed by any additional ones. A harvest window's start and completion often come from two different weekly bulletins, so there is no meaningful \"primary\"; rendering only the first would hide the evidence for the other endpoint.\n\n`conventions` ships with the data and states the authoring rules it was compiled under, including that a window without a page supporting it is left OUT rather than served uncited. The server refuses to load a dataset that breaks either rule, so a window you receive always resolves to a real source.\n\nBehind the `agro.calendar` feature flag, which 404s while off: a 404 means \"not enabled\", not \"wrong URL\".\n\n**Stage 1 of two.** This serves the committed base. Admin corrections — global, audited, per-window, each carrying a required `basis` — arrive in stage 2, and an overridden window will be marked so «Коригирано от Agrent» can render INSTEAD of a source citation rather than beside a stale one.",
+        "description": "Published agronomy for field crops, vegetables and perennials: sowing windows with early/optimal/late bands plus rate and depth, field work by stage, and harvest windows. **Every window carries a citation.**\n\n**Person-scoped and farm-free**, like `GET /api/lunar`: no `tenantSlug`, and the answer is identical for every farm in a region. It works before a farmer has created a farm, which is why it is not a tenant route.\n\n**The REGION is chosen by the client**, from the farm's own blocks. It is deliberately not resolved server-side: that would need the farm this route does without, and a farm with blocks in both halves of the country has no single region to inherit. An unrecognised `region` is a **400, never a default** — defaulting would serve one half of the country's sowing dates to the other half silently.\n\n**`from > to` MEANS THE WINDOW WRAPS THE YEAR.** Ten of the windows do — pruning runs 15 December to 30 March. A client comparing `from <= today <= to` lexically gets those exactly backwards and reports pruning season for the eight months it is not. Treat a wrapped window as `today >= from OR today <= to`.\n\n**Dates are `MM-DD` with no year**, because the windows recur annually.\n\n**Units are as the source writes them and are never converted** — `seeds/m2` for cereals, `plants/m2` for rapeseed, `plants/da` for sunflower. A converted figure is a number no cited page supports. The set is closed, so a client can switch on it exhaustively.\n\n**No citations are returned** (owner instruction 2026-11-16). A window used to carry `cites` and the response a `sources` map, which clients rendered as «МЗХ, 2024, стр. 190» under each entry. The dataset is still cited per window and the loader still refuses an uncited one — the provenance is internal now, not displayed. Do not reintroduce a source line from any other field.\n\n`conventions` ships with the data and states the authoring rules it was compiled under, including that a window without a page supporting it is left OUT rather than served uncited. The server refuses to load a dataset that breaks either rule, so a window you receive always resolves to a real source.\n\nBehind the `agro.calendar` feature flag, which 404s while off: a 404 means \"not enabled\", not \"wrong URL\".\n\n**Stage 1 of two.** This serves the committed base. Admin corrections — global, audited, per-window, each carrying a required `basis` — arrive in stage 2, and an overridden window will be marked so «Коригирано от Agrent» can render INSTEAD of a source citation rather than beside a stale one.",
         "tags": [
           "Agro"
         ],

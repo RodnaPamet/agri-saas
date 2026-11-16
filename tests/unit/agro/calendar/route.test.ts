@@ -99,25 +99,73 @@ describe('what it answers', () => {
         expect(body.region).toBe('north');
         expect(body.schemaVersion).toBe(1);
         expect(body.compiledAt).toBeTruthy();
-        // The conventions travel WITH the data: a reader can see what the
-        // citations are worth without being told separately.
         expect(Array.isArray(body.conventions)).toBe(true);
         expect(body.conventions.length).toBeGreaterThan(0);
-        // The sources map, so «Източник: …» needs no second call.
-        expect(Object.keys(body.sources).length).toBeGreaterThan(0);
         expect(body.crops.length).toBeGreaterThan(0);
+        // `sources` is GONE — owner instruction 2026-11-16. A bibliography
+        // with nothing citing it is a list of books on a farming screen.
+        expect(body.sources).toBeUndefined();
     });
 
-    it('every served window carries a resolvable citation', async () => {
-        // The property the whole feature rests on, asserted on the RESPONSE
-        // rather than on the dataset — a filter or a mapper could drop it.
+    it('serves NO citation anywhere in the payload', async () => {
+        /*
+         * Owner instruction 2026-11-16: the «МЗХ, 2024, стр. 190» line comes
+         * off the screen. The phone renders what it is sent, so this asserts
+         * the ABSENCE on the response — the only place that settles it for
+         * every client at once.
+         *
+         * This test previously asserted the opposite ("every served window
+         * carries a resolvable citation"). The guarantee it protected has NOT
+         * been dropped, it has moved: `load.test.ts` holds "every window is
+         * cited, and every citation resolves" against the DATASET, and the
+         * loader still refuses one that breaks it. What changed is whether
+         * the citation is displayed, not whether it must exist.
+         *
+         * Asserted by WALKING the payload rather than by naming the two keys
+         * I happen to know about: `cites` on a window and `cite` on the costs
+         * block are the two today, and a third added later would be served
+         * silently by a check that only knows these.
+         */
         const body = await (await call('?region=south')).json();
         const windows = body.crops.flatMap((c: { windows: unknown[] }) => c.windows);
+        // Control: the payload is not empty, so the absences below mean
+        // something. Without it a broken filter passes every assertion here.
         expect(windows.length).toBeGreaterThan(0);
-        for (const w of windows as { cites: { source: string }[] }[]) {
-            expect(w.cites.length).toBeGreaterThanOrEqual(1);
-            for (const c of w.cites) expect(body.sources[c.source]).toBeDefined();
-        }
+
+        const offenders: string[] = [];
+        (function walk(node: unknown, path: string): void {
+            if (Array.isArray(node)) {
+                node.forEach((v, i) => walk(v, `${path}[${i}]`));
+                return;
+            }
+            if (node && typeof node === 'object') {
+                for (const [k, v] of Object.entries(node)) {
+                    if (k === 'cite' || k === 'cites') offenders.push(`${path}.${k}`);
+                    walk(v, `${path}.${k}`);
+                }
+            }
+        })(body, '$');
+        expect(offenders).toEqual([]);
+    });
+
+    it('CONTROL — the walker finds a citation when one is there', () => {
+        // The negation above passes over an empty crawl. This proves the
+        // walker can see the very shape it is asserting the absence of.
+        const seeded = { crops: [{ windows: [{ cites: [{ source: 's1', page: 20 }] }] }] };
+        const found: string[] = [];
+        (function walk(node: unknown, path: string): void {
+            if (Array.isArray(node)) {
+                node.forEach((v, i) => walk(v, `${path}[${i}]`));
+                return;
+            }
+            if (node && typeof node === 'object') {
+                for (const [k, v] of Object.entries(node)) {
+                    if (k === 'cite' || k === 'cites') found.push(`${path}.${k}`);
+                    walk(v, `${path}.${k}`);
+                }
+            }
+        })(seeded, '$');
+        expect(found).toEqual(['$.crops[0].windows[0].cites']);
     });
 
     it('filters by group, and a 304 is available on a repeat', async () => {
