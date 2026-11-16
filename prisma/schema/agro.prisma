@@ -140,3 +140,68 @@ model AgroSignal {
   @@index([tenantId, signalDate])
   @@index([tenantId, plantingId])
 }
+
+/// A platform-admin correction or addition to the published agronomic
+/// calendar — #3095. TENANTLESS: agronomy for North Bulgaria is the same
+/// agronomy for every farm there, so a per-farm override would be a different
+/// feature (a farm's own adjusted plan) and must not be confused with
+/// correcting a published figure.
+///
+/// ## The whole window is stored, not a field-level patch
+///
+/// A patch cannot say whether an absent field means "unchanged" or "removed",
+/// and a correction is in practice "here is how this window should now read".
+/// Nothing is lost by storing it whole: the published original stays in
+/// `dataset.json` and is served as `supersedes`, so the admin console can show
+/// what МЗХ said beside what the operator typed.
+///
+/// ## `basisBg` is NOT NULL, which is the ruling made structural
+///
+/// An override changes the VALUE while the published citation still points at
+/// a page that no longer supports it — worse than an uncited window, because
+/// it looks sourced. So a correction without a stated basis cannot exist, and
+/// the served window carries `basis` INSTEAD of `cites` rather than beside it.
+///
+/// ## Clearing means two different things
+///
+/// `clearedAt` on a CORRECTED row restores МЗХ's window; on an ADDED row it
+/// removes the window entirely. The clear API reports which happened, because
+/// an operator who clears an added window and reads "restored" would go
+/// looking for a window that no longer exists.
+///
+/// Cleared rows are KEPT, so the uniqueness below is partial — one LIVE
+/// override per window, any number of historical ones.
+model AgroCalendarOverride {
+  id         String                     @id @default(cuid())
+  /// The window addressed. A published window's id for CORRECTED; a new id
+  /// this row brings into existence for ADDED.
+  windowId   String
+  /// The crop whose window this is, so an ADDED window has somewhere to live.
+  cropKey    String
+  origin     AgroCalendarOverrideOrigin
+  /// The window as it should now read, validated against the calendar's own
+  /// window schema minus its citation. An override never carries a citation:
+  /// that is what `basisBg` replaces.
+  windowJson Json
+  /// Why the figure differs from the card. Required and non-blank.
+  basisBg    String
+  basisEn    String?
+  /// Null while live. See the clearing note above.
+  clearedAt  DateTime?
+  createdAt  DateTime                   @default(now())
+  updatedAt  DateTime                   @updatedAt
+  /// Who, as honestly as the credential allows — a platform user id from the
+  /// session door, or `platform-key:<generation>` from the keyed one. #1619's
+  /// rule: there is one `PLATFORM_ADMIN_API_KEY`, so a keyed write names a key
+  /// generation and not a person, and the trail says so rather than implying
+  /// more.
+  authorRef  String
+
+  @@index([windowId])
+  @@index([cropKey])
+  /// Partial-unique on `windowId WHERE clearedAt IS NULL` is added by raw SQL
+  /// in the migration — Prisma cannot express a partial index, and without it
+  /// two live overrides on one window would make the served value depend on
+  /// row order.
+  @@index([clearedAt])
+}

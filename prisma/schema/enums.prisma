@@ -876,6 +876,17 @@ enum PlantingStage {
 
 // ─── Agro-intel domain (agro.prisma) ─────────────────────────────────
 
+/// Whether a calendar override CORRECTS a published window or ADDS one МЗХ
+/// does not publish — #3095, owner ruling 2026-11-16 allowing additions.
+///
+/// An explicit enum rather than a nullable "supersedes" pointer, because the
+/// phone needs added-versus-corrected and inferring it from an absent field
+/// would make a future third kind read silently as ADDED.
+enum AgroCalendarOverrideOrigin {
+  CORRECTED
+  ADDED
+}
+
 enum DataStreamKind {
   TEMPERATURE
   SOIL_MOISTURE
