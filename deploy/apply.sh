@@ -228,5 +228,53 @@ if [ "$HEALTH_FAILED" = "1" ]; then
     exit 1
 fi
 
+# ── 6b. Producer/consumer chains (#3099) ─────────────────────────────────
+#
+# The health checks above answer "is the app serving". They say nothing about
+# whether a background producer can hand its output to its consumer, and three
+# of the four defects in the #3081 chain lived exactly there: a root-owned
+# share, a bare import that could not resolve from the published path, and a
+# volume the reader never mounted. All three had a correct image and a correct
+# compose file.
+#
+# DELIBERATELY NOT FOLDED INTO `HEALTH_FAILED`. A dead background chain is not
+# an outage — the app serves perfectly without it — so a finding here must not
+# read as "roll back". That is #2692's mistake, where a racing health check had
+# people pasting the rollback and undoing a working deploy. `verify-chain.sh`
+# exits 2 for "deployed and degraded" and 1 for "could not look", and this
+# keeps those distinct from a health failure.
+CHAIN_STATUS=0
+if [ -x "${SCRIPT_DIR}/verify-chain.sh" ]; then
+    VM_NAME="$VM_NAME" VM_ZONE="$VM_ZONE" REMOTE_COMPOSE="$REMOTE_COMPOSE" \
+        "${SCRIPT_DIR}/verify-chain.sh" || CHAIN_STATUS=$?
+fi
+
 log "deploy OK. Rollback command (if needed later):"
 printf '  %s\n' "$ROLLBACK"
+
+if [ "$CHAIN_STATUS" = "2" ]; then
+    err ""
+    err "NOTE: the deploy SUCCEEDED and a producer/consumer chain is DEGRADED."
+    err "Fix the chain; do not roll back. See the [chain] lines above."
+    exit 2
+fi
+if [ "$CHAIN_STATUS" != "0" ]; then
+    # COULD NOT LOOK does NOT change the deploy's verdict, and that asymmetry
+    # is deliberate — it is also what an existing test caught me getting wrong.
+    #
+    # The health checks above reached the VM and passed, so the deploy IS
+    # verified; an unreachable chain probe is a lesser, separate fact. Letting
+    # it set a failing exit would mean an unrelated subsystem's unreachability
+    # makes a good deploy look bad, which is #2692's mistake with a different
+    # cause — and the response to "apply.sh failed" at 9pm is to paste the
+    # rollback and undo a working deploy.
+    #
+    # It is still printed on stderr naming what went unchecked, because the
+    # other direction — silent — is exactly how #3113 survived for hours,
+    # logged at every recreate and read by nobody.
+    err ""
+    err "WARNING: the deploy SUCCEEDED and the chain check could not LOOK"
+    err "(exit ${CHAIN_STATUS}). Nothing is known about the producer/consumer"
+    err "chains; that is NOT the same as them being healthy. Re-run"
+    err "deploy/verify-chain.sh when the VM is reachable."
+fi

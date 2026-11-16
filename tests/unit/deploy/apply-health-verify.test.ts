@@ -113,6 +113,29 @@ describe("deploy/apply.sh health-verify (#2692)", () => {
         expect(fs.existsSync(path.join(tmp, 'gcloud.log'))).toBe(true);
     });
 
+    it('a chain check that cannot LOOK leaves the deploy verdict alone (#3099)', () => {
+        // The asymmetry, and it is deliberate. The health checks reached the
+        // VM and passed, so the deploy IS verified; an unreachable chain probe
+        // is a lesser, separate fact. Letting it fail the exit would mean an
+        // unrelated subsystem's unreachability makes a good deploy look bad —
+        // #2692's mistake with a different cause, and the response to
+        // "apply.sh failed" is to paste the rollback.
+        //
+        // This test is also what caught the first version, which exited 2 here
+        // and turned a verified deploy into an apparent failure. In this
+        // harness gcloud is stubbed, so `verify-chain.sh` genuinely cannot
+        // look — which is the case under test.
+        curlSequence([...Array(8).fill('503'), '200', '200', '200']);
+        const { status, out } = run();
+
+        expect(status).toBe(0);
+        expect(out).not.toMatch(/health checks FAILED/);
+        // And NOT silent. The other direction is how #3113 survived for hours:
+        // logged at every recreate, read by nobody.
+        expect(out).toMatch(/could not LOOK/);
+        expect(out).toMatch(/NOT the same as them being healthy/);
+    });
+
     it('still FAILS a readyz that never comes up, naming the deadline', () => {
         // The other direction, which is what makes the fix a fix rather than a
         // suppression: a genuinely broken deploy must still say so.
