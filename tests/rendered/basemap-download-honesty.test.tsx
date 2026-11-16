@@ -51,17 +51,68 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 import { DownloadBasemapButton } from '@/components/ui/map/DownloadBasemapButton';
 
-/** A minimal fetch Response — see the docblock for why this is not `new Response`. */
-function tile(status: number, opts: { bytes?: number; source?: string } = {}) {
+/**
+ * A minimal fetch Response — see the docblock for why this is not `new Response`.
+ *
+ * `bytes` is the BODY length now, not a `Content-Length` header (#3147). The
+ * sweep measures `res.clone().arrayBuffer()`, because Next 16.4.5 strips
+ * `content-length` from every route-handler response and the old header read
+ * then counted every tile as lost.
+ *
+ * `contentLength` is kept as a SEPARATE knob so a test can set the two
+ * independently — which is the whole point: a tile with real bytes and NO
+ * header is the regression case, and a double that derived one from the other
+ * could not express it.
+ */
+function tile(
+    status: number,
+    opts: { bytes?: number; source?: string; contentLength?: number } = {},
+) {
     const headers = new Map<string, string>();
-    if (opts.bytes !== undefined) headers.set('content-length', String(opts.bytes));
+    if (opts.contentLength !== undefined) {
+        headers.set('content-length', String(opts.contentLength));
+    }
     if (opts.source) headers.set('x-basemap-source', opts.source);
-    return {
+    const body = new ArrayBuffer(opts.bytes ?? 0);
+    /*
+     * The double MODELS BODY CONSUMPTION, and that is not decoration: a
+     * mutation replacing `res.clone().arrayBuffer()` with
+     * `res.arrayBuffer()` survived the first version of this suite, because a
+     * `clone()` returning `this` makes the two indistinguishable.
+     *
+     * The property is real — the service worker caches `res.clone()` on the
+     * way past, so consuming the ORIGINAL here races it — and a double that
+     * cannot express it leaves the one line protecting it untested.
+     */
+    const res = {
         status,
         ok: status >= 200 && status < 300,
         headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
-    } as unknown as Response;
+        bodyUsed: false,
+        async arrayBuffer() {
+            this.bodyUsed = true;
+            return body;
+        },
+        /** A SEPARATE object with its own body, like the real `clone()`. */
+        clone() {
+            return {
+                status,
+                ok: status >= 200 && status < 300,
+                headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
+                bodyUsed: false,
+                async arrayBuffer() {
+                    this.bodyUsed = true;
+                    return body;
+                },
+            };
+        },
+    };
+    served.push(res);
+    return res as unknown as Response;
 }
+
+/** Every response the sweep was handed this test, for the consumption check. */
+let served: Array<{ bodyUsed: boolean }> = [];
 
 const BOUNDS: [number, number, number, number] = [23.3, 42.6, 23.4, 42.8];
 
@@ -71,6 +122,7 @@ function mockAll(res: () => Response) {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    served = [];
     Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {} });
 });
 
@@ -121,6 +173,56 @@ describe('#780 — the toast must describe the pack that actually exists', () =>
         await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
         expect(toastError).not.toHaveBeenCalled();
         expect(toastWarning).not.toHaveBeenCalled();
+    });
+
+    it('a tile with BYTES but no Content-Length is stored — #3147', async () => {
+        /*
+         * The regression that shipped as an E2E failure nobody could explain.
+         *
+         * Next 16.4.5 added a FORBIDDEN_HEADERS set stripping `content-length`
+         * from every route-handler response (vercel/next.js#101120). The sweep
+         * read that header, measured zero, counted every tile LOST, and never
+         * fired the toast — a pack that downloaded perfectly reporting total
+         * failure, with no error anywhere.
+         *
+         * So: real bytes, header absent. Before the fix this was `error`.
+         */
+        mockAll(() => tile(200, { bytes: 38, source: 'upstream' }));
+        await clickDownload();
+        await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+        expect(toastError).not.toHaveBeenCalled();
+        expect(toastWarning).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL — a Content-Length header alone does not make a tile', async () => {
+        // The other direction, and the reason the double carries the two
+        // independently: a response claiming 38 bytes while carrying none is
+        // still an empty tile. A fix that merely switched which header it
+        // trusted would pass the case above and fail this one.
+        mockAll(() => tile(200, { bytes: 0, contentLength: 38 }));
+        await clickDownload();
+        await waitFor(() => expect(toastError).toHaveBeenCalled());
+        expect(toastSuccess).not.toHaveBeenCalled();
+    });
+
+    it('never consumes the ORIGINAL response — the service worker needs it', async () => {
+        /*
+         * The sweep reads a CLONE. Consuming the original would race the
+         * service worker, which caches `res.clone()` on the way past — so a
+         * tile would be counted and then not cached, which is the failure the
+         * whole download exists to avoid.
+         *
+         * Asserted because a mutation proved it was not: swapping
+         * `res.clone().arrayBuffer()` for `res.arrayBuffer()` passed every
+         * other case in this file. A `clone()` that returns `this` cannot
+         * tell them apart, so the double models consumption instead.
+         */
+        mockAll(() => tile(200, { bytes: 38, source: 'upstream' }));
+        await clickDownload();
+        await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+
+        expect(served.length).toBeGreaterThan(0); // control: it served some
+        expect(served.every((r) => r.bodyUsed === false)).toBe(true);
     });
 
     it('real tiles report ready', async () => {
