@@ -8110,6 +8110,10 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "blocked": {
       "type": "boolean"
     },
+    "counterpartyUnavailable": {
+      "type": "boolean",
+      "description": "The OTHER party cannot answer, so this thread accepts no messages — a send is refused with 403 \`THREAD_COUNTERPARTY_UNAVAILABLE\`. Says NOTHING about why, and a client must not guess: a pending erasure and a moderation termination both produce it. The history stays READABLE — a closed composer, not a withdrawn conversation. It is about the other party, so the person who asked to be erased sees \`false\` here and is refused by the grace-period gate instead. Computed per request, so it clears on the next read if the erasure is cancelled."
+    },
     "unreadCount": {
       "type": "integer"
     },
@@ -8134,6 +8138,7 @@ exports[`API contract — per-schema snapshots schema: ExchangeThread 1`] = `
     "lastMessageAt",
     "closed",
     "blocked",
+    "counterpartyUnavailable",
     "unreadCount",
     "olderCursor",
     "messages"
