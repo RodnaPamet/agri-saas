@@ -28,8 +28,8 @@ import {
     orthoCoverageCacheKey,
     orthoTileAbsentKey,
     orthoTileCacheKey,
+    orthoFeatureFlightDate,
     resolveOrthoSource,
-    sofiaFlightDate,
     type LonLatBbox,
     type OrthoSource,
 } from '@/lib/geo/ortho-source';
@@ -274,13 +274,16 @@ export async function resolveOrthoCoverage(
             | null;
         const first = json?.features?.[0];
         if (!first) continue;
-        // `Date`, not `FlightDate` — measured. An ISO timestamp, and
-        // `2023-10-13T21:00:00Z` is midnight in Sofia on the 14th, so the
-        // calendar day has to be read in Bulgaria or the flight is reported a
-        // day early.
+        // The key is read OFF THE FEATURE, because the six layers ship four
+        // schemas: `Date` on 2022/2023, `FlightDate` on 2025, `DATE` on 2020
+        // (#3097). This line said "`Date`, not `FlightDate` — measured", which
+        // was true at the one probe point where 2023 happened to cover and
+        // false as a general claim — so the newest layer, i.e. the most
+        // recently flown land, showed no date at all while the service was
+        // holding one under another name.
         found = {
             year,
-            flightDate: sofiaFlightDate(first.properties?.Date as string | undefined),
+            flightDate: orthoFeatureFlightDate(first.properties),
             attribution: ORTHO_ATTRIBUTION,
         };
         break;
