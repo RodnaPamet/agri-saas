@@ -90,7 +90,6 @@ describe('#3010 — the window verdict reaches every door', () => {
 
     it('[moderation-window-doors] prints its denominator', () => {
         const names = parsers.map((f) => f.path).sort();
-        // eslint-disable-next-line no-console
         console.log(
             `[moderation-window-doors] ${names.length} door(s) resolve a moderation `
                 + `window; ${names.filter((n) => !(n in EXEMPT)).length} must report the `
