@@ -53,6 +53,47 @@ describe('the loop-lag preload is inert by default (#2321)', () => {
             .toEqual({ monitorIsInsideTheGate: true });
     });
 
+    it('the GC observer is behind the gate too, and accumulates in FIXED size', () => {
+        // #2381 added a `PerformanceObserver` on 'gc'. It is the same inertness
+        // question as the histogram, with one extra: an observer left running
+        // in production costs a callback on every collection, and collections
+        // are frequent. Nothing would fail.
+        const gate = CODE.indexOf('if (OUT)');
+        const observer = CODE.indexOf('PerformanceObserver');
+        const entryTypes = CODE.indexOf("entryTypes: ['gc']");
+        expect({ observerFound: observer >= 0 }).toEqual({ observerFound: true });
+        expect({ entryTypesFound: entryTypes >= 0 }).toEqual({ entryTypesFound: true });
+        expect({ observerIsInsideTheGate: observer > gate })
+            .toEqual({ observerIsInsideTheGate: true });
+        expect({ observeCallIsInsideTheGate: entryTypes > gate })
+            .toEqual({ observeCallIsInsideTheGate: true });
+
+        // FIXED SIZE: counters and a max, never a growing array of entries.
+        // Allocation is what triggers collection, so an accumulator that grows
+        // per entry makes the sampler a cause of the thing it measures. There
+        // is no legitimate `.push(` in this file; if one is ever needed, this
+        // assertion is the place to argue for it.
+        expect({ noArrayAccumulation: !/\.push\(/.test(CODE) })
+            .toEqual({ noArrayAccumulation: true });
+
+        // Kinds come from `constants`, never the integers V8 uses today. A
+        // hardcoded map that drifts would label a MAJOR collection minor, and
+        // #2381 turns on telling those apart.
+        expect(CODE).toMatch(/constants\.NODE_PERFORMANCE_GC_MAJOR/);
+        expect(CODE).toMatch(/constants\.NODE_PERFORMANCE_GC_MINOR/);
+    });
+
+    it('both accumulators reset in the same tick, or a line mixes two windows', () => {
+        // `h.reset()` and the GC reset must sit in the same function. A line
+        // whose lag is per-interval and whose GC total is cumulative cannot be
+        // compared against itself, which is the entire purpose of carrying
+        // both — and it would read as a collection in every window.
+        const tick = CODE.slice(CODE.indexOf('const tick'), CODE.indexOf('setInterval(tick'));
+        expect({ tickExtracted: tick.length > 100 }).toEqual({ tickExtracted: true });
+        expect(tick).toMatch(/h\.reset\(\)/);
+        expect(tick).toMatch(/resetGc\(\)/);
+    });
+
     it('the timer is unref()d, so it cannot hold a process open', () => {
         // Measured: without this the process survives its own interval. An app
         // that will not exit when stopped breaks the load harness's teardown,
