@@ -103,7 +103,8 @@
     "scripts/retire-sample-products.ts",
     "scripts/seed-agri-events.ts",
     "scripts/seed-demo.ts",
-    "scripts/seed-load-streams.ts",
+    "scripts/seed-load-channels.ts",
+        "scripts/seed-load-streams.ts",
     "scripts/seed-promotions.ts",
     "scripts/seed-staging.ts"
   ],

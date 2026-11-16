@@ -17,6 +17,7 @@ on:
           - lists
           - streams
           - delivery
+          - channels
         default: both
       vus:
         description: Virtual users (concurrency target)
@@ -24,6 +25,9 @@ on:
       duration:
         description: Sustained duration (e.g. 2m, 5m)
         default: '2m'
+      members:
+        description: "Channel size for the `channels` scenario (P9.10 asks for 2000)"
+        default: '2000'
   schedule:
     # 03:30 UTC daily — light smoke baseline on main for trend tracking.
     # Doesn't block anything; alerts via the artifact diff if budgets drift.
@@ -114,11 +118,17 @@ jobs:
             echo "scenario=${{ inputs.scenario }}" >> "$GITHUB_OUTPUT"
             echo "vus=${{ inputs.vus }}" >> "$GITHUB_OUTPUT"
             echo "duration=${{ inputs.duration }}" >> "$GITHUB_OUTPUT"
+            echo "members=${{ inputs.members }}" >> "$GITHUB_OUTPUT"
           else
             # Nightly smoke — keep it light and fast.
             echo "scenario=both" >> "$GITHUB_OUTPUT"
             echo "vus=25" >> "$GITHUB_OUTPUT"
             echo "duration=1m" >> "$GITHUB_OUTPUT"
+            # The nightly runs `both`, which does not include `channels`, so
+            # this is only ever a fallback. Spelled anyway: an unset output is
+            # the empty string, and `--members ''` would seed a channel of no
+            # size and measure it happily.
+            echo "members=2000" >> "$GITHUB_OUTPUT"
           fi
 
       # k6's handleSummary writes tests/load/results/<scenario>-summary.json.
@@ -397,6 +407,66 @@ jobs:
             -e RAMP_UP=20s \
             -e RAMP_DOWN=10s \
             tests/load/realtime-delivery.js
+
+      # ── channels scenario (#2944, P9.10) ───────────────────────────────
+      #
+      # «a 2,000-member channel at p95 ≤2s». The 2,000 is the channel's SIZE,
+      # not the reader count: `ChannelMembership.userId` has no relation to
+      # `User` (P9.1), so the members are rows rather than accounts and the
+      # readers are the VUs logging in as the seeded default user. Seeding
+      # 2,000 real accounts to satisfy a size criterion would have been a day's
+      # work for a number nothing reads as a credential.
+      #
+      # `--enable-flag` is NOT optional. `social.channels` is default-OFF and
+      # every feed read then 404s through `assertFeatureEnabled` — deliberate,
+      # fast, and a run that measured the refusals would report a magnificent
+      # p95. The seeder records the flag's prior state and the teardown step
+      # restores it.
+      #
+      # The channel id is passed through `$GITHUB_ENV` rather than read from a
+      # later step's output, because a step whose `if:` or `env:` reads a LATER
+      # step is silently SKIPPED — an unset step output is the empty string and
+      # GitHub reports `skipped`, not an error (#2881 lost a cycle to exactly
+      # that).
+      - name: Seed the 2,000-member channel (channels scenario)
+        if: steps.params.outputs.scenario == 'channels'
+        env:
+          LOAD_SEED_CONFIRM: yes-this-is-a-throwaway-vm
+        run: |
+          set -euo pipefail
+          npx tsx scripts/seed-load-channels.ts \
+            --members ${{ steps.params.outputs.members }} \
+            --posts 500 \
+            --enable-flag | tee /tmp/channel-seed.log
+          CHANNEL_ID="$(sed -n 's/^CHANNEL_ID=//p' /tmp/channel-seed.log | tail -1)"
+          # An EMPTY substitution would make the k6 step read a channel named
+          # '' and measure the 404 path, so it is refused here rather than
+          # discovered as a bad percentile.
+          if [ -z "$CHANNEL_ID" ]; then
+            echo "::error::the seeder printed no CHANNEL_ID — refusing to run against nothing"
+            exit 1
+          fi
+          echo "CHANNEL_ID=$CHANNEL_ID" >> "$GITHUB_ENV"
+
+      - name: Run k6 — channels scenario
+        if: steps.params.outputs.scenario == 'channels'
+        env:
+          BASE_URL: http://localhost:3006
+        run: |
+          k6 run \
+            -e VUS=${{ steps.params.outputs.vus }} \
+            -e DURATION=${{ steps.params.outputs.duration }} \
+            -e CHANNEL_ID="$CHANNEL_ID" \
+            tests/load/channel-feed.js
+
+      # `always()`, and BY ID from the state file — a channel is tenantless, so
+      # nothing cascades to it and an un-torn-down seed would outlive the run
+      # with the flag left on.
+      - name: Tear down the channel (channels scenario)
+        if: always() && steps.params.outputs.scenario == 'channels'
+        env:
+          LOAD_SEED_CONFIRM: yes-this-is-a-throwaway-vm
+        run: npx tsx scripts/seed-load-channels.ts --teardown || true
 
       - name: Stop app
         if: always()
