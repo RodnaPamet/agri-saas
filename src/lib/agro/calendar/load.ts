@@ -186,8 +186,14 @@ const served = (w: CalendarWindowInput): ServedWindow => {
  * does not justify a second surface, `/api/agro-calendar` already returns the
  * crop, and a separate endpoint would be a second place for the two to drift.
  * If МЗХ ever prices more cards this generalises with no migration.
+ *
+ * EXPORTED for one assertion: that `perDaEurCentsTotal` is rounded from
+ * `publishedTotal` and not summed from the rounded lines. On the shipped card
+ * the two agree exactly (56801 either way), so no test over the real dataset
+ * can tell them apart — a mutation that switched to summing passed all
+ * sixteen. The suite feeds this a synthetic block where they differ by a cent.
  */
-const servedCosts = (c: CalendarCosts): ServedCosts => ({
+export const servedCosts = (c: CalendarCosts): ServedCosts => ({
     ...c,
     lines: c.lines.map((l) => ({
         ...l,

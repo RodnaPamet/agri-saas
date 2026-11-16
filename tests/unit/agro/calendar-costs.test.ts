@@ -23,7 +23,7 @@
  * `publishedTotal` is in the schema.
  */
 import { BGN_PER_EUR, CALENDAR_COST_LINES, perDaEurCents } from '@/lib/agro/calendar/costs';
-import { CALENDAR, calendarFor, validateDataset } from '@/lib/agro/calendar/load';
+import { CALENDAR, calendarFor, servedCosts, validateDataset } from '@/lib/agro/calendar/load';
 
 /** The shipped dataset, deep-cloned so a mutation cannot leak between tests. */
 const clone = () => JSON.parse(JSON.stringify(CALENDAR)) as Record<string, unknown>;
@@ -113,6 +113,37 @@ describe('§2 the euro derivation', () => {
             + `${totalRoundedOnce} -> ${Math.abs(sumOfRounded - (totalRoundedOnce ?? 0))} cent(s) apart`,
         );
         expect(sumOfRounded).toBe(totalRoundedOnce);
+    });
+
+    it('rounds the TOTAL from publishedTotal, not from the rounded lines', () => {
+        /*
+         * THE RULE HAS NO TEETH ON THE REAL CARD, which is why this is
+         * synthetic. Measured: on the vine figures the sum of the rounded
+         * lines and the once-rounded total are both 56801, so a mutation that
+         * replaced one with the other passed all sixteen tests. Rounding is
+         * not additive in general; these values are a case where it shows.
+         *
+         * `publishedTotal` is a figure the card STATES. Building it out of
+         * rounded parts would publish a number no page supports — the same
+         * rule that stops us converting units or indexing prices — and on a
+         * future card it would be visibly a cent off what the PDF prints.
+         */
+        const lines = [8991608, 1580240, 6136241, 974060, 8514358];
+        const publishedTotal = lines.reduce((a, b) => a + b, 0);
+        const synthetic = {
+            basis: { areaDa: 100, currency: 'BGN', unit: 'stotinki' },
+            cite: { source: 'mzh-tk-wine-2026', page: 9 },
+            lines: CALENDAR_COST_LINES.map((key, i) => ({ key, published: lines[i] })),
+            publishedTotal,
+        } as Parameters<typeof servedCosts>[0];
+
+        const out = servedCosts(synthetic);
+        const summed = out.lines.reduce((n, l) => n + (l.perDaEurCents ?? 0), 0);
+
+        // The two genuinely differ here, or this test proves nothing.
+        expect(summed).toBe(133940);
+        expect(out.perDaEurCentsTotal).toBe(133941);
+        expect(out.perDaEurCentsTotal).not.toBe(summed);
     });
 
     it('refuses an unusable basis rather than dividing by zero', () => {
