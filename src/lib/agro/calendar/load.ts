@@ -26,7 +26,15 @@
  * route, stage 2's override merge, any later surface — sees the same shape,
  * rather than each one remembering to concatenate.
  */
-import { CalendarDatasetSchema, type CalendarCrop, type CalendarDataset, type CalendarRegion } from './schema';
+import {
+    CalendarDatasetSchema,
+    type CalendarCostLineRow,
+    type CalendarCosts,
+    type CalendarCrop,
+    type CalendarDataset,
+    type CalendarRegion,
+} from './schema';
+import { perDaEurCents } from './costs';
 import raw from './dataset.json';
 
 /** A window as SERVED: `cites` normalised, `alsoCite` collapsed into it. */
@@ -35,8 +43,40 @@ export interface ServedWindow extends Omit<CalendarWindowInput, 'cite' | 'alsoCi
 }
 type CalendarWindowInput = CalendarDataset['crops'][number]['windows'][number];
 
-export interface ServedCrop extends Omit<CalendarCrop, 'windows'> {
+/**
+ * One cost line as served: the published figure AND the derived euro one.
+ *
+ * Both, deliberately. `published` is what the card prints and is the only
+ * figure any page supports — it is the traceable value, and it stays in
+ * стотинки for `basis.areaDa`. `perDaEurCents` is what a client renders, and
+ * it is computed HERE so the phone and the web cannot round differently and
+ * disagree by a cent. Neither client holds the peg.
+ */
+export interface ServedCostLine extends CalendarCostLineRow {
+    /** Euro cents per decare, rounded once. `null` if the basis is unusable. */
+    perDaEurCents: number | null;
+}
+
+export interface ServedCosts extends Omit<CalendarCosts, 'lines'> {
+    lines: ServedCostLine[];
+    /**
+     * Rounded ONCE from `publishedTotal`, not summed from the rounded lines.
+     *
+     * `publishedTotal` is a figure the card states in its own right, so it is
+     * the thing to convert; building the total out of rounded parts would
+     * publish a number no page supports. The loader already requires the lines
+     * to sum to it in стотинки, so the two agree exactly on the current card —
+     * measured, 56801 either way — but rounding is not additive in general, so
+     * a future card may leave them a cent or two apart. When they differ, this
+     * is the card's total and the lines are the card's lines; neither is
+     * adjusted to tidy the arithmetic.
+     */
+    perDaEurCentsTotal: number | null;
+}
+
+export interface ServedCrop extends Omit<CalendarCrop, 'windows' | 'costs'> {
     windows: ServedWindow[];
+    costs?: ServedCosts;
 }
 
 /**
@@ -72,6 +112,51 @@ export function validateDataset(input: unknown): CalendarDataset {
                 throw new Error(`agro-calendar: sowing window ${w.id} has no band`);
             }
         }
+
+        /*
+         * Published costs — #637. Three refusals, and the first is the one the
+         * loop above would have missed: it ranges over WINDOW citations only,
+         * so a `costs.cite` naming an absent source would have looked cited
+         * and resolved to nothing, which is precisely the failure the window
+         * check exists to prevent.
+         */
+        if (crop.costs) {
+            if (!(crop.costs.cite.source in data.sources)) {
+                unresolved.push(`${crop.key}.costs -> ${crop.costs.cite.source}`);
+            }
+
+            /*
+             * THE LINES MUST SUM TO THE PRINTED TOTAL.
+             *
+             * This is why `publishedTotal` is stored rather than computed: the
+             * card states it in its own right, so it is an independent figure
+             * to check the five lines against. A total derived from the lines
+             * could not catch a mistyped line — and it caught one during
+             * authoring, where 4 177,79 лв had been transcribed as `411779`
+             * instead of `417779`. Integer стотинки throughout, so this is
+             * exact arithmetic with no tolerance to argue about.
+             */
+            const sum = crop.costs.lines.reduce((n, l) => n + l.published, 0);
+            if (sum !== crop.costs.publishedTotal) {
+                throw new Error(
+                    `agro-calendar: ${crop.key} cost lines sum to ${sum} стотинки but the card's `
+                        + `printed total is ${crop.costs.publishedTotal} — a difference of `
+                        + `${Math.abs(sum - crop.costs.publishedTotal)}. One of them is mistyped, `
+                        + `and serving either would misstate a published figure.`,
+                );
+            }
+
+            // The enum closes which keys are LEGAL, not how many times one may
+            // appear. A repeated key would double-count that line into the sum
+            // and still satisfy the check above if another were short.
+            const keys = crop.costs.lines.map((l) => l.key);
+            const dupKeys = keys.filter((k, i) => keys.indexOf(k) !== i);
+            if (dupKeys.length > 0) {
+                throw new Error(
+                    `agro-calendar: ${crop.key} repeats cost line(s): ${[...new Set(dupKeys)].join(', ')}`,
+                );
+            }
+        }
     }
     if (duplicates.length > 0) {
         throw new Error(`agro-calendar: duplicate window id(s): ${duplicates.join(', ')}`);
@@ -94,6 +179,29 @@ const served = (w: CalendarWindowInput): ServedWindow => {
     return { ...rest, cites: [cite, ...(alsoCite ?? [])] };
 };
 
+/**
+ * Published costs plus their euro derivation — #637.
+ *
+ * Costs ride on the CROP rather than on a route of their own: one priced card
+ * does not justify a second surface, `/api/agro-calendar` already returns the
+ * crop, and a separate endpoint would be a second place for the two to drift.
+ * If МЗХ ever prices more cards this generalises with no migration.
+ *
+ * EXPORTED for one assertion: that `perDaEurCentsTotal` is rounded from
+ * `publishedTotal` and not summed from the rounded lines. On the shipped card
+ * the two agree exactly (56801 either way), so no test over the real dataset
+ * can tell them apart — a mutation that switched to summing passed all
+ * sixteen. The suite feeds this a synthetic block where they differ by a cent.
+ */
+export const servedCosts = (c: CalendarCosts): ServedCosts => ({
+    ...c,
+    lines: c.lines.map((l) => ({
+        ...l,
+        perDaEurCents: perDaEurCents(l.published, c.basis.areaDa),
+    })),
+    perDaEurCentsTotal: perDaEurCents(c.publishedTotal, c.basis.areaDa),
+});
+
 export interface CalendarQuery {
     region: CalendarRegion;
     group?: CalendarCrop['group'];
@@ -115,11 +223,17 @@ export function calendarFor(query: CalendarQuery): ServedCrop[] {
     return CALENDAR.crops
         .filter((c) => (query.group ? c.group === query.group : true))
         .filter((c) => (query.crop ? c.key === query.crop : true))
-        .map((c) => ({
-            ...c,
-            windows: c.windows
+        .map(({ costs, windows, ...rest }): ServedCrop => ({
+            ...rest,
+            windows: windows
                 .filter((w) => w.region === 'both' || w.region === query.region)
                 .map(served),
+            // Destructured out of the spread rather than overridden after it:
+            // the raw block and the served one are different TYPES, and
+            // spreading then replacing leaves tsc with a union it cannot
+            // narrow — which is how a raw `costs` would have reached a client
+            // with no `perDaEurCents` on it.
+            ...(costs ? { costs: servedCosts(costs) } : {}),
         }))
         .filter((c) => c.windows.length > 0);
 }
