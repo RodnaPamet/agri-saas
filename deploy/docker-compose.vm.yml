@@ -315,6 +315,19 @@ services:
       # of them fills a disk the others share.
       - applogs:/var/log/agrent
       - uploads:/data/uploads
+      # The ZarnoBorsa handoff, READ-ONLY (#3120).
+      #
+      # `zarnoborsa-pull` runs HERE and reads
+      # `/var/lib/agrent/zarnoborsa/latest.json`, which the fetch container
+      # writes. Until this line the volume was declared on exactly ONE service
+      # — the producer — so the ingest reported `unaudited` / `no-file` for a
+      # handoff that existed and was 20 KB. Measured by running the job: it
+      # processed in 7ms and read nothing.
+      #
+      # Read-only because the direction is one way. The fetch writes, the
+      # worker consumes; a writable mount would let the consumer corrupt its
+      # own input.
+      - zarnoborsa:/var/lib/agrent/zarnoborsa:ro
     # Proves the worker is CONSUMING, not merely running (#809). This service
     # had no healthcheck at all, so `docker inspect` reported health=none while
     # app/db/pgbouncer/redis reported healthy — and a wedged worker (blocked
@@ -406,7 +419,18 @@ services:
       ZARNOBORSA_PASSWORD: ${ZARNOBORSA_PASSWORD:-}
     volumes:
       - zarnoborsa:/var/lib/agrent/zarnoborsa
-      - appdist:/opt/share/dist:ro
+      # UNDER the package root, not beside it (#3117). ESM resolves a bare
+      # specifier from the importing FILE's URL and ignores the cwd, so a
+      # bundle at `/opt/share/dist/` walks
+      # `/opt/share/dist/node_modules` -> `/opt/share` -> `/opt` -> `/` and
+      # never reaches `/opt/zarnoborsa/node_modules`, where `playwright` is.
+      # Mounted here it walks `/opt/zarnoborsa/dist/node_modules` (absent) ->
+      # `/opt/zarnoborsa/node_modules` (found).
+      #
+      # The APP still publishes to `/opt/share/dist` on its own mount — the two
+      # containers mount the same VOLUME at different paths, which is what
+      # makes this a mount change rather than a re-plumbing.
+      - appdist:/opt/zarnoborsa/dist:ro
     # Sleep to the next slot, read, repeat. `date -d` arithmetic rather than
     # cron, so the container has one process and its log is the read's own
     # output. An unconfigured login makes the script a no-op that writes no
@@ -420,7 +444,7 @@ services:
         if [ "$$(date +%H)" != "08" ] && [ "$$(date +%H)" != "13" ] && [ "$$(date +%H)" != "18" ]; then
           sleep $$(( $$(date -d "tomorrow 08:00" +%s) - $$(date +%s) ));
         fi;
-        cd /opt/zarnoborsa && node /opt/share/dist/zarnoborsa-fetch.mjs --out /var/lib/agrent/zarnoborsa/latest.json || true;
+        cd /opt/zarnoborsa && node /opt/zarnoborsa/dist/zarnoborsa-fetch.mjs --out /var/lib/agrent/zarnoborsa/latest.json || true;
         sleep 60;
       done'
     networks:

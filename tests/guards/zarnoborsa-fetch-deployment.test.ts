@@ -45,8 +45,38 @@ import { join } from 'path';
 const ROOT = process.cwd();
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
-/** Where the app publishes to and the fetch container mounts from. */
+/**
+ * Where the APP publishes to, on its own writable mount.
+ *
+ * The two containers mount the same VOLUME at DIFFERENT paths, and that is
+ * deliberate rather than untidy — see `FETCH_PATH`.
+ */
 const SHARE_PATH = '/opt/share/dist';
+
+/**
+ * The package root in the fetch image, where `npm install playwright` put
+ * `node_modules`.
+ */
+const FETCH_PACKAGE_ROOT = '/opt/zarnoborsa';
+
+/**
+ * Where the FETCH container mounts that volume — UNDER its package root (#3117).
+ *
+ * This is the sixth link, and the one no amount of reading declarations found.
+ * ESM resolves a bare specifier from the importing FILE's URL and ignores the
+ * cwd, so a bundle at `/opt/share/dist/` walks
+ * `/opt/share/dist/node_modules` -> `/opt/share` -> `/opt` -> `/` and never
+ * reaches `/opt/zarnoborsa/node_modules`. The compose command's
+ * `cd /opt/zarnoborsa` is inert for resolution — it is right for the write
+ * side and was only ever wrong as a module-resolution mechanism.
+ *
+ * Measured in the container with both directions: the same file fails outside
+ * the package root with `ERR_MODULE_NOT_FOUND` and imports fine inside it. And
+ * `node -e 'import("playwright")'` prints RESOLVED there, because `-e` DOES
+ * resolve from the cwd — a probe that uses it certifies the package is
+ * installed and says nothing about the case that matters.
+ */
+const FETCH_PATH = `${FETCH_PACKAGE_ROOT}/dist`;
 const BUNDLE = 'dist/zarnoborsa-fetch.mjs';
 
 describe('#3081 — the fetch bundle is built, published and mounted', () => {
@@ -116,19 +146,84 @@ describe('#3081 — the fetch bundle is built, published and mounted', () => {
         expect(entry).toContain(SHARE_PATH);
     });
 
-    it('the compose service mounts that SAME share, read-only', () => {
+    it('the compose service mounts that same VOLUME, read-only', () => {
         const compose = read('deploy/docker-compose.vm.yml');
-        // The paths must agree across three files. They are spelled, not
-        // derived, so this is the only thing holding them in step.
-        expect(compose).toContain(`appdist:${SHARE_PATH}:ro`);
+        // The same volume, at the consumer's own path. What must agree across
+        // the three files is the VOLUME NAME and each container's own path —
+        // not one shared path, which is what this asserted until #3117.
+        expect(compose).toContain(`appdist:${FETCH_PATH}:ro`);
         // And the app mounts it WRITABLE, or it cannot publish.
         expect(compose).toContain(`appdist:${SHARE_PATH}\n`);
         expect(compose).toContain('agrent-zarnoborsa');
     });
 
-    it('the container runs the bundle from the share, not from its own image', () => {
+    it('THE SIXTH LINK — the fetch mount is UNDER the package root', () => {
+        // The whole of #3117. A mount anywhere else leaves the bundle unable
+        // to resolve `playwright`, and the command's `|| true` swallows it
+        // three times a day with no symptom but absent prices.
+        expect(FETCH_PATH.startsWith(`${FETCH_PACKAGE_ROOT}/`)).toBe(true);
         const compose = read('deploy/docker-compose.vm.yml');
-        expect(compose).toContain(`node ${SHARE_PATH}/zarnoborsa-fetch.mjs`);
+        // Derived from the Dockerfile rather than assumed: the package root is
+        // wherever `npm install` ran, and if that WORKDIR ever moves this
+        // assertion must move with it.
+        const df = read('deploy/zarnoborsa/Dockerfile');
+        expect(df).toContain(`WORKDIR ${FETCH_PACKAGE_ROOT}`);
+        // And the bundle is run from the mount, not from the old path.
+        expect(compose).not.toContain(`node ${SHARE_PATH}/zarnoborsa-fetch.mjs`);
+    });
+
+    it('the container runs the bundle from the mount, not from its own image', () => {
+        const compose = read('deploy/docker-compose.vm.yml');
+        expect(compose).toContain(`node ${FETCH_PATH}/zarnoborsa-fetch.mjs`);
+    });
+
+    /*
+     * ── THE OUTPUT CHAIN (#3120) ──────────────────────────────────────────
+     *
+     * Everything above delivers the SCRIPT. This delivers what the script
+     * PRODUCES, and it has the identical structure: the fetch writes a file
+     * into a volume, and a DIFFERENT container has to mount that volume to
+     * read it.
+     *
+     * The guard asserted the first chain and not the second, so the fetch ran,
+     * wrote a 20 KB handoff, and `zarnoborsa-pull` reported `unaudited` /
+     * `no-file` — because the `zarnoborsa` volume was declared on exactly ONE
+     * service, the producer. Measured by running the job rather than reading
+     * the file: 7ms, nothing read.
+     *
+     * Derived from the PATH CONSTANT rather than a remembered service name, so
+     * moving the handoff moves this assertion with it.
+     */
+    it('THE OUTPUT CHAIN — the worker mounts the volume holding the handoff', () => {
+        const pull = read('src/app-layer/jobs/zarnoborsa-pull.ts');
+        const m = /ZARNOBORSA_HANDOFF = '([^']+)'/.exec(pull);
+        expect(m).not.toBeNull();
+        const handoffDir = m![1].replace(/\/[^/]+$/, '');
+        // A control on the derivation: an empty or truncated capture would make
+        // every `toContain` below trivially true.
+        expect(handoffDir).toMatch(/^\/\S+\/\S+/);
+
+        const compose = read('deploy/docker-compose.vm.yml');
+        // The PRODUCER writes there.
+        expect(compose).toContain(`zarnoborsa:${handoffDir}\n`);
+        // And the CONSUMER reads there — read-only, because the direction is
+        // one way and a writable mount would let the consumer corrupt its own
+        // input.
+        expect(compose).toContain(`zarnoborsa:${handoffDir}:ro`);
+    });
+
+    it('and the job that reads it runs on the WORKER, which is why that mount is the worker\'s', () => {
+        // The assertion above would pass if BOTH mounts were on the fetch
+        // container. This pins which service consumes: `zarnoborsa-pull` is a
+        // scheduled job, scheduled jobs run in the worker container, and the
+        // schedule is where that is written down.
+        const schedules = read('src/app-layer/jobs/schedules.ts');
+        expect(schedules).toContain("name: 'zarnoborsa-pull'");
+        const compose = read('deploy/docker-compose.vm.yml');
+        const worker = compose.slice(compose.indexOf('\n  worker:'));
+        const nextService = worker.slice(1).search(/\n  [a-z][a-z-]*:\n/);
+        const workerBlock = nextService > -1 ? worker.slice(0, nextService + 1) : worker;
+        expect(workerBlock).toContain('zarnoborsa:/var/lib/agrent/zarnoborsa:ro');
     });
 
     it('its image is built locally rather than pulled', () => {
