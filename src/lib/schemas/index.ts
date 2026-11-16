@@ -19,7 +19,7 @@ import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
 import { instantTimestamp, clearableTimestamp, requestTimestamp } from './timestamp';
 import { FARM_NAME_MAX } from './farm-limits';
 import { REMEMBERED_POINT_MAX_CHARS } from './assistant-memory-limits';
-import { DISPLAY_NAME_MAX } from '@/lib/account/profile';
+import { DISPLAY_NAME_MAX } from './profile-limits';
 import { LOCALES } from '@/lib/i18n/locales';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {

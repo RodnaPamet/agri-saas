@@ -13,7 +13,7 @@ import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import {badRequest } from '@/lib/errors/types';
-import { updateOwnDisplayName, DISPLAY_NAME_MAX } from '@/lib/account/profile';
+import { updateOwnDisplayName } from '@/lib/account/profile';
 // Declared ONCE in `@/lib/schemas` so this parse and the OpenAPI entry
 // cannot drift — `request-body-declared-once` (#1555), cap zero.
 import { ProfileNameSchema } from '@/lib/schemas';
