@@ -385,7 +385,15 @@ export async function fetchOrthoTile(
      * was right about its own case — an edge of a flight block, where no year
      * has pixels — and that case still ends in `rememberAbsent`.
      */
-    const startAt = ORTHO_YEARS.indexOf(coverage.year);
+    /*
+     * `findIndex` and not `indexOf`, because `ORTHO_YEARS` is `as const` — a
+     * readonly tuple of literal types, so `indexOf` demands one of those
+     * literals and `coverage.year` is a plain `number` (it can come from a
+     * cached value). A cast would have silenced that; comparing with `===`
+     * asks the same question honestly and keeps the literal types on the
+     * slice below.
+     */
+    const startAt = ORTHO_YEARS.findIndex((y) => y === coverage.year);
     const candidates = startAt === -1
         // A cached coverage year no longer in ORTHO_YEARS: try the list from
         // the top rather than nothing, so a retired year degrades to a probe
