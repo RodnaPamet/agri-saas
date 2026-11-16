@@ -96,6 +96,34 @@ export interface TimelineMessage {
      * one. The DM path passes nothing and keeps the resolver.
      */
     senderLabel?: string | null;
+    /**
+     * An optional action ON THIS MESSAGE — the channel CARD case (#3063).
+     *
+     * A NEWS card's payload carries a `url`, and until now that was
+     * contract-only on the web: documented in OpenAPI, returned by the API,
+     * consumed by agrent-ios, and not something a web reader could click. The
+     * «За Вас» surface already rendered `channels.card.open`; the feed could
+     * not, because `body` is a plain string and there was nowhere to put a
+     * link.
+     *
+     * Same shape and same argument as `deleted` and `senderLabel` above: the
+     * channel case genuinely differs, so it gets a field rather than the
+     * adapter faking one. The alternative considered was a card-specific row
+     * inside the feed client, which would have duplicated this component's
+     * day-pill grouping and `dynamicRowHeight` measurement — and P8.3's
+     * docblock is explicit that a bubble's height must be MEASURED rather than
+     * declared, so a second renderer is a second place for that to go wrong.
+     *
+     * DELIBERATELY NARROW: a label and an href, nothing else. The risk of an
+     * "optional action" on a shared primitive is that it becomes the hook
+     * every future surface hangs something off, so it is not a callback, not a
+     * node, and not a list. A surface that needs more than one link should
+     * make its case rather than widen this.
+     *
+     * The DM path passes nothing and renders exactly as before, which the
+     * rendered test asserts rather than assumes.
+     */
+    action?: { label: string; href: string } | null;
     reactions?: MessageBubbleProps['reactions'];
     /**
      * `DirectMessageView.replyTo`, as the API returns it — the SENDER's id
@@ -397,6 +425,7 @@ export const MessageTimeline = React.forwardRef<
                             : row.message.senderLabel
                               ?? senderLabel?.(row.message.senderUserId)
                     }
+                    action={row.message.action}
                     reactions={row.message.reactions}
                     onRequestReactions={
                         onRequestReactions
