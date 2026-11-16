@@ -67,6 +67,9 @@ export async function runZarnoBorsaPull(
         verdict: 'unaudited',
         received: 0, kept: 0, mapped: 0,
         seriesTouched: 0, pointsWritten: 0, unmappedProducts: [],
+        // #3126. A run that wrote nothing dropped nothing, and did not fail to
+        // drop anything either — so zero and false, not a sentinel.
+        cacheKeysInvalidated: 0, cacheInvalidationFailed: false,
         reason, handoffAgeMinutes: age,
     });
 

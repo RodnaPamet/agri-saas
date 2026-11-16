@@ -38,6 +38,8 @@ import { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { assertPlatformSupport } from '@/lib/auth/platform-support';
 import { runInTenantContext } from '@/lib/db-context';
+import { afterCommit } from '@/lib/db/after-commit';
+import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
 import { badRequest } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { normalizeAnyCommodity } from '@/lib/market/commodity-vocabulary';
@@ -168,6 +170,31 @@ export async function upsertManualPriceSeries(
                 },
             },
         });
+
+        /*
+         * DROP THE CACHED READ PAYLOAD (#3126).
+         *
+         * `getPriceTrends` serves this commodity from Redis for SIX HOURS, so
+         * without this a platform admin's hand-entered price is invisible on
+         * Тенденции for up to six hours — the admin is AT THE CONSOLE, which
+         * makes this worse than the scheduled-source case that found the bug:
+         * a lag on a nightly pull reads as lag, a correction that does not
+         * appear reads as the console being broken.
+         *
+         * AFTER COMMIT, not before, and that direction is load-bearing: a read
+         * arriving between an early invalidation and the commit would
+         * re-populate the cache from the PRE-write state and pin the old value
+         * for the full TTL — strictly worse than not invalidating at all. This
+         * is `suspendAccount`'s reasoning verbatim.
+         *
+         * `afterCommit` really defers here because `runInTenantContext` opens a
+         * db-context scope. The ZarnoBorsa ingest uses plain `prisma` with no
+         * enclosing transaction, so it awaits the drop directly instead —
+         * `afterCommit` there would fire un-awaited, which is #1619.
+         */
+        afterCommit('market.invalidate_trends_cache', () =>
+            invalidatePriceTrendsCache([commodity]),
+        );
 
         return {
             seriesId,
