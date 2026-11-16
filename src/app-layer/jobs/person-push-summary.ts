@@ -200,7 +200,11 @@ export async function runPersonPushSummary(
                 // bounded, because the destination rule is about EVERY
                 // unsettled row and `take: 2` cannot see past the second.
                 db.personPushDeferral.count({
-                    where: { ...where, kind: { notIn: FOR_YOU_KINDS } },
+                    // Spread, because Prisma's `notIn` takes a MUTABLE array
+                    // and the allowlist is `readonly` — which it stays: a
+                    // module constant another file can push onto is not an
+                    // allowlist. One copy per run, against a count query.
+                    where: { ...where, kind: { notIn: [...FOR_YOU_KINDS] } },
                 }),
             ]);
             return { rows: found, count: total, offSurfaceCount: offSurface };
