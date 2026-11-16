@@ -371,6 +371,19 @@ const PLATFORM_ONLY_RLS_MODELS: ReadonlyMap<string, readonly string[]> = new Map
     // No arm but the bypass. Moderation internals: the decision, the
     // rationale, `moderatorRef`.
     ['ModerationAction', ['superuser_bypass']],
+    // #3095 — platform-admin corrections and additions to the published
+    // agronomic calendar. Bypass-only, and deliberately so: the calendar is
+    // served by a PERSON-scoped route that holds no tenant context at all, so
+    // a tenant-scoped arm could never see an override, and the loader reads
+    // them through the privileged client. An `app_user` SELECT arm would be a
+    // second, weaker way to reach the same rows.
+    //
+    // It is also TENANTLESS for a product reason rather than a technical one:
+    // the published calendar is global agronomy, identical for every farm in a
+    // region, so there is no tenant to scope a correction to. A per-farm
+    // override would be a different feature — a farm's own adjusted plan —
+    // and must not be confused with correcting a published figure.
+    ['AgroCalendarOverride', ['superuser_bypass']],
     // Also bypass-only, and deliberately NOT recipient-readable. DSA Art 17
     // gives the recipient a right to the statement, satisfied by DELIVERY (a
     // push, in their language per P5.4) rather than by read access — and a

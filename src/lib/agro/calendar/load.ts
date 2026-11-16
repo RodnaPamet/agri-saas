@@ -35,11 +35,41 @@ import {
     type CalendarRegion,
 } from './schema';
 import { perDaEurCents } from './costs';
+import { applyOverrides, type LiveOverride, type Superseded } from './overrides';
 import raw from './dataset.json';
 
 /** A window as SERVED: `cites` normalised, `alsoCite` collapsed into it. */
+/**
+ * A window as served, in one of three states — #3095.
+ *
+ * `cites` and `basis` are MUTUALLY EXCLUSIVE, which is the design rather than
+ * an accident of optionality:
+ *
+ *     published   cites present      no origin, no basis, no supersedes
+ *     corrected   NO cites           origin + basis + supersedes
+ *     added       NO cites           origin + basis
+ *
+ * The owner's rule is that a corrected window shows its basis INSTEAD of the
+ * citation, never beside it. Sending both and documenting "don't render the
+ * citation" would make the rule depend on every client obeying prose; omitting
+ * `cites` makes "beside" unrepresentable. `calendar-override-shape` asserts
+ * the exclusivity on real output, because the types permit a both-present
+ * object that the merge never builds.
+ *
+ * `origin` is ABSENT on a published window, not `'published'`. That is what
+ * keeps a farm with no overrides receiving byte-identical bytes to before —
+ * the route's ETag goes on answering 304 — and the phone already reads an
+ * absent origin as published.
+ */
 export interface ServedWindow extends Omit<CalendarWindowInput, 'cite' | 'alsoCite'> {
-    cites: { source: string; page: number | string }[];
+    /** Present ONLY on a published window. Never empty when present. */
+    cites?: { source: string; page: number | string }[];
+    /** Absent means published. */
+    origin?: 'corrected' | 'added';
+    /** Required whenever `origin` is present; never present without it. */
+    basis?: { bg: string; en?: string };
+    /** What a CORRECTION replaced. Absent on an addition — nothing preceded it. */
+    supersedes?: Superseded;
 }
 type CalendarWindowInput = CalendarDataset['crops'][number]['windows'][number];
 
@@ -180,6 +210,30 @@ const served = (w: CalendarWindowInput): ServedWindow => {
 };
 
 /**
+ * One crop's windows for a region, with any live overrides applied — #3095.
+ *
+ * THE REGION FILTER RUNS AFTER THE MERGE, and the order is load-bearing. A
+ * correction may move a window between regions — `both` to `north`, say — and
+ * filtering first would apply the override to a window that had already been
+ * dropped, so the correction would silently not take effect for the region it
+ * was moved INTO. Merging first and filtering the result means the override's
+ * own region is what decides, which is what an operator editing that field
+ * expects.
+ *
+ * An ADDED window is filtered the same way, so adding a `south` window does
+ * not make it appear for a northern farm.
+ */
+const mergedWindows = (
+    cropKey: string,
+    windows: readonly CalendarWindowInput[],
+    region: CalendarRegion,
+    overrides: CalendarOverrides,
+): ServedWindow[] => {
+    const { windows: merged } = applyOverrides(cropKey, windows.map(served), overrides);
+    return merged.filter((w) => w.region === 'both' || w.region === region);
+};
+
+/**
  * Published costs plus their euro derivation — #637.
  *
  * Costs ride on the CROP rather than on a route of their own: one priced card
@@ -209,6 +263,21 @@ export interface CalendarQuery {
 }
 
 /**
+ * Live overrides, PASSED IN rather than read here — #3095.
+ *
+ * `calendarFor` stays a pure function of (dataset, query, overrides), so the
+ * merge is testable without a database and the privileged read lives in the
+ * route that already holds a request. Same arrangement as handing a Prisma
+ * client in rather than importing one.
+ *
+ * Defaulting to `[]` is what keeps every existing caller and every existing
+ * test correct, and it is also the production answer until an operator makes
+ * the first correction: with no overrides the response is BYTE-IDENTICAL to
+ * before, so the route's ETag goes on answering 304 for everyone.
+ */
+export type CalendarOverrides = readonly LiveOverride[];
+
+/**
  * The crops and windows for one region.
  *
  * A `both` window belongs to every region — that is what it means, and it is
@@ -219,15 +288,16 @@ export interface CalendarQuery {
  * heading with nothing under it reads as "we know about this crop and have
  * nothing to say", which is a different claim from not covering it.
  */
-export function calendarFor(query: CalendarQuery): ServedCrop[] {
+export function calendarFor(
+    query: CalendarQuery,
+    overrides: CalendarOverrides = [],
+): ServedCrop[] {
     return CALENDAR.crops
         .filter((c) => (query.group ? c.group === query.group : true))
         .filter((c) => (query.crop ? c.key === query.crop : true))
         .map(({ costs, windows, ...rest }): ServedCrop => ({
             ...rest,
-            windows: windows
-                .filter((w) => w.region === 'both' || w.region === query.region)
-                .map(served),
+            windows: mergedWindows(rest.key, windows, query.region, overrides),
             // Destructured out of the spread rather than overridden after it:
             // the raw block and the served one are different TYPES, and
             // spreading then replacing leaves tsc with a union it cannot
