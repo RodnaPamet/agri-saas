@@ -11243,6 +11243,19 @@
               42.9
             ]
           },
+          "agroRegion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "north",
+              "south",
+              null
+            ],
+            "description": "Which half of Bulgaria this block falls in, derived from the centre of `boundsJson` — `north` or `south`, or null when it cannot be determined (no bounds, or a centre outside every oblast). Intended for pre-selecting `/api/agro-calendar`'s required `region` parameter; that route has no default and refuses a missing one.",
+            "example": "north"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"

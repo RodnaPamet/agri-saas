@@ -5,6 +5,7 @@
  * hectare value computed by ST_Area at import time.
  */
 import { z } from '@/lib/openapi/zod';
+import { AGRO_REGIONS, agroRegionForBounds } from '@/lib/geo/agro-region';
 import { UserRefSchema } from './common';
 
 // ─── Location List Item ───
@@ -56,6 +57,28 @@ export const LocationListItemDTOSchema = z.object({
                 'Bounding box as `[west, south, east, north]` — `[minLon, minLat, maxLon, maxLat]`, **longitude first**, per GeoJSON and the reverse of the `lat, lon` a human quotes. WGS84 degrees, exactly four numbers. Null when the location has no imported parcels to bound.',
             example: [23.1, 42.4, 23.6, 42.9],
         }),
+    /**
+     * Which half of the country this block is in — DERIVED from `boundsJson`,
+     * not a stored column (#3100).
+     *
+     * It exists so a client can pre-select `/api/agro-calendar`'s required
+     * `?region=`. **It is not a default:** that route still answers 400 to a
+     * missing region, because defaulting there would serve one half of the
+     * country's sowing dates to the other half silently.
+     *
+     * `null` whenever we cannot tell — no bounds, a malformed box, or a centre
+     * outside every oblast. Never a nearest-match: a wrong half is worse than
+     * no suggestion, since the farmer would not know they had been defaulted.
+     */
+    agroRegion: z
+        .enum(AGRO_REGIONS)
+        .nullable()
+        .optional()
+        .openapi({
+            description:
+                'Which half of Bulgaria this block falls in, derived from the centre of `boundsJson` — `north` or `south`, or null when it cannot be determined (no bounds, or a centre outside every oblast). Intended for pre-selecting `/api/agro-calendar`\'s required `region` parameter; that route has no default and refuses a missing one.',
+            example: 'north',
+        }),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
     owner: UserRefSchema.nullable().optional(),
@@ -89,6 +112,7 @@ export const LOCATION_LIST_ITEM_FIELDS = [
     'spatialFileId',
     'spatialFormat',
     'boundsJson',
+    'agroRegion',
     'createdAt',
     'updatedAt',
     'owner',
@@ -114,6 +138,23 @@ export function toLocationListItemDTO(row: Record<string, unknown>): LocationLis
         if (field in row) out[field] = row[field];
     }
     if (out.capacityTonnes != null) out.capacityTonnes = Number(out.capacityTonnes);
+    /*
+     * `agroRegion` is DERIVED and assigned after the copy loop — #3100.
+     *
+     * It is in `LOCATION_LIST_ITEM_FIELDS` because that list is the wire shape
+     * this DTO promises, and the projection test binds it to the schema keys.
+     * But no repository row carries the column, so the loop above never copies
+     * it; this is the only writer. Assigning after the loop also means that if
+     * a column of that name is ever added, the DERIVED value wins — which is
+     * the right way round, since the stored one could be stale against the
+     * bounds beside it.
+     *
+     * Here rather than in the usecase because this mapper is applied at every
+     * exit point (its docblock above), so one call site covers the list, the
+     * paginated list and the detail read. It stays SERVER-side: the polygon
+     * table behind it is ~49 KB, and no client module imports this file.
+     */
+    out.agroRegion = agroRegionForBounds(row.boundsJson);
     return out as LocationListItemDTO;
 }
 

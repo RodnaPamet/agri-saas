@@ -64,6 +64,42 @@ describe('Location response projection — the wire shape is the documented shap
         expect([...LOCATION_LIST_ITEM_FIELDS].sort()).toEqual(documented);
     });
 
+    it('agroRegion is DERIVED from boundsJson, not copied from the row', () => {
+        /*
+         * #3100. `agroRegion` is in `LOCATION_LIST_ITEM_FIELDS` because that
+         * list is the promised wire shape, but no repository row carries the
+         * column — so the copy loop never sets it and this mapper is the only
+         * writer. A row that somehow HAD the column must not win: a stored
+         * half could be stale against the bounds sitting beside it, and the
+         * whole point of deriving is that correcting a block's geometry
+         * corrects its region with no backfill.
+         */
+        const northern = toLocationListItemDTO({
+            ...RAW_ROW,
+            boundsJson: [27.7, 43.5, 27.95, 43.65], // Dobrudzha
+            agroRegion: 'south', // a stale/forged column value
+        }) as Record<string, unknown>;
+        expect(northern.agroRegion).toBe('north');
+
+        const southern = toLocationListItemDTO({
+            ...RAW_ROW,
+            boundsJson: [24.7, 42.1, 24.79, 42.17], // Plovdiv
+        }) as Record<string, unknown>;
+        expect(southern.agroRegion).toBe('south');
+
+        // Both halves appear above, so this cannot pass by always answering
+        // one of them.
+        expect(new Set([northern.agroRegion, southern.agroRegion]).size).toBe(2);
+    });
+
+    it('agroRegion is null — never a half — when the bounds cannot place the block', () => {
+        for (const boundsJson of [null, undefined, [], [1, 2, 3], 'north', [29.4, 42.9, 29.6, 43.1]]) {
+            const out = toLocationListItemDTO({ ...RAW_ROW, boundsJson }) as Record<string, unknown>;
+            expect({ boundsJson, agroRegion: out.agroRegion })
+                .toEqual({ boundsJson, agroRegion: null });
+        }
+    });
+
     it('no internal lifecycle column reaches the wire', () => {
         const out = toLocationListItemDTO(RAW_ROW) as Record<string, unknown>;
         for (const column of INTERNAL_COLUMNS) {

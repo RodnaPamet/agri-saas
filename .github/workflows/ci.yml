@@ -658,6 +658,15 @@ jobs:
       - name: "Tokens: generated files match design/tokens.json"
         run: npm run tokens:check
 
+      # #3100 — the same shape a third time. `src/lib/geo/oblast-polygons.
+      # generated.ts` carries the 28 oblast rings that decide a block's
+      # north/south suggestion, generated from public/geo/bg-oblasti.geojson.
+      # The unit suite checks the CODE SET matches the source, which a
+      # hand-edited RING would pass, so the byte comparison belongs here where
+      # it answers in thirty seconds rather than in a shard twenty minutes in.
+      - name: "Geo: oblast rings match public/geo/bg-oblasti.geojson"
+        run: npm run geo:oblasts:check
+
       # Same shape again, and here the fast answer matters more than usual:
       # `.secret-patterns` is NOT copied into the runtime image, so the server
       # reads a GENERATED module. A stale one means the egress control is
