@@ -62,6 +62,23 @@ const CHANNEL_ID = __ENV.CHANNEL_ID || '';
  */
 const MIN_REQUESTS = Number(__ENV.MIN_REQUESTS || 200);
 
+/**
+ * The feed is the CHANNEL route, not a `/posts` sub-route.
+ *
+ * Measured on the first dispatch (run 43842784468), which answered **405**:
+ * `/api/social/channels/{id}/posts` exports POST only — it is how a member
+ * WRITES a post. `readChannelFeed` is reached by
+ * `GET /api/social/channels/{id}`, which also returns the channel itself, and
+ * that is the shape the phone reads.
+ *
+ * The `setup()` probe is what turned that into a ten-second failure naming the
+ * status, rather than a two-minute run reporting a superb p95 over 405s. Its
+ * first dispatch printed
+ *   [channel-feed] p95=0.0ms over 0 round trip(s) … floor 200 trips
+ * so the denominator did its job too.
+ */
+const FEED_PATH = `/api/social/channels/${CHANNEL_ID}`;
+
 const feedLatency = new Trend('channel_feed_latency', true);
 const feedRequests = new Counter('channel_feed_requests');
 const feedSuccess = new Rate('channel_feed_success');
@@ -78,7 +95,7 @@ export const options = {
     },
     thresholds: {
         // THE CRITERION.
-        'channel_feed_latency{endpoint:posts}': ['p(95)<2000'],
+        'channel_feed_latency{endpoint:feed}': ['p(95)<2000'],
         // THE DENOMINATOR. Without this the criterion above passes over an
         // empty population, which is the whole reason #2944 asks for the trip
         // count beside the percentile.
@@ -119,7 +136,7 @@ export function setup() {
     // which reads as "the app is slow" rather than "the harness was pointed at
     // nothing". Fail here instead, with the status in the message.
     const probe = http.get(
-        `${cfg.baseUrl}/api/social/channels/${CHANNEL_ID}/posts?limit=20`,
+        `${cfg.baseUrl}${FEED_PATH}?limit=20`,
         { cookies: { [tokenName]: tokenArr[0] } },
     );
     if (probe.status !== 200) {
@@ -141,12 +158,12 @@ export default function channelFeedIteration(data) {
 
     group('channel:feed', () => {
         const r = http.get(
-            `${cfg.baseUrl}/api/social/channels/${CHANNEL_ID}/posts?limit=20`,
-            { ...auth, tags: { type: 'channel', endpoint: 'posts' } },
+            `${cfg.baseUrl}${FEED_PATH}?limit=20`,
+            { ...auth, tags: { type: 'channel', endpoint: 'feed' } },
         );
 
         feedRequests.add(1);
-        feedLatency.add(r.timings.duration, { endpoint: 'posts' });
+        feedLatency.add(r.timings.duration, { endpoint: 'feed' });
         if (r.status === 404 || r.status === 403) feedRefusals.add(1);
 
         const ok = check(r, {
@@ -174,8 +191,8 @@ export function handleSummary(data) {
     const trips = data.metrics.channel_feed_requests
         ? data.metrics.channel_feed_requests.values.count
         : 0;
-    const p95 = data.metrics['channel_feed_latency{endpoint:posts}']
-        ? data.metrics['channel_feed_latency{endpoint:posts}'].values['p(95)']
+    const p95 = data.metrics['channel_feed_latency{endpoint:feed}']
+        ? data.metrics['channel_feed_latency{endpoint:feed}'].values['p(95)']
         : (data.metrics.channel_feed_latency
             ? data.metrics.channel_feed_latency.values['p(95)']
             : NaN);
