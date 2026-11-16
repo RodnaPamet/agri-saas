@@ -309,27 +309,139 @@ export function orthoCoverageCacheKey(bbox: LonLatBbox): string {
 }
 
 /**
- * The flight date as a CALENDAR DAY in Bulgaria, from the source's timestamp.
+ * The flight date as a CALENDAR DAY in Bulgaria, from whatever the source gave.
  *
- * `Date` arrives as e.g. `2023-10-13T21:00:00Z`, which is
- * `2023-10-14T00:00:00+03:00` — midnight in Sofia on the 14th. The stored
- * value is a local DATE serialised as UTC, so formatting it in UTC yields the
- * 13th and reports the flight as a day earlier than it happened.
+ * ## Three formats, because the Ministry ships three
  *
- * A farmer reading «заснемане 13.10.2023» against a Ministry record saying the
- * 14th has no way to tell which is wrong. Formatted in `Europe/Sofia`, with
- * `en-CA` because it is the locale that renders ISO `YYYY-MM-DD`.
+ * Measured live 2026-11-16 across the six `VectorData:Dates_<year>` layers at
+ * two probe points (~43.08N 24.40E, and ~43.55N 27.83E in Dobrudzha):
+ *
+ * | layer         | property     | value                  |
+ * |---------------|--------------|------------------------|
+ * | `Dates_2025`  | `FlightDate` | `25/06/2025`           |
+ * | `Dates_2023`  | `Date`       | `2023-10-13T21:00:00Z` |
+ * | `Dates_2022`  | `Date`       | `28/08/2022`           |
+ * | `Dates_2020`  | `DATE`       | `200818`               |
+ *
+ * So an ISO instant, a `DD/MM/YYYY` calendar date and a bare `YYMMDD`.
+ *
+ * ## `Date.parse` is the hazard, not the solution (#3097)
+ *
+ * This function used to be `Date.parse` plus a Sofia format, and it is correct
+ * for the ISO shape and silently wrong for the other two:
+ *
+ *     05/08/2022  ->  "2022-05-08"      5 August read as 8 May
+ *     12/08/2022  ->  "2022-12-08"     12 August read as 8 December
+ *     28/08/2022  ->  null             day > 12, so NaN
+ *     200818      ->  "200818-01-01"   the year two hundred thousand
+ *
+ * A `DD/MM/YYYY` date whose day is 12 or less parses as US `MM/DD`, so roughly
+ * twelve days in every thirty-one were shown as the WRONG date and the rest as
+ * none at all. An absent date says "I do not know"; a wrong one is a false
+ * fact about the land in the one field the attribution line exists to carry —
+ * a farmer comparing a photograph against what they remember planting was
+ * being told May for a flight in August.
+ *
+ * Each format is therefore RECOGNISED EXPLICITLY and `Date.parse` is reached
+ * for the ISO shape only. Same rule as `parseZarnoBorsaPrice`, where a
+ * European decimal comma had to be validated rather than stripped: a blind
+ * transform of an ambiguous format is a silent error with nothing failing.
+ *
+ * ## Why the ISO branch converts and the other two do not
+ *
+ * `2023-10-13T21:00:00Z` is `2023-10-14T00:00:00+03:00` — midnight in Sofia on
+ * the 14th. That value is a local DATE serialised as UTC, so formatting it in
+ * UTC reports the flight a day early, and `en-CA` is the locale that renders
+ * ISO `YYYY-MM-DD`. `25/06/2025` and `200818` carry no time and no zone: they
+ * are already calendar days, so converting them would be inventing an instant
+ * and then re-deriving the day from it.
+ *
+ * Anything else returns null, which is a correct answer — `ORTHO_ATTRIBUTION`
+ * alone is what the phone prints when we know nothing more.
  */
-export function sofiaFlightDate(iso: string | null | undefined): string | null {
-    if (!iso) return null;
-    const t = Date.parse(iso);
-    if (Number.isNaN(t)) return null;
-    return new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Europe/Sofia',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).format(new Date(t));
+export function sofiaFlightDate(raw: string | number | null | undefined): string | null {
+    const value = typeof raw === 'number' && Number.isInteger(raw) ? String(raw) : raw;
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    // An ISO 8601 date or instant — the only shape Date.parse is trusted with,
+    // and the only one whose day depends on a timezone.
+    if (/^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(trimmed)) {
+        const t = Date.parse(trimmed);
+        if (Number.isNaN(t)) return null;
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Europe/Sofia',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(new Date(t));
+    }
+
+    const dmy = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+    if (dmy) return calendarDay(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
+
+    // `200818` is 2020-08-18. The layers begin at 2020 and a two-digit year is
+    // read into this century; a `YYMMDD` that is not a real day is refused by
+    // the round-trip below rather than wrapped into the next month.
+    const ymd = /^(\d{2})(\d{2})(\d{2})$/.exec(trimmed);
+    if (ymd) return calendarDay(2000 + Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
+
+    return null;
+}
+
+/**
+ * `YYYY-MM-DD` for a real calendar day, or null.
+ *
+ * The round trip is the validation: `Date.UTC` happily accepts month 13 and
+ * day 31 of February and rolls them forward, so comparing the components back
+ * is what separates a date from three numbers. Pattern-matching alone is not
+ * validation — `31/02/2022` matches `DD/MM/YYYY` perfectly.
+ */
+function calendarDay(year: number, month: number, day: number): string | null {
+    const t = new Date(Date.UTC(year, month - 1, day));
+    if (
+        t.getUTCFullYear() !== year ||
+        t.getUTCMonth() !== month - 1 ||
+        t.getUTCDate() !== day
+    ) {
+        return null;
+    }
+    const mm = String(month).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${year}-${mm}-${dd}`;
+}
+
+/**
+ * The flight date out of one WFS feature's properties, whichever key holds it.
+ *
+ * **Derived from the FEATURE, never from a year→key table.** The schema varies
+ * by layer today (`Date`, `DATE`, `FlightDate` — see `sofiaFlightDate`) and a
+ * per-year map goes stale silently the next time a layer lands: the date is
+ * simply absent, the attribution falls back, and nothing fails.
+ *
+ * The selection is by KEY NAME rather than by scanning every value, because
+ * `Dates_2020` also carries `EXT_ID` as a small integer and a six-digit id
+ * would be indistinguishable from `YYMMDD`. Matching `/date/i` catches the
+ * three known spellings and any `Flight_Date` to come, while `Area` and
+ * `EXT_ID` cannot qualify however they are typed.
+ *
+ * An unreadable value does not end the search: a feature carrying both an
+ * unparseable `DATE` and a readable `FlightDate` still gets a date.
+ */
+export function orthoFeatureFlightDate(
+    properties: Record<string, unknown> | null | undefined,
+): string | null {
+    if (!properties) return null;
+    for (const [key, raw] of Object.entries(properties)) {
+        if (!/date/i.test(key)) continue;
+        if (typeof raw !== 'string' && !(typeof raw === 'number' && Number.isInteger(raw))) {
+            continue;
+        }
+        const parsed = sofiaFlightDate(raw);
+        if (parsed) return parsed;
+    }
+    return null;
 }
 
 /** What the phone prints under the map when it knows nothing more. */
