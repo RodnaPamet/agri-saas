@@ -45,6 +45,7 @@ function ecSeries(
 ): TrendSeries {
     return {
         source: SOURCE_EC,
+        sourceUrl: null,
         region,
         stage,
         unit: 'EUR/t',
@@ -74,6 +75,7 @@ describe('trends-helpers', () => {
                 ecSeries('RO', [['2026-01-01', 190]]),
                 {
                     source: SOURCE_LISTINGS,
+                    sourceUrl: null,
                     region: 'BG',
                     stage: null,
                     unit: 'BGN/t',
@@ -84,6 +86,7 @@ describe('trends-helpers', () => {
                 },
                 {
                     source: SOURCE_AV,
+                    sourceUrl: null,
                     region: 'GLOBAL',
                     stage: null,
                     unit: 'USD/bu',
@@ -231,6 +234,7 @@ describe('trends-helpers', () => {
             ]),
             {
                 source: SOURCE_LISTINGS,
+                sourceUrl: null,
                 region: 'BG',
                 stage: null,
                 unit: 'BGN/t',
@@ -510,6 +514,7 @@ describe('selectPrimaryGroup', () => {
     ): TrendSeries {
         return {
             source,
+            sourceUrl: null,
             region,
             stage: null,
             unit,
@@ -653,6 +658,7 @@ describe('chartSeriesFor', () => {
         // silently dropped one of them.
         const withTax: TrendSeries = {
             source: SOURCE_OIL_BULLETIN,
+            sourceUrl: null,
             region: 'BG',
             stage: 'with-tax',
             unit: 'EUR/1000l',
@@ -704,6 +710,7 @@ describe('leadSeriesOf', () => {
     it('takes the most recently observed series when the group is not EC', () => {
         const stale: TrendSeries = {
             source: SOURCE_OIL_BULLETIN,
+            sourceUrl: null,
             region: 'BG',
             stage: 'with-tax',
             unit: 'EUR/1000l',
