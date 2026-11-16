@@ -347,7 +347,13 @@ export function MessageBubble({
                             rel="noopener noreferrer"
                             className={cn(
                                 'mt-tight block text-xs font-[560] underline',
-                                'text-content-accent',
+                                // `content-link`, not `content-accent` — there is
+                                // no such token, and Tailwind emits NOTHING for a
+                                // class naming one, so the link rendered in the
+                                // inherited bubble colour with no error anywhere.
+                                // jsdom has no Tailwind, so the rendered suite
+                                // cannot see this; `no-renegade-color-tokens` can.
+                                'text-content-link',
                                 'focus-visible:outline focus-visible:outline-2',
                                 'focus-visible:outline-offset-2',
                             )}
