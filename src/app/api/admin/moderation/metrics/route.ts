@@ -52,7 +52,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { parseModerationWindowDays } from '@/lib/validation/query-params';
+import { parseModerationWindow, withWindowVerdict } from '@/lib/validation/query-params';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
@@ -74,17 +74,20 @@ function platformGate(req: NextRequest): NextResponse | null {
 }
 
 // The window bound moved to `@/lib/validation/query-params` as
-// `parseModerationWindowDays` (#2735): this figure is now read through two
-// doors, and two local copies of the bound is how they come to answer different
-// questions with nothing failing.
+// `parseModerationWindow` (#2735): this figure is now read through two doors,
+// and two local copies of the bound is how they come to answer different
+// questions with nothing failing. `withWindowVerdict` is the same argument one
+// field over (#3010) — a bad `windowDays` still answers 30, and the payload now
+// says it did.
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest) => {
         const refused = platformGate(req);
         if (refused) return refused;
 
-        const windowDays = parseModerationWindowDays(req.nextUrl.searchParams.get('windowDays'));
-        return jsonResponse(await moderationHandlingStats(windowDays));
+        const resolved = parseModerationWindow(req.nextUrl.searchParams.get('windowDays'));
+        const stats = await moderationHandlingStats(resolved.windowDays);
+        return jsonResponse(withWindowVerdict(stats, resolved));
     },
     { rateLimit: { config: LOGIN_LIMIT, scope: 'platform-moderation-metrics' } },
 );

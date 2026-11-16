@@ -74018,7 +74018,7 @@
       "get": {
         "operationId": "moderationHandlingStatsFromConsole",
         "summary": "Notice handling-time statistics",
-        "description": "P5's exit criterion is a MEDIAN HANDLING TIME, and this is the figure it is measured on. A number nobody can see without holding the platform key is a number nobody checks.\n\n**The window is bounded at 365 days and defaults to 30.** An unbounded window is a different question: a lifetime median hides a regression, because a service that answered quickly for a year can be failing this month and the all-time figure will not move for a long while. An out-of-range or non-integer `windowDays` falls back to the default rather than erroring — preserved from the keyed route, and the weaker choice of the two, since a caller who asks for 90 days and silently receives 30 reads the figure as a 90-day one.\n\n**It reads nothing per-person** — no reporter, no subject, no moderator — so unlike the triage queue there is nothing here to withhold.\n\n**Two doors, and the door decides the ATTRIBUTION.** `/api/admin/moderation/notices` is gated by the one shared `PLATFORM_ADMIN_API_KEY` and sits in `PUBLIC_PATH_PREFIXES`, because the Edge calls `getToken()` and understands only a session cookie. A decision made through it can be attributed no further than `platform-key:<generation>` — so a regulator asking \"who decided this\" gets \"somebody holding the key\", and `PlatformAuditLog.actorUserId` is NULL. THIS route is session-gated — `admin.manage` AND the platform-support tenant, so it 404s everywhere else — and records `user:<userId>` from the verified session in both `moderatorRef` and `actorUserId`. The keyed route stays for scripts, and for an incident in which the session path is the broken thing.",
+        "description": "P5's exit criterion is a MEDIAN HANDLING TIME, and this is the figure it is measured on. A number nobody can see without holding the platform key is a number nobody checks.\n\n**The window is bounded at 365 days and defaults to 30.** An unbounded window is a different question: a lifetime median hides a regression, because a service that answered quickly for a year can be failing this month and the all-time figure will not move for a long while. An out-of-range, non-integer or non-numeric `windowDays` falls back to the default rather than erroring — preserved from the keyed route so a script that has been sending a junk value keeps working. **The response says when that happened:** `windowDefaulted` is `true` only when a value was supplied and not honoured, so a caller can tell the window they asked for from the one they were given (#3010). A supplied value is either honoured in full or replaced outright — it is never narrowed, so `windowDays: 30` with `windowDefaulted: false` means 30 was the question.\n\n**It reads nothing per-person** — no reporter, no subject, no moderator — so unlike the triage queue there is nothing here to withhold.\n\n**Two doors, and the door decides the ATTRIBUTION.** `/api/admin/moderation/notices` is gated by the one shared `PLATFORM_ADMIN_API_KEY` and sits in `PUBLIC_PATH_PREFIXES`, because the Edge calls `getToken()` and understands only a session cookie. A decision made through it can be attributed no further than `platform-key:<generation>` — so a regulator asking \"who decided this\" gets \"somebody holding the key\", and `PlatformAuditLog.actorUserId` is NULL. THIS route is session-gated — `admin.manage` AND the platform-support tenant, so it 404s everywhere else — and records `user:<userId>` from the verified session in both `moderatorRef` and `actorUserId`. The keyed route stays for scripts, and for an incident in which the session path is the broken thing.",
         "tags": [
           "Admin"
         ],
@@ -74042,17 +74042,17 @@
           {
             "schema": {
               "type": "string",
-              "description": "Integer 1-365. Anything else falls back to 30."
+              "description": "Integer 1-365. Anything else falls back to 30, and the response reports that as `windowDefaulted: true`."
             },
             "required": false,
-            "description": "Integer 1-365. Anything else falls back to 30.",
+            "description": "Integer 1-365. Anything else falls back to 30, and the response reports that as `windowDefaulted: true`.",
             "name": "windowDays",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Counts by status and elapsed-time statistics for the window.",
+            "description": "Counts by status and elapsed-time statistics for the window, plus `windowDays` (the window measured) and `windowDefaulted` (whether a supplied `windowDays` was refused in favour of it).",
             "content": {
               "application/json": {
                 "schema": {

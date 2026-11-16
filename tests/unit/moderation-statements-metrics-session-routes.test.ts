@@ -18,6 +18,10 @@
  *   5. an out-of-range `windowDays` falls back rather than erroring —
  *      preserved from the keyed route, and asserted so the preservation is
  *      deliberate rather than accidental.
+ *   6. that fallback is REPORTED in the payload (#3010). The default stayed
+ *      (owner ruling), so the only observable fix is `windowDefaulted`, and a
+ *      test asserting the fallback NUMBER alone passes either way — which is
+ *      how the silent misread survived being asserted four times.
  */
 import type { NextRequest } from 'next/server';
 
@@ -202,15 +206,50 @@ describe('#2735 PR4 — the handling-time reading', () => {
         ['zero', '0'],
         ['non-integer', 'abc'],
         ['fractional', '1.5'],
-    ])('falls back to 30 for %s — preserved from the keyed route', async (_label, v) => {
-        // Asserted so the preservation is DELIBERATE. It is the weaker choice
-        // of the two — a caller who asks for 90 and silently receives 30 reads
-        // the figure as a 90-day one — and changing it here would have altered
-        // the keyed route's contract as a side effect of extracting a shared
-        // parser.
+        ['supplied with no value', ''],
+    ])(
+        'falls back to 30 for %s AND says it did — preserved from the keyed route',
+        async (_label, v) => {
+            // The fallback itself is preserved DELIBERATELY (owner ruling
+            // 2026-11-16: keep the default, document it), so this half of the
+            // assertion is a pin rather than a wish.
+            //
+            // The second half is #3010. Until it landed, these four cases
+            // asserted only the number — and `toHaveBeenCalledWith(30)` is
+            // equally true of a route that answers 30 silently and one that
+            // says so, which is why the defect survived being covered.
+            const { GET } = await load();
+            const res = await GET(makeReq(`${MPATH}?windowDays=${v}`), params);
+            expect(moderationHandlingStats).toHaveBeenCalledWith(30);
+            await expect(res.json()).resolves.toMatchObject({ windowDefaulted: true });
+        },
+    );
+
+    it('does NOT report a fallback when the caller supplied no window', async () => {
+        // The control on the field, and the one that makes `true` mean
+        // something: a reader who asked for nothing cannot misread 30 as a
+        // window they chose, and flagging it there would make every ordinary
+        // read of the console look like a refused request.
         const { GET } = await load();
-        await GET(makeReq(`${MPATH}?windowDays=${v}`), params);
-        expect(moderationHandlingStats).toHaveBeenCalledWith(30);
+        const res = await GET(makeReq(MPATH), params);
+        await expect(res.json()).resolves.toMatchObject({ windowDefaulted: false });
+    });
+
+    it('does NOT report a fallback for an honoured window', async () => {
+        const { GET } = await load();
+        const res = await GET(makeReq(`${MPATH}?windowDays=90`), params);
+        await expect(res.json()).resolves.toMatchObject({
+            windowDefaulted: false,
+        });
+    });
+
+    it('leaves the figures it was given untouched', async () => {
+        // `withWindowVerdict` spreads, so a mistake there would silently drop
+        // the reading it is annotating — the payload is the deliverable and the
+        // verdict is one field on it.
+        const { GET } = await load();
+        const res = await GET(makeReq(MPATH), params);
+        await expect(res.json()).resolves.toMatchObject({ byStatus: {}, medianMs: null });
     });
 
     it('runs both gates', async () => {
