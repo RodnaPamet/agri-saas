@@ -82,17 +82,56 @@ describe('every code-bearing field is resolved, not passed through', () => {
          * and this pins it. Without it the suite above is a text rule that a
          * refactor walks past.
          */
-        for (const shape of ['TaskRow', 'JournalRow', 'CostRow']) {
+        for (const shape of ['TaskRow', 'JournalRow', 'CostRow', 'LunarDayRow']) {
             expect(TOOLS).toContain(`interface ${shape} {`);
             expect(TOOLS).toContain(`Promise<${shape}>`);
         }
     });
 
     it('the locale is resolved ONCE per call, not per row', () => {
-        // Per row would be a catalogue load for every row, and the locale
-        // cannot change inside one tool run.
-        const perCall = [...TOOLS.matchAll(/const locale = resolveRequestLocale\(\);/g)];
-        expect(perCall).toHaveLength(3);
-        expect(TOOLS).not.toMatch(/async \(r\)[^}]*resolveRequestLocale\(\)/);
+        /*
+         * Per row would be a catalogue load for every row, and the locale
+         * cannot change inside one tool run.
+         *
+         * DERIVED, not counted. This read `toHaveLength(3)` until #3098 added a
+         * fourth resolver, and a hardcoded total fails on a tool that does the
+         * right thing — the same brittleness as a ledger test pinned to the
+         * ledger's contents. What the property actually says is ONE resolve per
+         * tool that needs one, so the expectation is the number of TOOLS whose
+         * `run` contains a resolve: a tool resolving twice, or once per row,
+         * makes occurrences exceed tools and fails.
+         */
+        const NEEDLE = 'const locale = resolveRequestLocale();';
+        // Tool entries are the 4-space-indented keys of the registry literal.
+        const blocks = TOOLS.split(/\n    (?=[a-z_]+: \{\n)/);
+        const toolsThatResolve = blocks.filter((b) => b.includes(NEEDLE));
+        /*
+         * `split`, NOT a RegExp built from the needle. The first version was
+         * `new RegExp(NEEDLE.replace(/[().]/g, '\\$&'), 'g')`, which CodeQL
+         * flagged HIGH: that character class escapes `(`, `)` and `.` and not
+         * the backslash itself, so a needle containing one would build a
+         * pattern meaning something other than the literal text. The needle
+         * here happens to contain none — which is exactly the kind of "safe
+         * today" that stops being true when somebody edits the string.
+         *
+         * Counting separators needs no escaping and cannot be wrong about any
+         * input, so the defect class is removed rather than patched.
+         */
+        const occurrences = TOOLS.split(NEEDLE).length - 1;
+        // Control: the split must actually have found tools, or both sides are
+        // zero and this passes over nothing — the empty-population defect.
+        expect(blocks.length).toBeGreaterThan(5);
+        expect(toolsThatResolve.length).toBeGreaterThan(0);
+        expect(occurrences).toBe(toolsThatResolve.length);
+
+        /*
+         * And not inside a row callback. The old form matched `async (r)` only,
+         * which was a real gap: #3098's maps bind `(d)` and `(g)`, so a per-row
+         * resolve there would have been invisible to it while the hardcoded
+         * count above happened to catch it for the wrong reason. Any
+         * single-short-name arrow parameter now, which is what a row callback
+         * looks like throughout this file.
+         */
+        expect(TOOLS).not.toMatch(/async \([a-z]{1,2}\)[^}]*resolveRequestLocale\(\)/);
     });
 });
