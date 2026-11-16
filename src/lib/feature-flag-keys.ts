@@ -66,6 +66,20 @@
  * `isFeatureEnabled` under `src/`. The guard holds that correspondence.
  */
 export const REFERENCED_FLAG_KEYS = [
+    /**
+     * «Агрономически календар» (agrent-ios #633/#636). Gates
+     * `GET /api/agro-calendar`.
+     *
+     * Dark by default, and `feature-flags-capability` reports it in
+     * `missingRows` until an operator inserts the row — the correct reading,
+     * as for its neighbours: a key gating a route with no row is what that
+     * capability exists to surface.
+     *
+     * The data it serves is PUBLISHED Bulgarian agronomy with a citation per
+     * window, so there is no population to narrow to and no cohorts are
+     * expected when it goes on — the same reasoning as `lunar.enabled`.
+     */
+    'agro.calendar',
     // #2421 — «Ортофотокарта». Dark by default and expected to STAY dark in
     // production until МЗХ answers the owner's licence enquiry; on for the
     // owner's tenant and the testers' cohort meanwhile, which is a row with

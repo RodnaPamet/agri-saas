@@ -313,6 +313,18 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // belong here; it belongs under /api/t/[tenantSlug], which is
             // precisely the split that keeps this exemption honest.
             'lunar',
+            // «Агрономически календар» — the same reasoning as `lunar`
+            // immediately above, and for a second reason of its own: the
+            // answer is PUBLISHED agronomy with a citation per window, so it
+            // is not merely farm-free, it is public knowledge the farm has no
+            // claim over. Authenticated all the same, and behind
+            // `agro.calendar`.
+            //
+            // The region is picked by the CLIENT from the farm's blocks. Doing
+            // it here would need the farm, which is what this route does
+            // without — and a farm with blocks in both halves of the country
+            // has no single region to inherit.
+            'agro-calendar',
             // P5.2a (#1593) — the person-scoped SOCIAL surface, starting with
             // `reports` (file a DSA Art 16 notice, read your own back).
             // AUTHENTICATED like `me`, and with no tenant for a stronger
