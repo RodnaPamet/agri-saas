@@ -229,7 +229,7 @@ export async function listNotices(opts: {
 // while leaving it up would leave the content visible. A direct message reaches
 // one person, and the owner ruled (2026-11-08) that suspension is the remedy
 // there — `dm-is-reportable-not-removable` holds that absence.
-const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE', 'CHANNEL_POST'] as const;
+export const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE', 'CHANNEL_POST'] as const;
 
 /**
  * Refuse an outcome this platform cannot carry out, before anything is written.
