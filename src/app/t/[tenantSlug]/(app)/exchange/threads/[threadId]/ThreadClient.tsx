@@ -58,6 +58,12 @@ interface ThreadDetail {
     lastMessageAt: string;
     closed: boolean;
     blocked: boolean;
+    /**
+     * The other party cannot answer, so the composer is closed (#2755). Says
+     * nothing about WHY — a pending erasure and a moderation termination set
+     * the same column, and neither is this reader's business.
+     */
+    counterpartyUnavailable: boolean;
     unreadCount: number;
     olderCursor: string | null;
     messages: ThreadMessage[];
@@ -407,6 +413,23 @@ export function ThreadClient({
                         {data.role === 'seller' ? t('blockedNotice') : t('blockedForYou')}
                     </p>
                 ) : null}
+                {/*
+                  * #2755 — the other party cannot answer. Owner ruling
+                  * 2026-11-16: say so neutrally and stop taking messages,
+                  * rather than leaving the counterparty to send into silence
+                  * for up to thirty days.
+                  *
+                  * The sentence names no cause. A pending erasure and a
+                  * moderation termination set the same column, so one neutral
+                  * line covers both and tells this reader neither.
+                  *
+                  * It also says the history is still READABLE, because that is
+                  * the difference between this and the thread disappearing —
+                  * which is what the owner declined.
+                  */}
+                {data?.counterpartyUnavailable ? (
+                    <p className="text-sm text-content-muted">{t('counterpartyUnavailable')}</p>
+                ) : null}
                 {(
                     <div className="flex items-end gap-tight border-t border-border-subtle pt-3">
                         <Textarea
@@ -416,11 +439,15 @@ export function ThreadClient({
                             placeholder={t('composerPlaceholder')}
                             rows={2}
                             className="flex-1"
+                            // DISABLED rather than hidden, so the notice above
+                            // has something to explain. A vanished composer
+                            // reads as a broken screen.
+                            disabled={data?.counterpartyUnavailable ?? false}
                         />
                         <Button
                             variant="primary"
                             loading={sending}
-                            disabled={draft.trim() === ''}
+                            disabled={draft.trim() === '' || (data?.counterpartyUnavailable ?? false)}
                             onClick={() => { void send(); }}
                         >
                             {t('send')}

@@ -44,6 +44,17 @@ const COMPONENT = 'trends';
  * step by `zarnoborsa-source-key-agrees`.
  */
 const SOURCE_ZARNOBORSA = 'zarnoborsa';
+/**
+ * МЗХ's weekly «изкупни цени» (#3136).
+ *
+ * A LITERAL for the reason the line above is, and held in step with
+ * `MZH_SOURCE` by `zarnoborsa-source-key-agrees`, which covers both keys
+ * because both carry the same silent-drift exposure: the ingest would keep
+ * writing under one spelling while the resolver looked for another, the
+ * prices would still appear in «Тенденции», and the reference would quietly
+ * stay on the EC average.
+ */
+const SOURCE_MZH = 'mzh';
 const SOURCE_EC_AGRIFOOD = 'ec-agrifood';
 const SOURCE_ALPHA_VANTAGE = 'alpha-vantage';
 
@@ -634,6 +645,19 @@ export async function invalidatePriceTrendsCache(
  * (#1587 contract §4), which is a stronger relationship than winning a
  * comparison.
  *
+ * Owner ruling 2026-11-16 adds МЗХ ABOVE EC (#3136). It covers the same five
+ * commodities as ZarnoBorsa, so in steady state it leads nothing — its value
+ * is as the fallback when the ZarnoBorsa fetch is absent or stale, where the
+ * alternative was EC's lagging national average. An official weekly Bulgarian
+ * изкупна figure from САПИ is the better answer to "what are buyers paying
+ * here" than an EU-wide national average, which is the comparison the ruling
+ * turned on.
+ *
+ * Corroboration rather than proof, measured 2026-11-16: ZarnoBorsa EXW wheat
+ * is 188.65 and the МЗХ figure for the week to 30.09 is 188 — close enough
+ * that the fallback does not move the number a farmer sees by much, which is
+ * what makes it a safe fallback rather than a different claim.
+ *
  * Ranked ABOVE stage, deliberately. ZarnoBorsa quotes EXW and FOB, neither of
  * which is `NATIONAL_AVERAGE_STAGE`, so under the old order every EC national
  * figure would have beaten it on stage alone and the ruling would have had no
@@ -645,9 +669,10 @@ export async function invalidatePriceTrendsCache(
  */
 function sourceRank(source: string): number {
     if (source === SOURCE_ZARNOBORSA) return 0;
-    if (source === SOURCE_EC_AGRIFOOD) return 1;
-    if (source === SOURCE_ALPHA_VANTAGE) return 2;
-    return 3;
+    if (source === SOURCE_MZH) return 1;
+    if (source === SOURCE_EC_AGRIFOOD) return 2;
+    if (source === SOURCE_ALPHA_VANTAGE) return 3;
+    return 4;
 }
 
 function isBetter(
@@ -674,7 +699,14 @@ export async function getMarketReferences(
             // Never benchmark against our own noticeboard — see above.
             // #3081 — ZarnoBorsa joins the benchmark set and LEADS it, per
             // the owner's ruling. Still never our own noticeboard.
-            source: { in: [SOURCE_ZARNOBORSA, SOURCE_EC_AGRIFOOD, SOURCE_ALPHA_VANTAGE] },
+            // `SOURCE_MZH` belongs in the FILTER as well as in the rank, and
+            // the filter is the half that would have been easy to miss: a
+            // source absent from here is not ranked last, it is never
+            // SELECTED — invisible to the resolver rather than merely
+            // outranked, and no amount of ranking would have shown it.
+            source: {
+                in: [SOURCE_ZARNOBORSA, SOURCE_MZH, SOURCE_EC_AGRIFOOD, SOURCE_ALPHA_VANTAGE],
+            },
             // The farm's own market. See BENCHMARK_REGION.
             region: BENCHMARK_REGION,
         },

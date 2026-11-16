@@ -223,6 +223,30 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        /*
+         * DAILY, for a WEEKLY bulletin, and the mismatch is deliberate.
+         *
+         * МЗХ publishes on no fixed weekday — measured across six issues, the
+         * publish date trails the bulletin date by between zero and one day
+         * and the weekday moves. A weekly cron would therefore have to guess,
+         * and a guess that is wrong by a day finds nothing and reports
+         * `no-bulletin`, which is indistinguishable from a week with no
+         * bulletin at all.
+         *
+         * So the job asks daily and the UPSERT makes repetition free: the
+         * point is keyed on the table's own «към» date, so six re-reads of one
+         * bulletin store one figure six times over the same row rather than
+         * six rows. The cost is one listing-page GET and one PDF a day.
+         *
+         * 05:40 UTC: before the working day in Sofia either way, and off the
+         * hour so it does not queue behind every other job's :00.
+         */
+        name: 'mzh-prices-pull',
+        pattern: '40 5 * * *',
+        description: 'Ingest МЗХ «Оперативен анализ» purchase prices (#3136)',
+        defaultPayload: {},
+    },
+    {
         name: 'channel-digest',
         pattern: '*/15 * * * *',
         description: 'Send the opt-in 07:15 channel digest (#2941)',

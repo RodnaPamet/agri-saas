@@ -12,6 +12,10 @@
  *     operator typed to a dropped connection, and nothing on screen would say
  *     so afterwards.
  *   - a CLOSED thread has no composer at all — not a disabled one.
+ *   - a thread whose OTHER PARTY cannot answer says so and DISABLES the
+ *     composer (#2755) — disabled rather than absent, because the notice has
+ *     to have something to explain, and a vanished composer reads as a broken
+ *     screen rather than a closed door.
  *   - the read receipt fires ONCE per mount, not once per poll. The endpoint
  *     is monotonic so a repeat is harmless, which is exactly why a regression
  *     here would never surface as a bug report.
@@ -77,7 +81,8 @@ function thread(over: Record<string, unknown> = {}) {
     return {
         id: 'th1', listingId: 'l1', listingCommodity: 'Wheat',
         role: 'seller', lastMessageAt: '2026-09-20T08:00:00.000Z',
-        closed: false, blocked: false, unreadCount: 1, olderCursor: null, messages: [msg()], ...over,
+        closed: false, blocked: false, counterpartyUnavailable: false,
+        unreadCount: 1, olderCursor: null, messages: [msg()], ...over,
     };
 }
 
@@ -366,5 +371,51 @@ describe('scrolling back', () => {
         await waitFor(() =>
             expect(screen.queryByRole('button', { name: 'loadOlder' })).not.toBeInTheDocument(),
         );
+    });
+});
+
+describe('#2755 — the other party cannot answer', () => {
+    it('says so, and DISABLES the composer rather than removing it', async () => {
+        swrReturns(thread({ counterpartyUnavailable: true }));
+        render(<ThreadClient threadId="th1" />);
+
+        expect(await screen.findByText('counterpartyUnavailable')).toBeInTheDocument();
+
+        // Disabled, not gone. A CLOSED thread removes the composer; this one
+        // keeps it, because the sentence above is an explanation and an
+        // explanation needs its subject on screen.
+        const box = screen.getByPlaceholderText('composerPlaceholder');
+        expect(box).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+    });
+
+    it('CONTROL — an available counterparty gets no notice and a live composer', () => {
+        // Without this the assertions above are satisfied by a screen that
+        // always shows the notice and always disables the box.
+        swrReturns(thread({ counterpartyUnavailable: false }));
+        render(<ThreadClient threadId="th1" />);
+
+        expect(screen.queryByText('counterpartyUnavailable')).not.toBeInTheDocument();
+        expect(screen.getByPlaceholderText('composerPlaceholder')).not.toBeDisabled();
+    });
+
+    it('does not send even if the button is reached', async () => {
+        // Belt and braces for the client half: the server refuses with
+        // THREAD_COUNTERPARTY_UNAVAILABLE regardless, but a disabled control
+        // that still fires on click is a disabled control in appearance only.
+        swrReturns(thread({ counterpartyUnavailable: true }));
+        render(<ThreadClient threadId="th1" />);
+
+        await userEvent.click(screen.getByRole('button', { name: 'send' }));
+
+        // Named, not `not.toHaveBeenCalled()`. The screen marks itself READ on
+        // mount through the same `apiPost`, so the broad assertion failed on a
+        // call to `…/read` — a true observation about the wrong request. The
+        // property is that no MESSAGE was posted.
+        const posted = apiPost.mock.calls.map((c) => String(c[0]));
+        expect(posted.some((u) => u.endsWith('/messages'))).toBe(false);
+        // Control: the mount-time read receipt DID go, so the mock is live and
+        // "no message was sent" is not "nothing happened at all".
+        expect(posted.some((u) => u.endsWith('/read'))).toBe(true);
     });
 });

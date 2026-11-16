@@ -176,6 +176,78 @@ describe('the query asks the database the right question', () => {
     });
 });
 
+describe('МЗХ ranks above EC and below ZarnoBorsa (#3136)', () => {
+    // Owner ruling 2026-11-16. МЗХ covers the same five commodities as
+    // ZarnoBorsa, so in steady state it leads nothing — its value is as the
+    // fallback when the ZarnoBorsa fetch is absent or stale, where the
+    // alternative was EC's lagging national average.
+    it('МЗХ leads when ZarnoBorsa is absent, beating an EC national average', async () => {
+        feedRows([
+            series({ id: 'ec', stage: NATIONAL, price: 183.29, source: 'ec-agrifood' }),
+            series({ id: 'mzh', stage: 'PURCHASE', price: 188, source: 'mzh' }),
+        ]);
+        const refs = await getMarketReferences(['wheat']);
+        // 188, not 183.29 — and note the EC row carries the NATIONAL stage,
+        // which outranks `PURCHASE` on the stage axis. Source is compared
+        // first, which is the whole point of the ordering; if stage came
+        // first this test would read 183.29 and the ruling would not hold.
+        expect(refs.get('wheat')?.pricePerTonne).toBe(188);
+    });
+
+    it('ZarnoBorsa still beats МЗХ', async () => {
+        feedRows([
+            series({ id: 'mzh', stage: 'PURCHASE', price: 188, source: 'mzh' }),
+            series({ id: 'zb', stage: 'EXW', price: 188.65, source: 'zarnoborsa' }),
+        ]);
+        const refs = await getMarketReferences(['wheat']);
+        expect(refs.get('wheat')?.pricePerTonne).toBe(188.65);
+    });
+
+    it('the full order holds in one query, whatever the row order', async () => {
+        // Four sources at once, driven in both directions: the answer must be
+        // ZarnoBorsa's regardless, and removing it must promote МЗХ rather
+        // than EC.
+        const all = [
+            series({ id: 'av', stage: null, price: 999, source: 'alpha-vantage' }),
+            series({ id: 'ec', stage: NATIONAL, price: 183.29, source: 'ec-agrifood' }),
+            series({ id: 'mzh', stage: 'PURCHASE', price: 188, source: 'mzh' }),
+            series({ id: 'zb', stage: 'EXW', price: 188.65, source: 'zarnoborsa' }),
+        ];
+        for (const order of [all, [...all].reverse()]) {
+            feedRows(order);
+            expect((await getMarketReferences(['wheat']))?.get('wheat')?.pricePerTonne)
+                .toBe(188.65);
+        }
+        const withoutZb = all.filter((r) => r.source !== 'zarnoborsa');
+        for (const order of [withoutZb, [...withoutZb].reverse()]) {
+            feedRows(order);
+            expect((await getMarketReferences(['wheat']))?.get('wheat')?.pricePerTonne)
+                .toBe(188);
+        }
+    });
+
+    it('the QUERY asks for mzh — the half the ranking tests cannot see', async () => {
+        // A source missing from `source: { in: [...] }` is never SELECTED, so
+        // it is invisible to the resolver rather than merely outranked, and
+        // #3136's first version had the rank and not the filter.
+        //
+        // This has to be asserted on the QUERY ARGUMENT, and my first attempt
+        // got that wrong in a way worth recording: it fed an МЗХ row and
+        // checked the answer was 188, under the name "an МЗХ row is SELECTED
+        // at all". That test cannot fail for a missing filter — `feedRows`
+        // mocks `findMany`, so the `where` clause never runs and the rows
+        // arrive whatever it says. Dropping mzh from the filter left it green.
+        // A mocked dependency cannot report that the dependency changed.
+        feedRows([]);
+        await getMarketReferences(['wheat']);
+        const arg = mockFindMany.mock.calls[0][0];
+        expect(arg.where.source.in).toContain('mzh');
+        // Beside its neighbours, so a filter narrowed to mzh alone fails too.
+        expect(arg.where.source.in).toContain('zarnoborsa');
+        expect(arg.where.source.in).toContain('ec-agrifood');
+    });
+});
+
 describe('what is NOT a reference', () => {
     it('a commodity with no series yields nothing, not a foreign quote', async () => {
         // Consumers already handle this: grain-net-worth raises the

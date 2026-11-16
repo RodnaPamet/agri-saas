@@ -13,8 +13,19 @@ import prisma from '@/lib/prisma';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { badRequest } from '@/lib/errors/types';
 
-/** Max length of the composed display name. */
-export const DISPLAY_NAME_MAX = 100;
+/**
+ * Max length of the composed display name.
+ *
+ * Declared in `@/lib/schemas/profile-limits` — a leaf module — and re-exported
+ * here so every existing importer is unchanged. It moved because this file
+ * imports `@/lib/prisma`, and the shared schema barrel needs the bound: see
+ * that module's docblock for the client-bundle failure that caused.
+ */
+// Imported AND re-exported: `export { X } from '…'` creates no local binding,
+// and this module uses the bound two lines below.
+import { DISPLAY_NAME_MAX } from '@/lib/schemas/profile-limits';
+
+export { DISPLAY_NAME_MAX };
 
 /**
  * Compose a single display name from first + last. Each part is

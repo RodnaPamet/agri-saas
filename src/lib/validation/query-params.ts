@@ -379,24 +379,70 @@ export function parseLimitParam(
  * one spelling moves, the two doors answer different questions, and nothing
  * fails.
  *
- * ## It DEFAULTS on bad input rather than throwing, unlike `parseLimitParam`
+ * ## It DEFAULTS on bad input rather than throwing, and it now SAYS SO (#3010)
  *
- * Preserved exactly as the keyed route behaved, because changing it here would
- * change that route's contract as a side effect of extracting a function.
- * Worth knowing that it is the weaker choice: a moderator who asks for 90 days
- * and silently receives 30 reads the figure as a 90-day one. That is #3010,
- * filed rather than altered here — changing it in the same edit that MOVED this
- * function would have altered the keyed route's contract as a side effect of a
- * refactor, which is the kind of change nobody reviews.
+ * The default is preserved exactly as the keyed route behaved — owner ruling
+ * 2026-11-16, chosen over narrowing the contract, because a script that has
+ * been sending a junk `windowDays` for months keeps working. What changes is
+ * that the fallback is no longer silent: the verdict carries
+ * `windowDefaulted`, and both doors put it in the response, so a caller can
+ * tell a figure they asked for from one they were given.
+ *
+ * That is the whole of the defect. The window is not *narrowed* on bad input
+ * and never was — a supplied value is either honoured in full or replaced by
+ * the default outright, which is why the field is `windowDefaulted` rather
+ * than anything saying "clamped".
+ *
+ * **The sentence that stood here illustrated the bug with a case that cannot
+ * happen**: "a moderator who asks for 90 days and silently receives 30". 90 is
+ * inside `1..365`, so it is honoured, and a reader checking the claim against
+ * the code would have found the code correct and the example wrong. The real
+ * population is an out-of-range value (`400`), a non-integer (`30.5`), a
+ * non-number (`ninety`) and an empty `?windowDays=` — every one of which used
+ * to answer 30 with nothing in the payload saying it had.
  */
 export const MODERATION_DEFAULT_WINDOW_DAYS = 30;
 export const MODERATION_MAX_WINDOW_DAYS = 365;
 
-export function parseModerationWindowDays(raw: string | null): number {
-    if (raw === null) return MODERATION_DEFAULT_WINDOW_DAYS;
+/** What a door resolved a `windowDays` query parameter to, and whether it obeyed. */
+export interface ModerationWindow {
+    /** The window the figures are measured over, in days. Always `1..365`. */
+    windowDays: number;
+    /**
+     * True when a `windowDays` was SUPPLIED and not honoured — so `windowDays`
+     * above is the default rather than the answer to the question asked.
+     *
+     * False when the caller supplied nothing: a reader who passed no window
+     * cannot misread the result as a window they chose, and reporting a
+     * fallback there would make every default-window read look like a refusal.
+     */
+    windowDefaulted: boolean;
+}
+
+export function parseModerationWindow(raw: string | null): ModerationWindow {
+    if (raw === null) {
+        return { windowDays: MODERATION_DEFAULT_WINDOW_DAYS, windowDefaulted: false };
+    }
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 1 || n > MODERATION_MAX_WINDOW_DAYS) {
-        return MODERATION_DEFAULT_WINDOW_DAYS;
+        return { windowDays: MODERATION_DEFAULT_WINDOW_DAYS, windowDefaulted: true };
     }
-    return n;
+    return { windowDays: n, windowDefaulted: false };
+}
+
+/**
+ * Attach the window verdict to a handling-stats payload.
+ *
+ * ONE spelling of the field name, for the reason the bound itself is shared: a
+ * route that reported the fallback and a route that did not would be two doors
+ * answering different questions about the same figure, which is the #1664 shape
+ * and is exactly what #2735 extracted this parser to prevent. The payload
+ * already carries `windowDays`; this is the half that says whether it was
+ * asked for.
+ */
+export function withWindowVerdict<T extends object>(
+    payload: T,
+    window: ModerationWindow,
+): T & { windowDefaulted: boolean } {
+    return { ...payload, windowDefaulted: window.windowDefaulted };
 }
