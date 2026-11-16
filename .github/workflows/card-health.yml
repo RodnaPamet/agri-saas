@@ -1,0 +1,75 @@
+name: Card Health
+
+# Watch whether the day's channel cards landed where content existed (#2944).
+#
+# ## Why a scheduled STATE probe rather than an assertion inside the job
+#
+# `channel-cards` runs nightly on the VM and its failure mode is silence: a
+# channel that was due a card and did not get one produces no error, because
+# every generator legitimately writes zero rows on a quiet day. P9.4 reports
+# `created` and `dormant` per kind for exactly that reason, and the reading has
+# gone to the log where nothing watches it.
+#
+# The question has a GREEN answer that is a true statement about the durable
+# artefact — "every channel that was due a card has one" — unlike a run-outcome
+# failure, which is why this joins `ci-failure-issue.yml`'s watched list the
+# way `Image tip check`, `Basemap Provenance` and `sbom-presence-audit` do: its
+# issue closing on the next green run means what it says.
+#
+# ## The criterion is "DUE and did not appear", by owner ruling
+#
+# #2944's literal wording — "a commodity channel gets no card in a day" —
+# fires for 15 of 15 commodity channels today, measured on production. Owner
+# ruling 2026-11-16 narrowed it to a shortfall against content that existed.
+# `scripts/ci/check-card-health.mjs` carries the reasoning and the three
+# verdicts; it exits 0 only on `clean`, because an unaudited run and a clean
+# one are the same observation otherwise.
+#
+# ## What it reads
+#
+# `/api/readyz` exposes `capabilities.cardHealth`, written by the job into one
+# Redis key with no TTL. `capabilities` is documented as "reported for operator
+# observability, never part of checks/failed", so this probe cannot 503 the app
+# it is probing — the #781 treatment every sibling in that object follows.
+#
+# GitHub Actions cannot reach the production database (a local Docker volume on
+# the VM), so an HTTP reading is the only one available.
+
+on:
+    schedule:
+        # 05:30 UTC — after the 03:00 UTC `channel-cards` cron has had two and a
+        # half hours to finish, and offset from the 02:00 snapshot schedules and
+        # the 07:00 basemap probe so three failures do not arrive together.
+        - cron: "30 5 * * *"
+    workflow_dispatch:
+        inputs:
+            reason:
+                description: "Why this run was dispatched"
+                required: false
+
+permissions:
+    contents: read
+
+jobs:
+    probe:
+        name: Card health (production)
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v5
+
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "22"
+
+            - name: Read capabilities.cardHealth from /api/readyz
+              env:
+                  ORIGIN: ${{ vars.HEALTH_ORIGIN || 'https://app.agrent.bg' }}
+              run: |
+                  set -euo pipefail
+                  echo "▸ probing ${ORIGIN}/api/readyz"
+                  # No `npm ci`: the script uses only global `fetch`, so the
+                  # checkout is the whole dependency. An install here would add
+                  # a few minutes and a supply-chain surface to a read-only
+                  # probe.
+                  node scripts/ci/check-card-health.mjs --url "${ORIGIN}/api/readyz"
