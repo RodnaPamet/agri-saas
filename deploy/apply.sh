@@ -259,8 +259,22 @@ if [ "$CHAIN_STATUS" = "2" ]; then
     exit 2
 fi
 if [ "$CHAIN_STATUS" != "0" ]; then
+    # COULD NOT LOOK does NOT change the deploy's verdict, and that asymmetry
+    # is deliberate — it is also what an existing test caught me getting wrong.
+    #
+    # The health checks above reached the VM and passed, so the deploy IS
+    # verified; an unreachable chain probe is a lesser, separate fact. Letting
+    # it set a failing exit would mean an unrelated subsystem's unreachability
+    # makes a good deploy look bad, which is #2692's mistake with a different
+    # cause — and the response to "apply.sh failed" at 9pm is to paste the
+    # rollback and undo a working deploy.
+    #
+    # It is still printed on stderr naming what went unchecked, because the
+    # other direction — silent — is exactly how #3113 survived for hours,
+    # logged at every recreate and read by nobody.
     err ""
-    err "NOTE: the deploy SUCCEEDED and the chain check could not LOOK"
-    err "(exit ${CHAIN_STATUS}). That is not a pass and not a chain failure."
-    exit 2
+    err "WARNING: the deploy SUCCEEDED and the chain check could not LOOK"
+    err "(exit ${CHAIN_STATUS}). Nothing is known about the producer/consumer"
+    err "chains; that is NOT the same as them being healthy. Re-run"
+    err "deploy/verify-chain.sh when the VM is reachable."
 fi
