@@ -163,6 +163,10 @@ describe('GET /api/readyz — capabilities.platformConsole is REPORTED, never GA
         expect(Object.keys(body.capabilities).sort())
             .toEqual([
                 'basemap',
+                // #2944 — WATCHED like every sibling here, outside
+                // `checks`/`failed`, so a quiet news feed cannot 503 the
+                // endpoint the GCP uptime check reads.
+                'cardHealth',
                 'documentStorage',
                 'email',
                 'featureFlags',
