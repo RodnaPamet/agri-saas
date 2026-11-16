@@ -308,6 +308,33 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
            /usr/local/bin/npm \
            /usr/local/bin/npx
 
+# ── The share the ZarnoBorsa fetch container reads (#3081) ──
+#
+# Created HERE, owned by the runtime user, so the named volume INHERITS that
+# ownership. Docker seeds an empty named volume from the image path it is
+# mounted over — contents and ownership both — and if the path does not exist
+# in the image it creates the mount point `root:root 0755` instead.
+#
+# That is what went wrong, measured on production 2026-11-16 after the build
+# step landed. Every piece of the chain was in place and the share stayed
+# empty:
+#
+#     DIR_EXISTS / NOT_WRITABLE          in the app container
+#     volume agrent-appdist -> /opt/share/dist rw=true
+#     bundle present: yes
+#     agrent-app | … could not publish zarnoborsa-fetch.mjs (continuing)
+#
+# `rw=true` is Docker's mount flag and says nothing about POSIX ownership, so
+# a uid-1001 process could not write into a root-owned directory. The publish
+# is best-effort by design — a missing price feed must never stop the app
+# booting — so it logged that line and carried on, and nothing read it.
+#
+# Worth naming the shape: #3081 was "three of four pieces shipped", and the
+# chain turned out to have FIVE. Each count was taken by reading the
+# declarations, which is the mistake both times; the image and the volume are
+# what settle it.
+RUN mkdir -p /opt/share/dist && chown nextjs:nodejs /opt/share/dist
+
 USER nextjs
 
 EXPOSE 3000

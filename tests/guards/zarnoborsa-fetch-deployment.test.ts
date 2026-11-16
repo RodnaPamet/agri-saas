@@ -16,6 +16,21 @@
  * CHAIN was broken, which is the shape `seed-deployment` was written for after
  * the same thing nearly happened to `dist/seed.mjs` — this is its sibling.
  *
+ * ## It was FOUR links and it is five (#3081, second round)
+ *
+ * The first version of this guard asserted the four DECLARATIONS and passed
+ * while the share stayed empty, because the fifth link is not a declaration
+ * at all: the app publishes as uid 1001 and Docker creates a named volume's
+ * mount point `root:root` unless the path exists in the image. Measured on
+ * production — `rw=true` on the mount, bundle present, directory present,
+ * `[ -w ]` false, and `… could not publish zarnoborsa-fetch.mjs (continuing)`
+ * in the app log, unread.
+ *
+ * `rw=true` is Docker's mount flag and says nothing about POSIX ownership.
+ * Both counts of this chain were taken by reading declarations, which is the
+ * mistake the issue is about; #3099 is the in-image assertion, and this is
+ * the source half of the fifth link.
+ *
  * ## What it asserts, and why each link is separate
  *
  * A single "does it work" test is impossible here: the pieces live in a
@@ -71,6 +86,28 @@ describe('#3081 — the fetch bundle is built, published and mounted', () => {
         // A whole-directory copy, which is why no per-bundle COPY is needed —
         // and why dropping it would take worker, seed and this one together.
         expect(dockerfile).toMatch(/COPY --from=builder[^\n]*\/app\/dist \.\/dist/);
+    });
+
+    it('THE FIFTH LINK — the image creates the share owned by the runtime user', () => {
+        // Without this the named volume's mount point is created root:root and
+        // the uid-1001 app cannot write into it, so the publish fails
+        // best-effort and the share stays empty with everything else correct.
+        const dockerfile = read('Dockerfile');
+        expect(dockerfile).toMatch(
+            new RegExp(`mkdir -p ${SHARE_PATH}[\\s\\S]{0,80}chown nextjs:nodejs ${SHARE_PATH}`),
+        );
+    });
+
+    it('and it does so BEFORE dropping to that user', () => {
+        // `chown` needs root. After `USER nextjs` the RUN cannot change
+        // ownership at all — it would fail the build rather than degrade, but
+        // the ordering is the reason the line sits where it does.
+        const dockerfile = read('Dockerfile');
+        const mk = dockerfile.indexOf(`mkdir -p ${SHARE_PATH}`);
+        const user = dockerfile.indexOf('\nUSER nextjs');
+        expect(mk).toBeGreaterThan(-1);
+        expect(user).toBeGreaterThan(-1);
+        expect(mk).toBeLessThan(user);
     });
 
     it('the entrypoint publishes it to the share the container mounts', () => {
