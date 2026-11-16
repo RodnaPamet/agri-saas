@@ -380,12 +380,36 @@ describe('the known-flake ledger', () => {
             ],
             // #1329's additions, including the ciso-portfolio case that was
             // reading as NEW on every run because only its sibling was ledgered.
+            //
+            // The tooltip-and-copy entry was PRUNED on 2026-11-16 (#1862: zero
+            // occurrences in 99 main runs against a prior rate near 1-in-12),
+            // so this line must now read UNLEDGERED. Kept as a case rather than
+            // deleted: it is the only one that would catch a prune being undone
+            // by accident, and the direction of the mistake matters — a pruned
+            // flake that recurs raises a loud NEW-flake warning, which is the
+            // failure direction this repo wants.
             [
                 '✘  20 [chromium] › tests/e2e/tooltip-and-copy.spec.ts:158:9 › Epic 56 — tooltip + copy primitives › task detail header — task.key is copyable via CopyText (32.9s)',
-                true,
+                false,
             ],
             [
                 '✘  55 [chromium] › tests/e2e/ciso-portfolio.spec.ts:183:9 › CISO portfolio journey (Epic O-4) › F — read-only invariant: AUDITOR cannot create tenant-level records (20.0s)',
+                true,
+            ],
+            // BOTH DIRECTIONS of the sibling pair in data-table-platform, which
+            // is the fail-open this ledger's docblock warns about and the reason
+            // the Assets case went unledgered for as long as it did. Matching is
+            // spec file + title SUBSTRING, so two tests whose titles differ only
+            // in their leading noun are distinguished ONLY by that noun. If
+            // either title is ever shortened to a common prefix — 'row
+            // double-click navigates to detail' — one entry starts excusing both
+            // tests and these two cases are what fails.
+            [
+                '✘  69 [chromium] › tests/e2e/data-table-platform.spec.ts:171:9 › DataTable Platform — Row click navigation › Assets row double-click navigates to detail (17.6s)',
+                true,
+            ],
+            [
+                '✘  70 [chromium] › tests/e2e/data-table-platform.spec.ts:225:9 › DataTable Platform — Row click navigation › Tasks row double-click navigates to detail (17.7s)',
                 true,
             ],
         ];
