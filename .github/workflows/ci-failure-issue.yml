@@ -173,6 +173,13 @@ on:
       # than for the realtime one — this is 4x a day, not hourly.
       - "Public surface probe"
       - "Feature flag coverage"
+      # #2944. Same division of labour as the probes above, and it is
+      # load-bearing here for the reason the SBOM audit's is: the probe has
+      # THREE verdicts and they want different reporters. `missing` is a
+      # content finding the probe titles itself; `unaudited` means the probe
+      # could not look, which it also reports — but a probe that stops RUNNING
+      # can report neither, and that is what this notifier is for.
+      - "Card Health"
       # Daily cron (#2329). Same division of labour as the scheduled probes above,
       # and here the split is load-bearing rather than incidental, because the
       # probe has THREE verdicts and they want different reporters:
