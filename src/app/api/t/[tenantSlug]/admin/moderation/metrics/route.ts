@@ -5,7 +5,7 @@ import { jsonResponse } from '@/lib/api-response';
 import { assertPlatformSupport } from '@/lib/auth/platform-support';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
-import { parseModerationWindowDays } from '@/lib/validation/query-params';
+import { parseModerationWindow, withWindowVerdict } from '@/lib/validation/query-params';
 
 /**
  * The handling-time reading, for a PERSON — #2735, PR 4.
@@ -20,13 +20,18 @@ import { parseModerationWindowDays } from '@/lib/validation/query-params';
  *
  * ## The window is BOUNDED and the parser is SHARED
  *
- * `parseModerationWindowDays` moved to `@/lib/validation/query-params` in this
- * change: the figure is now read through two doors, and two local copies of the
- * bound is the #1664 shape — one spelling moves, the doors answer different
- * questions, and nothing fails. Its own docblock carries the reason for the
- * ceiling (a lifetime median hides a regression) and notes that it DEFAULTS on
- * bad input rather than throwing, which is the weaker choice preserved from the
- * keyed route rather than changed in passing.
+ * `parseModerationWindow` moved to `@/lib/validation/query-params` in #2735:
+ * the figure is now read through two doors, and two local copies of the bound is
+ * the #1664 shape — one spelling moves, the doors answer different questions,
+ * and nothing fails. Its own docblock carries the reason for the ceiling (a
+ * lifetime median hides a regression).
+ *
+ * It still DEFAULTS on bad input rather than throwing — the keyed route's
+ * behaviour, kept by owner ruling so a script sending junk keeps working — and
+ * since #3010 the fallback is REPORTED: `withWindowVerdict` puts
+ * `windowDefaulted` in the response, through the same one spelling as the
+ * bound, so the two doors cannot come to disagree about whether a window was
+ * honoured.
  *
  * ## It reads NOTHING per-person
  *
@@ -40,8 +45,9 @@ export const GET = withApiErrorHandling(
         async (req: NextRequest, _routeArgs, ctx) => {
             assertPlatformSupport(ctx);
             const url = new URL(req.url);
-            const windowDays = parseModerationWindowDays(url.searchParams.get('windowDays'));
-            return jsonResponse(await moderationHandlingStats(windowDays));
+            const resolved = parseModerationWindow(url.searchParams.get('windowDays'));
+            const stats = await moderationHandlingStats(resolved.windowDays);
+            return jsonResponse(withWindowVerdict(stats, resolved));
         },
     ),
 );
