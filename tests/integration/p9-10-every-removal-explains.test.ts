@@ -198,7 +198,7 @@ describeFn('P9.10 — every removal carries a statement of reasons (#2944)', () 
                 reportId,
                 actionKind: 'CONTENT_REMOVED',
                 rationale: 'нарушава правилата',
-                actor: { kind: 'platformKey', generation: 'current' },
+                actor: { kind: 'platform-key', generation: 'current' },
             });
             expect(result).toBeTruthy();
 
@@ -231,7 +231,7 @@ describeFn('P9.10 — every removal carries a statement of reasons (#2944)', () 
             reportId,
             actionKind: 'NONE',
             rationale: 'разгледано, няма нарушение',
-            actor: { kind: 'platformKey', generation: 'current' },
+            actor: { kind: 'platform-key', generation: 'current' },
         });
 
         expect(await statementsFor(reportId)).toHaveLength(0);
