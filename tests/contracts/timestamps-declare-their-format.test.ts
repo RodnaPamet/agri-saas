@@ -155,6 +155,12 @@ describe('a timestamp a client reads declares its format (#1391)', () => {
         // would be WRONG and would also pass the assertion above. So pin them.
         const dateOnly = all.filter((p) => p.format === 'date').map((p) => `${p.root}.${p.where}`);
         expect(dateOnly.sort()).toEqual([
+            // «Агрономически календар»'s dataset is COMPILED on a day — it is
+            // a committed file with a date in its header, not an event with an
+            // instant. `date-time` would invent a precision the value does not
+            // have, and a client showing 00:00:00 would be reporting a time
+            // nobody recorded.
+            'AgroCalendar.compiledAt',
             'CalculatorRow.priceObservedAt',
             'MarketReference.observedAt',
             'TrendSeries.lastObservedAt',

@@ -1382,6 +1382,322 @@ exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "region": {
+      "type": "string",
+      "enum": [
+        "north",
+        "south"
+      ]
+    },
+    "schemaVersion": {
+      "type": "number"
+    },
+    "compiledAt": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-16"
+    },
+    "conventions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The authoring rules this dataset was compiled under. Shipped with the data so a reader can see what the citations are worth."
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string",
+            "example": "МЗХ"
+          },
+          "url": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "publisher",
+          "url"
+        ]
+      }
+    },
+    "crops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "wheat-bread"
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "field",
+              "vegetable",
+              "perennial"
+            ]
+          },
+          "commodityCanonical": {
+            "type": "string",
+            "description": "Joins \`CropType.commodityCanonical\` where one exists — absent for most vegetables and perennials, which have no canonical commodity."
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bg"
+            ]
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Stable. It is how stage 2 addresses a correction, so treat it as the window's identity rather than its position."
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "sowing",
+                    "fieldwork",
+                    "harvest"
+                  ]
+                },
+                "band": {
+                  "type": "string",
+                  "enum": [
+                    "early",
+                    "optimal",
+                    "late"
+                  ],
+                  "description": "Always present for \`sowing\`."
+                },
+                "region": {
+                  "type": "string",
+                  "enum": [
+                    "north",
+                    "south",
+                    "both"
+                  ]
+                },
+                "from": {
+                  "type": "string",
+                  "example": "09-25"
+                },
+                "to": {
+                  "type": "string",
+                  "example": "10-10"
+                },
+                "title": {
+                  "type": "object",
+                  "properties": {
+                    "bg": {
+                      "type": "string"
+                    },
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bg"
+                  ],
+                  "description": "The stage as the source words it («От сеитба до братене»). \`stage.bbch\` alone cannot say \\"before sowing\\"."
+                },
+                "note": {
+                  "type": "object",
+                  "properties": {
+                    "bg": {
+                      "type": "string"
+                    },
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bg"
+                  ],
+                  "description": "Quoted or closely paraphrased from the cited page. It inherits the window's citation, so it is source text rather than advice of ours."
+                },
+                "stage": {
+                  "type": "object",
+                  "properties": {
+                    "bbch": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "work": {
+                  "type": "string"
+                },
+                "seedRate": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number"
+                    },
+                    "max": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "seeds/m2",
+                        "plants/m2",
+                        "plants/da",
+                        "kg/da",
+                        "cm"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "min",
+                    "max",
+                    "unit"
+                  ]
+                },
+                "depth": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number"
+                    },
+                    "max": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "seeds/m2",
+                        "plants/m2",
+                        "plants/da",
+                        "kg/da",
+                        "cm"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "min",
+                    "max",
+                    "unit"
+                  ]
+                },
+                "density": {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "number"
+                    },
+                    "max": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "type": "string",
+                      "enum": [
+                        "seeds/m2",
+                        "plants/m2",
+                        "plants/da",
+                        "kg/da",
+                        "cm"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "min",
+                    "max",
+                    "unit"
+                  ]
+                },
+                "cites": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgroCalendarCitation"
+                  },
+                  "description": "Never empty. Ordered: the primary citation first, then any additional pages."
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "region",
+                "from",
+                "to",
+                "cites"
+              ]
+            }
+          }
+        },
+        "required": [
+          "key",
+          "group",
+          "name",
+          "windows"
+        ]
+      }
+    }
+  },
+  "required": [
+    "region",
+    "schemaVersion",
+    "compiledAt",
+    "conventions",
+    "sources",
+    "crops"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgroCalendarCitation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "A key in the \`sources\` map of this same response.",
+      "example": "mzh-ip-2024"
+    },
+    "page": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "The page carrying the figure. A string where the source cites a span.",
+      "example": 20
+    }
+  },
+  "required": [
+    "source",
+    "page"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AgroSignals 1`] = `
 "{
   "type": "object",
