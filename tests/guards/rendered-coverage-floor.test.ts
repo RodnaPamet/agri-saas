@@ -392,7 +392,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // traded. And the thousands-comma parse, where blind stripping would read a
 // European decimal comma as a HUNDREDFOLD larger price, silently, in a figure
 // the grain calculator uses.
-const RENDERED_TEST_FLOOR = 285;
+const RENDERED_TEST_FLOOR = 286;
+// Raised 285 → 286 for `channels-card-text.test.tsx` (#3063): a channel card's
+// `url` became a real anchor in the feed, and the extraction it is testing was
+// forced by a mutation — with the url logic inlined in the feed client,
+// removing the client's contribution left the rendered suite 7 of 7 green,
+// because the link rendered fine from a hand-built prop and nothing checked
+// that anything ever built one. Raised to this branch's own live count,
+// measured, not a projected total.
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre

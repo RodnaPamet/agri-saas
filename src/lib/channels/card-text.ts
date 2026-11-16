@@ -87,6 +87,42 @@ function decimalText(payload: Record<string, unknown> | null, key: string): stri
     return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
 }
 
+/**
+ * The card's openable link, or null — `payload.url` if it is one (#3063).
+ *
+ * EXPORTED and unit-tested rather than inlined in the feed client, because a
+ * mutation showed the client's extraction was the one part of this change no
+ * test covered — and it is the part I had already got wrong once, reaching for
+ * `card.url` when the wire shape is `{ kind, payload }` with the payload
+ * untyped.
+ *
+ * Two checks, covering three cases:
+ *
+ *   · not a string — the payload is `Record<string, unknown>`, so this is a
+ *     real possibility rather than defensive noise;
+ *   · not `http(s)` — which also catches EMPTY, since `''` fails it. That
+ *     matters as a case: a `url` of `''` would render a link to the CURRENT
+ *     page, which is worse than no link because it looks like it worked. It
+ *     does not need its own `if`, and a mutation proved so.
+ *
+ *     The field's purpose is a news article or a scheme's
+ *     source. This is a contract narrowing, NOT an XSS remedy: React 19
+ *     rewrites a `javascript:` href and the CSP carries no `unsafe-inline`.
+ *     Same reasoning as `httpsUrl()` on a payload schema — anything else in
+ *     the field is a fact about the data being wrong, not something to render.
+ */
+export function cardOpenHref(payload: Record<string, unknown> | null | undefined): string | null {
+    const raw = payload?.url;
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    // No separate empty check: `''` fails the scheme test below, so one was
+    // redundant — a mutation removing it left all thirteen tests green, which
+    // is how an unreachable branch announces itself. The empty CASE still
+    // matters and is still asserted; it is the extra `if` that did not.
+    if (!/^https?:\/\//i.test(trimmed)) return null;
+    return trimmed;
+}
+
 export function composeCardText(
     card: CardView,
     copy: CardCopy,

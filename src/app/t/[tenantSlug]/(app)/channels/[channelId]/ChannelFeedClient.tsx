@@ -71,7 +71,7 @@ import { apiGet, apiPost } from '@/lib/api-client';
 import { makeAuthorLabel } from '@/lib/channels/author-label';
 import { commodityLabel } from '@/lib/market/commodity-label';
 import { formatDate } from '@/lib/format-date';
-import { composeCardText, type CardCopy } from '@/lib/channels/card-text';
+import { cardOpenHref, composeCardText, type CardCopy } from '@/lib/channels/card-text';
 
 import { DisplayNamePrompt } from './DisplayNamePrompt';
 
@@ -265,17 +265,54 @@ export function ChannelFeedClient({
      * that renders a card so the two cannot word it differently.
      */
     const cardOrAuthor = React.useCallback(
-        (p: PostWire): { senderLabel: string | null; body: string } => {
+        (
+            p: PostWire,
+        ): {
+            senderLabel: string | null;
+            body: string;
+            action?: { label: string; href: string } | null;
+        } => {
             if (!p.card) return { senderLabel: authorLabel(p.author), body: p.body };
             const composed = composeCardText(p.card, cardCopy);
+            /*
+             * The card's own link, where it has one (#3063).
+             *
+             * `url` was contract-only on the web until now: returned by the
+             * API, consumed by agrent-ios, and not clickable here — so a
+             * farmer could read a headline in the feed and had no way to open
+             * it, while «За Вас» offered exactly that.
+             *
+             * Read off `card.payload.url` — the wire shape is
+             * `{ kind, payload }` with the payload untyped
+             * (`Record<string, unknown>`), so the `typeof` guard below is
+             * doing real work rather than defending against a nullable field.
+             * The typecheck caught the first version reaching for
+             * `card.url`. And
+             * guarded on being a non-empty string rather than merely present:
+             * a `url` of `''` would render a link to the current page, which
+             * is worse than no link because it looks like it failed.
+             *
+             * Only `http(s)`. The payload is machine-written from a source we
+             * publish, so this is not an XSS remedy — React 19 rewrites a
+             * `javascript:` href and the CSP carries no `unsafe-inline`. It is
+             * a contract narrowing for the same reason `httpsUrl()` exists:
+             * the field's purpose is a news article, and anything else in it
+             * is a fact about the data being wrong, not something to render.
+             */
+            const href = cardOpenHref(p.card.payload);
+            const action = composed && href ? { label: t('card.open'), href } : null;
             // An UNKNOWN card kind falls back to the body the server sent,
             // which is the headline as plain text. A client one release behind
             // the server must render something a person can read rather than
             // an empty bubble — the `StreamEventKind` rule, where an unknown
             // value is visibly ignored instead of silently dropped.
-            return composed ?? { senderLabel: null, body: p.body };
+            //
+            // The action rides the composed branch only: a fallback body is a
+            // kind this client does not understand, so it does not know that
+            // the payload's `url` is the thing to open.
+            return composed ? { ...composed, action } : { senderLabel: null, body: p.body };
         },
-        [authorLabel, cardCopy],
+        [authorLabel, cardCopy, t],
     );
 
     const messages: TimelineMessage[] = React.useMemo(() => {
