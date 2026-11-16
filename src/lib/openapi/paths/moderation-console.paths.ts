@@ -180,10 +180,14 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
             + 'unbounded window is a different question: a lifetime median hides a '
             + 'regression, because a service that answered quickly for a year can be '
             + 'failing this month and the all-time figure will not move for a long while. '
-            + 'An out-of-range or non-integer `windowDays` falls back to the default '
-            + 'rather than erroring — preserved from the keyed route, and the weaker '
-            + 'choice of the two, since a caller who asks for 90 days and silently '
-            + 'receives 30 reads the figure as a 90-day one.'
+            + 'An out-of-range, non-integer or non-numeric `windowDays` falls back to '
+            + 'the default rather than erroring — preserved from the keyed route so a '
+            + 'script that has been sending a junk value keeps working. **The response '
+            + 'says when that happened:** `windowDefaulted` is `true` only when a value '
+            + 'was supplied and not honoured, so a caller can tell the window they '
+            + 'asked for from the one they were given (#3010). A supplied value is '
+            + 'either honoured in full or replaced outright — it is never narrowed, so '
+            + '`windowDays: 30` with `windowDefaulted: false` means 30 was the question.'
             + '\n\n**It reads nothing per-person** — no reporter, no subject, no '
             + 'moderator — so unlike the triage queue there is nothing here to withhold.'
             + TWO_DOORS,
@@ -191,7 +195,9 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
         params: TenantParams,
         query: z.object({
             windowDays: z.string().optional().openapi({
-                description: 'Integer 1-365. Anything else falls back to 30.',
+                description:
+                    'Integer 1-365. Anything else falls back to 30, and the response '
+                    + 'reports that as `windowDefaulted: true`.',
             }),
         }),
         extraResponses: codedErrorResponses({
@@ -199,7 +205,10 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
         }),
         success: {
             status: 200,
-            description: 'Counts by status and elapsed-time statistics for the window.',
+            description:
+                'Counts by status and elapsed-time statistics for the window, plus '
+                + '`windowDays` (the window measured) and `windowDefaulted` (whether a '
+                + 'supplied `windowDays` was refused in favour of it).',
             schema: z.object({}).passthrough(),
         },
     });
