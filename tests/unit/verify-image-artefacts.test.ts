@@ -14,7 +14,7 @@
  * above their floors.**
  */
 import { execFile } from 'child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -29,6 +29,34 @@ const REAL_SIZES: Record<string, number> = {
     'worker-healthcheck.mjs': 1_734,
     'zarnoborsa-fetch.mjs': 7_490,
 };
+
+/**
+ * A directory holding an executable `pdftotext` that prints a version.
+ *
+ * CI's runner has NO poppler — it is installed in the IMAGE, which is where
+ * the real script runs. So requiring the host to have it made this suite
+ * assert a property of the RUNNER, and three previously-green cases went red
+ * on the first push: the script now exits 1 before reaching any artefact, so
+ * "EXIT 0 on a complete tree" and "a bundle that GREW is fine" failed for a
+ * reason that had nothing to do with bundles.
+ *
+ * A stub keeps the assertion about the SCRIPT — does it run the binary and
+ * report its version — and leaves "is poppler actually in the image" to the
+ * in-image run in CI's docker job, which is the only place that question can
+ * honestly be answered.
+ */
+function stubPdftotextDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'stub-bin-'));
+    const bin = join(dir, 'pdftotext');
+    writeFileSync(bin, '#!/bin/sh\necho "pdftotext version 99.0.0 (stub)"\n');
+    chmodSync(bin, 0o755);
+    return dir;
+}
+
+/** PATH with the stub FIRST, so the script finds it wherever this runs. */
+function envWithStub(over: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+    return { ...process.env, PATH: `${stubPdftotextDir()}:${process.env.PATH ?? ''}`, ...over };
+}
 
 function run(
     root: string,
@@ -45,7 +73,7 @@ function run(
          * about the script. An absolute interpreter keeps PATH governing only
          * the lookup under test.
          */
-        execFile(process.execPath, [SCRIPT, root], { env: env ?? process.env }, (e, stdout, stderr) => {
+        execFile(process.execPath, [SCRIPT, root], { env: env ?? envWithStub() }, (e, stdout, stderr) => {
             const code = e && typeof (e as { code?: number }).code === 'number'
                 ? (e as { code: number }).code
                 : e ? 1 : 0;
@@ -178,6 +206,9 @@ describe('verify-image-artefacts.mjs — executed, not read', () => {
             const { code, out } = await run(makeGoodTree());
             expect(code).toBe(0);
             expect(out).toMatch(/pdftotext runs — pdftotext version/);
+            // The stub's version, so this asserts the script REPORTED what the
+            // binary said rather than printing a constant.
+            expect(out).toMatch(/99\.0\.0 \(stub\)/);
         });
 
         it('EXIT 1 when pdftotext is not on PATH', async () => {
