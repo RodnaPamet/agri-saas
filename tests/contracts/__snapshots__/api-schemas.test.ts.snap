@@ -1469,6 +1469,97 @@ exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
               "bg"
             ]
           },
+          "costs": {
+            "type": "object",
+            "properties": {
+              "basis": {
+                "type": "object",
+                "properties": {
+                  "areaDa": {
+                    "type": "integer",
+                    "example": 100
+                  },
+                  "currency": {
+                    "type": "string",
+                    "enum": [
+                      "BGN"
+                    ]
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "stotinki"
+                    ]
+                  }
+                },
+                "required": [
+                  "areaDa",
+                  "currency",
+                  "unit"
+                ],
+                "description": "The area and units the card prints its figures for. \`published\` values below are for THIS area, in these units — nothing is pre-divided."
+              },
+              "cite": {
+                "$ref": "#/components/schemas/AgroCalendarCitation"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "enum": [
+                        "fuel",
+                        "materials",
+                        "wagesWorkers",
+                        "wagesMachineOperators",
+                        "services"
+                      ]
+                    },
+                    "published": {
+                      "type": "integer",
+                      "example": 417779,
+                      "description": "Integer стотинки exactly as the card prints it, for \`basis.areaDa\`. \`417779\` is 4 177,79 лв."
+                    },
+                    "perDaEurCents": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "example": 2136,
+                      "description": "Euro cents per decare, derived server-side so no client holds the lev peg and two clients cannot round differently. Null if the basis is unusable."
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "published",
+                    "perDaEurCents"
+                  ]
+                }
+              },
+              "publishedTotal": {
+                "type": "integer",
+                "example": 11109297
+              },
+              "perDaEurCentsTotal": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "example": 56801,
+                "description": "Rounded ONCE from \`publishedTotal\`, not summed from the rounded lines — the card states that total in its own right. The lines are required to sum to it in стотинки, and on the current card the two agree exactly (56801 either way); rounding is not additive in general, so a future card may leave them a cent or two apart, and neither is adjusted to tidy the arithmetic."
+              }
+            },
+            "required": [
+              "basis",
+              "cite",
+              "lines",
+              "publishedTotal",
+              "perDaEurCentsTotal"
+            ],
+            "description": "Published direct costs, where the МЗХ card prints them — **only the vine card does**. The 2024 field, vegetable, legume and perennial cards are blank templates giving quantities with every price cell empty, so those crops carry no \`costs\` rather than an estimate. Figures are stored as printed, in lev, and converted to euro only for display (owner ruling 2026-11-16, a narrow exception to EUR-everywhere for published reference data). The lev figure is the traceable one; show the euro."
+          },
           "windows": {
             "type": "array",
             "items": {

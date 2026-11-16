@@ -7628,5 +7628,19 @@
             "title": "Machine outside the farm",
             "pushBody": "Machine {key} has left the farm’s area."
         }
+    },
+    "agroCalendar": {
+
+        "cost": {
+            "heading": "Costs per МЗХ",
+            "marker": "per МЗХ ({year}), converted",
+            "perDa": "per decare",
+            "total": "Total direct costs",
+            "fuel": "Fuel",
+            "materials": "Materials, plant protection products and fertilisers",
+            "wagesWorkers": "Workers' wages and social security",
+            "wagesMachineOperators": "Machine operators' wages and social security",
+            "services": "Services"
+        }
     }
 }

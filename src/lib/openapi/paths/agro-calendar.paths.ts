@@ -17,6 +17,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
 
 import { CALENDAR_UNITS } from '@/lib/agro/calendar/schema';
+import { CALENDAR_COST_LINES } from '@/lib/agro/calendar/costs';
 
 const Citation = z
     .object({
@@ -103,6 +104,44 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                                     'Joins `CropType.commodityCanonical` where one exists — absent for most vegetables and perennials, which have no canonical commodity.',
                             }),
                             name: z.object({ bg: z.string(), en: z.string().optional() }),
+                            costs: z
+                                .object({
+                                    basis: z.object({
+                                        areaDa: z.number().int().openapi({ example: 100 }),
+                                        currency: z.literal('BGN'),
+                                        unit: z.literal('stotinki'),
+                                    }).openapi({
+                                        description:
+                                            'The area and units the card prints its figures for. `published` values below are for THIS area, in these units — nothing is pre-divided.',
+                                    }),
+                                    cite: Citation,
+                                    lines: z.array(
+                                        z.object({
+                                            key: z.enum(CALENDAR_COST_LINES),
+                                            published: z.number().int().openapi({
+                                                example: 417779,
+                                                description:
+                                                    'Integer стотинки exactly as the card prints it, for `basis.areaDa`. `417779` is 4 177,79 лв.',
+                                            }),
+                                            perDaEurCents: z.number().int().nullable().openapi({
+                                                example: 2136,
+                                                description:
+                                                    'Euro cents per decare, derived server-side so no client holds the lev peg and two clients cannot round differently. Null if the basis is unusable.',
+                                            }),
+                                        }),
+                                    ),
+                                    publishedTotal: z.number().int().openapi({ example: 11109297 }),
+                                    perDaEurCentsTotal: z.number().int().nullable().openapi({
+                                        example: 56801,
+                                        description:
+                                            'Rounded ONCE from `publishedTotal`, not summed from the rounded lines — the card states that total in its own right. The lines are required to sum to it in стотинки, and on the current card the two agree exactly (56801 either way); rounding is not additive in general, so a future card may leave them a cent or two apart, and neither is adjusted to tidy the arithmetic.',
+                                    }),
+                                })
+                                .optional()
+                                .openapi({
+                                    description:
+                                        'Published direct costs, where the МЗХ card prints them — **only the vine card does**. The 2024 field, vegetable, legume and perennial cards are blank templates giving quantities with every price cell empty, so those crops carry no `costs` rather than an estimate. Figures are stored as printed, in lev, and converted to euro only for display (owner ruling 2026-11-16, a narrow exception to EUR-everywhere for published reference data). The lev figure is the traceable one; show the euro.',
+                                }),
                             windows: z.array(
                                 z.object({
                                     id: z.string().openapi({

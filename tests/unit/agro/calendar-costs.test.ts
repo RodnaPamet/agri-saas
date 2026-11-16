@@ -1,0 +1,217 @@
+/**
+ * The vine card's published costs, and the one peg this repo still allows —
+ * #637.
+ *
+ * ## What the owner actually ruled, in two parts
+ *
+ * 2026-11-06: euro everywhere. 2026-11-16: these МЗХ figures may be converted
+ * and shown in euro. The second is a NARROW exception to the first, for
+ * published reference data — and it had to be, because `1.95583` exists
+ * nowhere as live code: #2793 removed it from four places on 2026-11-08, and
+ * `normaliseCostToEur` now answers a `BGN` amount with `refusal: 'FOREIGN'`.
+ *
+ * So the assertions here are about a boundary, not just arithmetic. The figures
+ * are stored as the card prints them, converted only on the way out, and
+ * nothing about them may reach a path that refuses lev.
+ *
+ * ## Why the dataset stores a total it could compute
+ *
+ * Because then the five lines have something independent to be checked
+ * against. It caught a real error during authoring — 4 177,79 лв transcribed
+ * as `411779` rather than `417779` — which a total derived from the lines
+ * could not have. The iOS session proposed that check; it is the reason
+ * `publishedTotal` is in the schema.
+ */
+import { BGN_PER_EUR, CALENDAR_COST_LINES, perDaEurCents } from '@/lib/agro/calendar/costs';
+import { CALENDAR, calendarFor, validateDataset } from '@/lib/agro/calendar/load';
+
+/** The shipped dataset, deep-cloned so a mutation cannot leak between tests. */
+const clone = () => JSON.parse(JSON.stringify(CALENDAR)) as Record<string, unknown>;
+
+const vine = () => {
+    const crop = CALENDAR.crops.find((c) => c.key === 'wine-grape');
+    if (!crop?.costs) throw new Error('wine-grape has no costs block');
+    return crop.costs;
+};
+
+describe('§1 the shipped figures are the card\'s figures', () => {
+    it('[calendar-costs] the lines sum EXACTLY to the printed total', () => {
+        const c = vine();
+        const sum = c.lines.reduce((n, l) => n + l.published, 0);
+        console.log(
+            `[calendar-costs] ${c.lines.length} line(s), sum ${sum} стотинки, printed total `
+            + `${c.publishedTotal}, basis ${c.basis.areaDa} дка`,
+        );
+        expect(sum).toBe(c.publishedTotal);
+        // Integer стотинки throughout — no float anywhere to need a tolerance.
+        for (const l of c.lines) expect(Number.isInteger(l.published)).toBe(true);
+        expect(Number.isInteger(c.publishedTotal)).toBe(true);
+    });
+
+    it('is stored as PRINTED — lev, stotinki, for the card\'s own area', () => {
+        const c = vine();
+        expect(c.basis).toEqual({ areaDa: 100, currency: 'BGN', unit: 'stotinki' });
+        // Nothing pre-divided: 4 177,79 лв is 417779, not 4178 per дка.
+        expect(c.lines.find((l) => l.key === 'fuel')?.published).toBe(417779);
+        expect(c.publishedTotal).toBe(11109297);
+    });
+
+    it('cites the vine card, and that source resolves', () => {
+        const c = vine();
+        expect(c.cite).toEqual({ source: 'mzh-tk-wine-2026', page: 9 });
+        const src = CALENDAR.sources[c.cite.source];
+        expect(src?.url).toContain('tk_vineni_lozia.pdf');
+    });
+
+    it('[calendar-costs] is the ONLY crop with costs — the other cards are blank templates', () => {
+        const priced = CALENDAR.crops.filter((c) => c.costs).map((c) => c.key);
+        console.log(`[calendar-costs] ${priced.length}/${CALENDAR.crops.length} crop(s) priced: ${priced.join(', ')}`);
+        // МЗХ's 2024 field, vegetable, legume and perennial cards give
+        // quantities only — every «Единична цена/Стойност» cell is empty — so
+        // a costs block on any of them would be an estimate dressed as a
+        // citation. If this count grows, a newly PRICED card is the only
+        // legitimate reason.
+        expect(priced).toEqual(['wine-grape']);
+    });
+});
+
+describe('§2 the euro derivation', () => {
+    it('divides once and rounds once, per line and for the total', () => {
+        const c = vine();
+        const expected: Record<string, number> = {
+            fuel: 2136,
+            materials: 16590,
+            wagesWorkers: 30260,
+            wagesMachineOperators: 2600,
+            services: 5215,
+        };
+        for (const l of c.lines) {
+            expect({ key: l.key, cents: perDaEurCents(l.published, c.basis.areaDa) })
+                .toEqual({ key: l.key, cents: expected[l.key] });
+        }
+        expect(perDaEurCents(c.publishedTotal, c.basis.areaDa)).toBe(56801);
+    });
+
+    it('[calendar-costs] the rounded lines and the rounded total agree, MEASURED', () => {
+        /*
+         * The rule is: the total is rounded ONCE from `publishedTotal`, never
+         * summed from the rounded lines, because the card states that total in
+         * its own right.
+         *
+         * Rounding is not additive in general, so the two CAN differ. On this
+         * card they do not — and that is worth pinning, because the API
+         * description tells a client the two may differ by a cent or two, and
+         * a reader checking today's numbers would otherwise find that claim
+         * contradicted and "fix" something.
+         */
+        const c = vine();
+        const area = c.basis.areaDa;
+        const sumOfRounded = c.lines.reduce((n, l) => n + (perDaEurCents(l.published, area) ?? 0), 0);
+        const totalRoundedOnce = perDaEurCents(c.publishedTotal, area);
+        console.log(
+            `[calendar-costs] sum of rounded lines ${sumOfRounded} vs total rounded once `
+            + `${totalRoundedOnce} -> ${Math.abs(sumOfRounded - (totalRoundedOnce ?? 0))} cent(s) apart`,
+        );
+        expect(sumOfRounded).toBe(totalRoundedOnce);
+    });
+
+    it('refuses an unusable basis rather than dividing by zero', () => {
+        for (const area of [0, -100, Number.NaN, Number.POSITIVE_INFINITY]) {
+            expect(perDaEurCents(417779, area)).toBeNull();
+        }
+        expect(perDaEurCents(Number.NaN, 100)).toBeNull();
+    });
+
+    it('uses the legally fixed rate, not a market one', () => {
+        expect(BGN_PER_EUR).toBe(1.95583);
+    });
+});
+
+describe('§3 the served shape carries both figures', () => {
+    it('serves the published figure AND the derived euro one', () => {
+        const [crop] = calendarFor({ region: 'south', crop: 'wine-grape' });
+        expect(crop?.costs).toBeDefined();
+        const served = crop.costs!;
+        expect(served.perDaEurCentsTotal).toBe(56801);
+        for (const l of served.lines) {
+            // The published figure survives — it is the traceable one.
+            expect(Number.isInteger(l.published)).toBe(true);
+            // And the derived one is present, so no client needs the peg.
+            expect(typeof l.perDaEurCents).toBe('number');
+        }
+        // Control: the keys served are exactly the closed set, in order.
+        expect(served.lines.map((l) => l.key)).toEqual([...CALENDAR_COST_LINES]);
+    });
+
+    it('a crop with no costs serves no costs key at all', () => {
+        // Not `costs: null` — absent. A null would read as "we looked and
+        // there are none", where the truth is that МЗХ prices no such card.
+        const [wheat] = calendarFor({ region: 'north', crop: 'wheat-bread' });
+        expect(wheat).toBeDefined();
+        expect('costs' in wheat).toBe(false);
+    });
+});
+
+describe('§4 the loader REFUSES a bad costs block', () => {
+    const withVineCosts = (patch: (c: Record<string, unknown>) => void) => {
+        const d = clone();
+        const crops = d.crops as Array<Record<string, unknown>>;
+        const crop = crops.find((c) => c.key === 'wine-grape')!;
+        patch(crop.costs as Record<string, unknown>);
+        return d;
+    };
+
+    it('refuses lines that do not sum to the printed total', () => {
+        const bad = withVineCosts((c) => {
+            // The real authoring error: 417779 mistyped as 411779.
+            (c.lines as Array<Record<string, unknown>>)[0].published = 411779;
+        });
+        expect(() => validateDataset(bad)).toThrow(/sum to 11103297 .* printed total is 11109297/s);
+    });
+
+    it('refuses a repeated line key, which would double-count into the sum', () => {
+        const bad = withVineCosts((c) => {
+            const lines = c.lines as Array<Record<string, unknown>>;
+            // Keep the sum right so ONLY the duplicate check can catch it.
+            lines.push({ key: 'fuel', published: 0 });
+        });
+        expect(() => validateDataset(bad)).toThrow(/repeats cost line\(s\): fuel/);
+    });
+
+    it('refuses a costs citation naming a source that is not in the map', () => {
+        // The window loop never looked at `costs.cite`, so without the check
+        // this block would look cited and resolve to nothing — the exact
+        // failure the window citation check exists to prevent.
+        const bad = withVineCosts((c) => {
+            (c.cite as Record<string, unknown>).source = 'mzh-tk-wine-1999';
+        });
+        expect(() => validateDataset(bad)).toThrow(/citation\(s\) name a source that is not in the sources map/);
+    });
+
+    it('refuses a non-integer or negative published figure', () => {
+        for (const v of [4177.79, -417779]) {
+            const bad = withVineCosts((c) => {
+                (c.lines as Array<Record<string, unknown>>)[0].published = v;
+            });
+            expect(() => validateDataset(bad)).toThrow(/malformed and will NOT be served/);
+        }
+    });
+
+    it('refuses a currency or unit outside the closed set', () => {
+        for (const [field, value] of [['currency', 'EUR'], ['unit', 'leva']] as const) {
+            const bad = withVineCosts((c) => {
+                (c.basis as Record<string, unknown>)[field] = value;
+            });
+            // EUR is REFUSED on purpose: the card prints lev, and relabelling
+            // the stored figure as euro without dividing would overstate every
+            // cost by 1.95583x.
+            expect(() => validateDataset(bad)).toThrow(/malformed and will NOT be served/);
+        }
+    });
+
+    it('CONTROL: the unmodified dataset still validates', () => {
+        // Without this, every refusal above could be passing because the clone
+        // is malformed for some unrelated reason.
+        expect(() => validateDataset(clone())).not.toThrow();
+    });
+});
