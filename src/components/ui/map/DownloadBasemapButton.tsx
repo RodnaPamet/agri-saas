@@ -82,16 +82,42 @@ export function DownloadBasemapButton({ locationId, bounds, className, iconOnly 
                     { credentials: 'same-origin' },
                 );
                 if (res.status === 200) {
-                    // Read the LENGTH, never the body: the service worker
-                    // caches `res.clone()` on the way past, and consuming the
-                    // body here would race that. `tileResponse` sets
-                    // Content-Length on every 200, so the bytes are knowable
-                    // without touching the stream. A 200 with no bytes is not
-                    // a tile.
-                    const len = Number(res.headers.get('Content-Length') ?? '0');
-                    if (len > 0) stored += 1;
+                    /*
+                     * Measure the BODY, not `Content-Length` (#3147).
+                     *
+                     * This read `Number(res.headers.get('Content-Length') ?? '0')`
+                     * and counted a zero as a lost tile. `tileResponse` does set
+                     * that header on every 200 — but a header is the platform's
+                     * to deliver, and Next 16.4.5 stopped delivering it:
+                     * vercel/next.js#101120, where a security backport added a
+                     * FORBIDDEN_HEADERS set stripping `content-length` from
+                     * EVERY route-handler response. Every tile then measured
+                     * zero, every tile counted lost, the pack never completed,
+                     * and nothing errored — the whole sweep ran perfectly and
+                     * reported failure.
+                     *
+                     * So the question "did I get bytes" is answered by the
+                     * bytes. A CLONE, because the original must stay
+                     * unconsumed: the service worker caches `res.clone()` on
+                     * the way past and reading the original here would race
+                     * that. Cloning tees the stream instead, which is what the
+                     * previous comment was protecting and is still true.
+                     *
+                     * A failed read counts as LOST, which is the safe
+                     * direction: an unreadable tile is not a cached one.
+                     */
+                    const bytes = await res
+                        .clone()
+                        .arrayBuffer()
+                        .then((b) => b.byteLength)
+                        .catch(() => 0);
+                    if (bytes > 0) stored += 1;
                     else lost += 1;
                 } else if (res.status === 204) {
+                    // `X-Basemap-Source` is a CUSTOM header and survives that
+                    // same strip — only content-length, content-encoding and
+                    // transfer-encoding are forbidden — so this branch needs
+                    // no equivalent change.
                     if (res.headers.get('X-Basemap-Source') === 'upstream-empty') absent += 1;
                     else lost += 1;
                 } else {
