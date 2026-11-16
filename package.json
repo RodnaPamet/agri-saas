@@ -72,6 +72,8 @@
         "secret-patterns:generate": "tsx scripts/generate-secret-patterns.ts",
         "secret-patterns:check": "tsx scripts/generate-secret-patterns.ts --check",
         "tokens:check": "node scripts/generate-tokens.mjs --check",
+        "geo:oblasts": "node scripts/generate-oblast-polygons.mjs",
+        "geo:oblasts:check": "node scripts/generate-oblast-polygons.mjs --check",
         "load:auth": "k6 run tests/load/auth.js",
         "load:lists": "k6 run tests/load/lists.js",
         "load:ag-parcels": "k6 run tests/load/ag-parcel-list.js",
