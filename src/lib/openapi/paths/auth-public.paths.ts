@@ -16,7 +16,11 @@
  * better place.
  */
 import { z } from '@/lib/openapi/zod';
-import { AuthRegisterStartSchema } from '@/lib/schemas';
+import {
+    AuthRegisterStartSchema,
+    ForgotPasswordSchema,
+    ResetPasswordSchema,
+} from '@/lib/schemas';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op, rawErrorResponses } from './helpers';
 
@@ -108,6 +112,133 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
             schema: z
                 .object({ ok: z.literal(true), verified: z.literal(true) })
                 .openapi('RegisterVerifyResult'),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/forgot-password',
+        operationId: 'requestPasswordReset',
+        summary: 'Ask for a password-reset link',
+        description:
+            'Step 1 of the reset flow. Mints a single-use, 1-hour token for the address and '
+            + 'emails the link.'
+            + '\n\n**The answer is ALWAYS `{ "ok": true }`,** whatever happened — unknown '
+            + 'address, an OAuth-only account with no password, a mailer failure. That '
+            + 'uniformity IS the feature — variation in status, body or latency would make '
+            + 'this an account-enumeration oracle on an unauthenticated route. So a client must '
+            + 'NOT tell the user "we have sent you an email" as a statement of fact, and must '
+            + 'never branch on this response to decide whether an address is registered — the '
+            + 'honest copy is nearer "if that address has an account, a link is on its way".'
+            + '\n\nRate-limited at 5/hour per IP (`EMAIL_DISPATCH_LIMIT`), the standard '
+            + 'mitigation for an unauthenticated route that sends mail to an address the caller '
+            + 'chose. A tripped limit is also absorbed into the same `ok: true`.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        // The route's own schema, imported — not a second copy (#1555).
+        body: ForgotPasswordSchema,
+        success: {
+            status: 200,
+            description:
+                'Always this, for any input. Carries no information about the address.',
+            schema: z.object({ ok: z.boolean() }).openapi('ForgotPasswordResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/reset-password',
+        operationId: 'resetPassword',
+        summary: 'Spend a reset token and set a new password',
+        description:
+            'Step 2 of the reset flow. Validates the new password against the length policy AND '
+            + 'screens it against known breaches (HIBP, k-anonymity), then consumes the one-time '
+            + 'token and swaps the stored hash.'
+            + '\n\n**Succeeding here revokes EVERY session for the account** — a `sessionVersion` '
+            + 'bump plus `revokedAt` on every live `UserSession` row. A native client holding a '
+            + 'token pair is signed out by this, including the one that performed the reset, so '
+            + 'treat success as "now sign in again" rather than as being logged in.'
+            + '\n\n**Token errors ARE surfaced,** unlike `forgot-password`’s deliberate silence: '
+            + '"your link expired, request a new one" is genuinely useful and is not an '
+            + 'enumeration vector, because a 256-bit token is unguessable. So this route '
+            + 'distinguishes invalid from expired on purpose, and a client should render that '
+            + 'difference.'
+            + '\n\nA rejected password is a 400 the user can act on — too short, or found in a '
+            + 'breach corpus. Do not retry it; show it.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        body: ResetPasswordSchema,
+        extraResponses: rawErrorResponses({
+            400:
+                'The token was invalid or expired, or the new password failed the policy or the '
+                + 'breach screen. The body says which; all four are for the user to read.',
+        }),
+        success: {
+            status: 200,
+            description: 'The password is changed and every session is revoked. Sign in again.',
+            schema: z.object({ ok: z.boolean() }).openapi('ResetPasswordResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/auth/verify-email',
+        operationId: 'verifyEmail',
+        summary: 'Consume an email-verification link',
+        description:
+            'The target of the link in a verification email. Consumes a single-use 256-bit token '
+            + '(24h TTL) and **302-redirects to the login page** with a status flag in the query '
+            + 'string — the only channel by which the outcome is reported.'
+            + '\n\nGET is correct here even though it mutates: the token itself is the '
+            + 'authentication for the action, which is the standard email-click pattern. Replay '
+            + 'is prevented at the database — the token row is deleted inside the same '
+            + 'transaction that flips `User.emailVerified`.'
+            + '\n\n**A client must follow the redirect and read the flag, not the status code.** '
+            + 'There is no JSON body and no 200: success and failure are both 302, and treating '
+            + 'the 302 itself as success reports a verified account for an expired link.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        query: z.object({
+            token: z.string().min(1).openapi({
+                description: 'The raw token from the emailed link. Single-use.',
+            }),
+        }),
+        success: {
+            status: 302,
+            description:
+                'A redirect to the login page carrying the outcome as a query flag. No body.',
+            schema: z.object({}).openapi('EmailVerificationRedirect', {
+                description: 'Empty — the outcome travels in the Location header’s query string.',
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/auth/verify-email/resend',
+        operationId: 'resendEmailVerification',
+        summary: 'Re-issue a verification link',
+        description:
+            '**Uniform by design, like `forgot-password`:** the same 200 and the same body '
+            + 'whether the address is registered, already verified, rate-limited, or the mailer '
+            + 'errored. Any variation would leak whether an address has an account.'
+            + '\n\nPer-identifier rate limiting still runs underneath — through the same bucket '
+            + 'the login chokepoint uses — so this cannot be used to flood verification mail to a '
+            + 'third party’s address. The limit being tripped is invisible in the response, '
+            + 'which is the point.'
+            + '\n\nThis route is deliberately NOT wrapped in the default mutation tier, and that '
+            + 'matters for a reason beyond uniformity: slow mode narrows the default tier for '
+            + 'unverified accounts, and an unverified account throttled on the very route that '
+            + 'verifies it could not escape. `slow-mode-escape-is-not-throttled` pins that.',
+        tags: ['Auth'],
+        security: NO_AUTH,
+        body: z
+            .object({ email: z.string().email() })
+            .openapi('ResendVerificationRequest'),
+        success: {
+            status: 200,
+            description: 'Always this. Carries no information about the address.',
+            schema: z.object({ ok: z.boolean() }).openapi('ResendVerificationResponse'),
         },
     });
 

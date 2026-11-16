@@ -22,12 +22,9 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { issuePasswordReset } from '@/lib/auth/password-management';
 import { EMAIL_DISPATCH_LIMIT } from '@/lib/security/rate-limit';
-
-const ForgotPasswordSchema = z
-    .object({
-        email: z.string().trim().email(),
-    })
-    .strip();
+// Declared ONCE in `@/lib/schemas` so this parse and the OpenAPI entry
+// cannot drift — `request-body-declared-once` (#1555), cap zero.
+import { ForgotPasswordSchema } from '@/lib/schemas';
 
 export const POST = withApiErrorHandling(
     withValidatedBody(ForgotPasswordSchema, async (req, _ctx, body) => {

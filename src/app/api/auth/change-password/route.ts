@@ -26,13 +26,9 @@ import {
 } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { changePassword } from '@/lib/auth/password-management';
-
-const ChangePasswordSchema = z
-    .object({
-        currentPassword: z.string().min(1),
-        newPassword: z.string().min(1),
-    })
-    .strip();
+// Declared ONCE in `@/lib/schemas` so this parse and the OpenAPI entry
+// cannot drift — `request-body-declared-once` (#1555), cap zero.
+import { ChangePasswordSchema } from '@/lib/schemas';
 
 export const POST = withApiErrorHandling(
     withValidatedBody(ChangePasswordSchema, async (req, _ctx, body) => {
