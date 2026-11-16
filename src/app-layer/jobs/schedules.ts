@@ -205,6 +205,24 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * still delivers. Same shape as `statement-dispatch`, where the queue
          * is a column rather than a schedule.
          */
+        /*
+         * TWENTY PAST each read slot (#3081). The Playwright container reads
+         * at 08:00 / 13:00 / 18:00 Europe/Sofia, so this runs after each one
+         * with room for a slow page — and the job refuses a handoff older
+         * than its window rather than re-ingesting yesterday's and reporting
+         * `clean` about a fetch that never happened.
+         *
+         * A UTC cron here, unlike the digest's local-time gate, because
+         * nothing is PROMISED to a person: an hour of seasonal drift moves
+         * when prices appear by an hour, which the row dates make visible,
+         * whereas the digest's 07:15 is a commitment to a reader.
+         */
+        name: 'zarnoborsa-pull',
+        pattern: '20 6,11,16 * * *',
+        description: 'Ingest the ZarnoBorsa handoff file (#3081)',
+        defaultPayload: {},
+    },
+    {
         name: 'channel-digest',
         pattern: '*/15 * * * *',
         description: 'Send the opt-in 07:15 channel digest (#2941)',

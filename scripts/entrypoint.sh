@@ -44,7 +44,29 @@ FILE_DIR="${FILE_STORAGE_ROOT:-/data/uploads}"
 mkdir -p "$FILE_DIR" 2>/dev/null || true
 echo "✓ Upload directory ready: $FILE_DIR"
 
-# ── 3. Start Next.js ──
+# ── 3. Publish the ZarnoBorsa fetch bundle for its own container ──
+#
+# #3081. `dist/zarnoborsa-fetch.mjs` runs in a Playwright container, because
+# Playwright may not be in THIS image — `verify-image-deps.mjs` fails the
+# build if it is, and exists because `npm prune --omit=dev` cannot remove it.
+#
+# COPIED on every start rather than shared as a volume mounted over `dist/`.
+# A named volume is populated from the image once and then SHADOWS it, so a
+# Watchtower update would leave the fetch container running the bundle from
+# whichever image first created the volume — stale for ever, silently, with
+# the only symptom being prices that stop moving. Copying here means a
+# recreate republishes it, which is exactly when it should.
+#
+# Best-effort: the directory is absent on a deployment that does not run the
+# fetch container, and a missing price feed must never stop the app booting.
+ZB_SHARE="${ZARNOBORSA_SHARE_DIR:-/opt/share/dist}"
+if [ -d "$ZB_SHARE" ] && [ -f dist/zarnoborsa-fetch.mjs ]; then
+    cp dist/zarnoborsa-fetch.mjs "$ZB_SHARE/zarnoborsa-fetch.mjs" 2>/dev/null \
+        && echo "✓ Published zarnoborsa-fetch.mjs to $ZB_SHARE" \
+        || echo "… could not publish zarnoborsa-fetch.mjs (continuing)"
+fi
+
+# ── 4. Start Next.js ──
 echo ""
 echo "→ Starting Next.js server on port ${PORT:-3000}..."
 exec node_modules/.bin/next start -p "${PORT:-3000}" -H "${HOSTNAME:-0.0.0.0}"

@@ -1021,6 +1021,18 @@ export interface ChannelDigestPayload {
     _?: never;
 }
 
+/**
+ * zarnoborsa-pull — reads the Playwright container's handoff file (#3081).
+ *
+ * Tenantless: `MarketPriceSeries` is a global price catalogue with no
+ * `tenantId`, so `job-scope-audit` records it as platform-scoped rather than
+ * as a job that forgot one.
+ */
+export interface ZarnoBorsaPullPayload {
+    /** No arguments — the path and the clock are the job's own. */
+    _?: never;
+}
+
 export interface ExchangeExpirySweepPayload {
     /** Optional cap on rows flipped per run. */
     batchSize?: number;
@@ -1149,6 +1161,7 @@ export interface JobPayloadMap {
     'farm-record-pdf': FarmRecordPdfPayload;
     'channel-cards': ChannelCardsPayload;
     'channel-digest': ChannelDigestPayload;
+    'zarnoborsa-pull': ZarnoBorsaPullPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'mail-canary': MailCanaryPayload;
@@ -1302,6 +1315,26 @@ export const JOB_DEFAULTS: Record<JobName, {
         // latency, not loss.
         attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'zarnoborsa-pull': {
+        /*
+         * ONE attempt. A retry would re-read the same file and reach the same
+         * verdict, because the file is the input — so retrying buys nothing
+         * and the next scheduled run is the real retry.
+         *
+         * That is a different reason from its neighbours: `statement-dispatch`
+         * uses 1 because a retry would re-SEND and `notice-score` because a
+         * retry would re-SPEND, while here a retry is simply a no-op dressed
+         * as recovery.
+         */
+        attempts: 1,
+        // Required by the contract even at one attempt, where it can never be
+        // consulted. Declared rather than omitted because the guard checks the
+        // SHAPE of every entry, and an entry missing a field is how a real
+        // omission would hide among deliberate ones.
+        backoff: { type: 'exponential', delay: 30_000 },
         removeOnComplete: 100,
         removeOnFail: 500,
     },

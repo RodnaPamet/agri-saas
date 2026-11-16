@@ -216,6 +216,10 @@ services:
       # of them fills a disk the others share.
       - applogs:/var/log/agrent
       - uploads:/data/uploads
+      # #3081 — WRITABLE here: the entrypoint publishes the ZarnoBorsa fetch
+      # bundle into it on every start, so a Watchtower recreate refreshes what
+      # the Playwright container runs. Mounted read-only there.
+      - appdist:/opt/share/dist
     expose:
       - "3000"
     healthcheck:
@@ -335,6 +339,93 @@ services:
     networks:
       - internal
 
+  # ── ZarnoBorsa fetch — the one container that carries a browser ──
+  #
+  # #3081. Reads ZarnoBorsa's two Bulgarian price tables three times a day and
+  # writes them to a JSON file that the `worker`'s ingest job picks up.
+  #
+  # ## Why it is a separate service at all
+  #
+  # A plain fetch cannot hold ZarnoBorsa's session — measured: the login POST
+  # answers a greeting and the next request redirects to /login, leaving the
+  # price pages on August data. A headless Chromium keeps it. And Playwright
+  # may NOT be in our own image: `scripts/verify-image-deps.mjs` fails the
+  # build if it is, and exists because `npm prune --omit=dev` cannot remove it
+  # (next declares @playwright/test as an optional peerDependency, so npm
+  # resolves it through a production edge).
+  #
+  # So this runs on Microsoft's Playwright image, which carries Chromium and
+  # its system libraries and nothing of ours. `dist/zarnoborsa-fetch.mjs` is
+  # bundled with every node_module external, and its ONLY non-builtin external
+  # is `playwright` — held by
+  # `tests/guards/zarnoborsa-fetch-bundle-externals.test.ts`, because adding a
+  # Prisma import would typecheck, bundle, and then throw `Cannot find module`
+  # in here with nobody watching.
+  #
+  # ## Why the schedule is a shell loop and not BullMQ
+  #
+  # Every other scheduled job in this product is a BullMQ repeatable in
+  # `worker`. This one cannot be: the work needs a browser, and the browser
+  # cannot be in that image. So the cadence lives here, and the DATABASE work
+  # stays in `worker` where Prisma is — which is also why the handoff is a file
+  # rather than a direct write.
+  #
+  # 08:00 / 13:00 / 18:00 Europe/Sofia, matching the probe the iOS session is
+  # running until 2026-11-20 so the two measurements line up and the row dates
+  # say which read actually gets fresh prices. Narrow it once that is known.
+  #
+  # ## How it gets the bundle, and why not a volume over `dist/`
+  #
+  # The `app` entrypoint COPIES `dist/zarnoborsa-fetch.mjs` into the shared
+  # volume on every start. A named volume mounted over the image's own `dist/`
+  # would be populated once and then SHADOW every later image — so a Watchtower
+  # update would leave this container running the bundle from whichever image
+  # first created the volume, stale for ever, with the only symptom being
+  # prices that stop moving. Copying on start republishes it exactly when the
+  # app is recreated, which is when it should be.
+  zarnoborsa:
+    logging: *logging
+    # Built locally like `agrent-db`, not pulled: the base image ships the
+    # BROWSERS and no `playwright` npm package, so the bundle cannot run
+    # against it unmodified. Measured on the VM — a bare run fails with
+    # `Cannot find package 'playwright'`, which would have been a silent
+    # no-prices failure three times a day. See deploy/zarnoborsa/Dockerfile.
+    build:
+      context: ./deploy/zarnoborsa
+    image: agrent-zarnoborsa:local
+    container_name: agrent-zarnoborsa
+    restart: always
+    # Not `always`-on-crash-loop: a failed read must not hammer a subscriber
+    # site. The loop below sleeps to the next slot regardless of outcome, so a
+    # failure costs one missed read rather than a retry storm.
+    depends_on:
+      - pgbouncer
+    environment:
+      TZ: Europe/Sofia
+      ZARNOBORSA_EMAIL: ${ZARNOBORSA_EMAIL:-}
+      ZARNOBORSA_PASSWORD: ${ZARNOBORSA_PASSWORD:-}
+    volumes:
+      - zarnoborsa:/var/lib/agrent/zarnoborsa
+      - appdist:/opt/share/dist:ro
+    # Sleep to the next slot, read, repeat. `date -d` arithmetic rather than
+    # cron, so the container has one process and its log is the read's own
+    # output. An unconfigured login makes the script a no-op that writes no
+    # file, which the ingest reports as `unaudited` rather than clean.
+    command: >
+      sh -c 'while true; do
+        for h in 08 13 18; do
+          now=$$(date +%s); target=$$(date -d "today $$h:00" +%s);
+          if [ "$$target" -gt "$$now" ]; then sleep $$(( target - now )); break; fi;
+        done;
+        if [ "$$(date +%H)" != "08" ] && [ "$$(date +%H)" != "13" ] && [ "$$(date +%H)" != "18" ]; then
+          sleep $$(( $$(date -d "tomorrow 08:00" +%s) - $$(date +%s) ));
+        fi;
+        cd /opt/zarnoborsa && node /opt/share/dist/zarnoborsa-fetch.mjs --out /var/lib/agrent/zarnoborsa/latest.json || true;
+        sleep 60;
+      done'
+    networks:
+      - internal
+
   # ── Watchtower — auto-deploy from GHCR ──
   # Polls ghcr.io/rodnapamet/agri-saas:latest every 5 min and, on a
   # new digest, pulls + recreates ONLY the labelled containers (app + worker).
@@ -424,6 +515,17 @@ networks:
     driver: bridge
 
 volumes:
+  # #3081 — the ZarnoBorsa handoff. The fetch container writes one JSON
+  # document here and the worker's ingest job reads it, which is what keeps
+  # Playwright out of our image and Prisma out of the fetch bundle.
+  zarnoborsa:
+    name: agrent-zarnoborsa
+  # #3081 — where `app` PUBLISHES the fetch bundle for the Playwright
+  # container. Deliberately not a mount over either image's `dist/`: a named
+  # volume shadows the image after first creation, which would pin the fetch
+  # script to whatever shipped first.
+  appdist:
+    name: agrent-appdist
   # #2682 — application log copy that survives container replacement.
   applogs:
   pgdata:

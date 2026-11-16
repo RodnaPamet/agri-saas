@@ -34,6 +34,16 @@ const MAX_POINTS_PER_SERIES = 1000;
 const MAX_NEWS = 100;
 const COMPONENT = 'trends';
 /** Source slugs eligible to benchmark an owned price. */
+/**
+ * #3081 — the ZarnoBorsa feed's source key.
+ *
+ * A LITERAL here rather than an import from `@/app-layer/jobs/zarnoborsa-ingest`,
+ * matching how `SOURCE_EC_AGRIFOOD` is spelled directly beside it: this
+ * module is a usecase and that one is a job, so importing it would pull a
+ * job's module graph into the request path for one string. The two are held in
+ * step by `zarnoborsa-source-key-agrees`.
+ */
+const SOURCE_ZARNOBORSA = 'zarnoborsa';
 const SOURCE_EC_AGRIFOOD = 'ec-agrifood';
 const SOURCE_ALPHA_VANTAGE = 'alpha-vantage';
 
@@ -615,13 +625,41 @@ export async function invalidatePriceTrendsCache(
  * the query now guarantees, so "first one wins" is stable rather than
  * arbitrary.
  */
+/**
+ * Which SOURCE leads, lower first (#3081).
+ *
+ * Owner ruling 2026-11-15: a typed platform price still wins, and ZarnoBorsa
+ * fills every crop that is not typed — ahead of the EC national average. The
+ * typed price is not ranked here at all: it SUPPRESSES the feed further down
+ * (#1587 contract §4), which is a stronger relationship than winning a
+ * comparison.
+ *
+ * Ranked ABOVE stage, deliberately. ZarnoBorsa quotes EXW and FOB, neither of
+ * which is `NATIONAL_AVERAGE_STAGE`, so under the old order every EC national
+ * figure would have beaten it on stage alone and the ruling would have had no
+ * effect — the series would be stored, shown in «Тенденции», and silently
+ * never used as the reference.
+ *
+ * An unknown source sorts last rather than throwing: a new feed must not
+ * become the benchmark by arriving.
+ */
+function sourceRank(source: string): number {
+    if (source === SOURCE_ZARNOBORSA) return 0;
+    if (source === SOURCE_EC_AGRIFOOD) return 1;
+    if (source === SOURCE_ALPHA_VANTAGE) return 2;
+    return 3;
+}
+
 function isBetter(
-    candidateStage: number,
-    candidateObservedAt: Date,
-    incumbent: { stage: number; observedAt: Date },
+    candidate: { source: number; stage: number; observedAt: Date },
+    incumbent: { source: number; stage: number; observedAt: Date },
 ): boolean {
-    if (candidateStage !== incumbent.stage) return candidateStage < incumbent.stage;
-    return candidateObservedAt.getTime() > incumbent.observedAt.getTime();
+    // SOURCE first — see `sourceRank`. Stage and recency only break ties
+    // WITHIN a source, which is what makes the owner's ordering hold rather
+    // than being overridden by an EC national figure's stage.
+    if (candidate.source !== incumbent.source) return candidate.source < incumbent.source;
+    if (candidate.stage !== incumbent.stage) return candidate.stage < incumbent.stage;
+    return candidate.observedAt.getTime() > incumbent.observedAt.getTime();
 }
 
 export async function getMarketReferences(
@@ -634,7 +672,9 @@ export async function getMarketReferences(
         where: {
             commodity: { in: wanted },
             // Never benchmark against our own noticeboard — see above.
-            source: { in: [SOURCE_EC_AGRIFOOD, SOURCE_ALPHA_VANTAGE] },
+            // #3081 — ZarnoBorsa joins the benchmark set and LEADS it, per
+            // the owner's ruling. Still never our own noticeboard.
+            source: { in: [SOURCE_ZARNOBORSA, SOURCE_EC_AGRIFOOD, SOURCE_ALPHA_VANTAGE] },
             // The farm's own market. See BENCHMARK_REGION.
             region: BENCHMARK_REGION,
         },
@@ -675,7 +715,7 @@ export async function getMarketReferences(
      * `MarketReference` is the DTO and must not grow selection bookkeeping a
      * client would then have to ignore.
      */
-    const ranked = new Map<string, { stage: number; observedAt: Date }>();
+    const ranked = new Map<string, { source: number; stage: number; observedAt: Date }>();
     for (const s of series) {
         const latest = s.points[0];
         if (!latest) continue;
@@ -694,11 +734,16 @@ export async function getMarketReferences(
             observedAt: latest.date.toISOString().slice(0, 10),
             source: s.source,
         };
+        const mine = {
+            source: sourceRank(s.source),
+            stage: rank,
+            observedAt: latest.date,
+        };
         const existing = byCommodity.get(s.commodity);
         const existingRank = ranked.get(s.commodity);
-        if (!existing || existingRank === undefined || isBetter(rank, latest.date, existingRank)) {
+        if (!existing || existingRank === undefined || isBetter(mine, existingRank)) {
             byCommodity.set(s.commodity, candidate);
-            ranked.set(s.commodity, { stage: rank, observedAt: latest.date });
+            ranked.set(s.commodity, mine);
         }
     }
 

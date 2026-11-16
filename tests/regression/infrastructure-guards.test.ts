@@ -231,7 +231,12 @@ describe('Infrastructure Regression Guards', () => {
             // Every 15 minutes rather than once a day, because the promise is
             // a LOCAL time and a fixed UTC hour drifts across DST — the job
             // holds the clock and leaves outside its delivery window.
-            expect(SCHEDULED_JOBS).toHaveLength(39);
+            // 39 -> 40 by #3081: `zarnoborsa-pull`, twenty past each of the
+            // Playwright container's three read slots. A UTC cron, unlike the
+            // digest's local-time gate, because nothing here is PROMISED to a
+            // person — seasonal drift moves when prices appear, which the row
+            // dates make visible.
+            expect(SCHEDULED_JOBS).toHaveLength(40);
         });
 
         test('scheduled job names match expected set', () => {
@@ -396,6 +401,7 @@ describe('Infrastructure Regression Guards', () => {
                 // and ZERO successes in the last 24h, read from the hourly
                 // per-route outcome counters the request wrapper writes.
                 // Sorts last ('z').
+                'zarnoborsa-pull',
                 'zero-success-route-check',
             ]);
         });
