@@ -177,6 +177,55 @@ describe('#3081 — the fetch bundle is built, published and mounted', () => {
         expect(compose).toContain(`node ${FETCH_PATH}/zarnoborsa-fetch.mjs`);
     });
 
+    /*
+     * ── THE OUTPUT CHAIN (#3120) ──────────────────────────────────────────
+     *
+     * Everything above delivers the SCRIPT. This delivers what the script
+     * PRODUCES, and it has the identical structure: the fetch writes a file
+     * into a volume, and a DIFFERENT container has to mount that volume to
+     * read it.
+     *
+     * The guard asserted the first chain and not the second, so the fetch ran,
+     * wrote a 20 KB handoff, and `zarnoborsa-pull` reported `unaudited` /
+     * `no-file` — because the `zarnoborsa` volume was declared on exactly ONE
+     * service, the producer. Measured by running the job rather than reading
+     * the file: 7ms, nothing read.
+     *
+     * Derived from the PATH CONSTANT rather than a remembered service name, so
+     * moving the handoff moves this assertion with it.
+     */
+    it('THE OUTPUT CHAIN — the worker mounts the volume holding the handoff', () => {
+        const pull = read('src/app-layer/jobs/zarnoborsa-pull.ts');
+        const m = /ZARNOBORSA_HANDOFF = '([^']+)'/.exec(pull);
+        expect(m).not.toBeNull();
+        const handoffDir = m![1].replace(/\/[^/]+$/, '');
+        // A control on the derivation: an empty or truncated capture would make
+        // every `toContain` below trivially true.
+        expect(handoffDir).toMatch(/^\/\S+\/\S+/);
+
+        const compose = read('deploy/docker-compose.vm.yml');
+        // The PRODUCER writes there.
+        expect(compose).toContain(`zarnoborsa:${handoffDir}\n`);
+        // And the CONSUMER reads there — read-only, because the direction is
+        // one way and a writable mount would let the consumer corrupt its own
+        // input.
+        expect(compose).toContain(`zarnoborsa:${handoffDir}:ro`);
+    });
+
+    it('and the job that reads it runs on the WORKER, which is why that mount is the worker\'s', () => {
+        // The assertion above would pass if BOTH mounts were on the fetch
+        // container. This pins which service consumes: `zarnoborsa-pull` is a
+        // scheduled job, scheduled jobs run in the worker container, and the
+        // schedule is where that is written down.
+        const schedules = read('src/app-layer/jobs/schedules.ts');
+        expect(schedules).toContain("name: 'zarnoborsa-pull'");
+        const compose = read('deploy/docker-compose.vm.yml');
+        const worker = compose.slice(compose.indexOf('\n  worker:'));
+        const nextService = worker.slice(1).search(/\n  [a-z][a-z-]*:\n/);
+        const workerBlock = nextService > -1 ? worker.slice(0, nextService + 1) : worker;
+        expect(workerBlock).toContain('zarnoborsa:/var/lib/agrent/zarnoborsa:ro');
+    });
+
     it('its image is built locally rather than pulled', () => {
         // The base image ships the browsers and no `playwright` package, so a
         // bare pull cannot run the bundle — measured on the VM.

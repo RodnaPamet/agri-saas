@@ -315,6 +315,19 @@ services:
       # of them fills a disk the others share.
       - applogs:/var/log/agrent
       - uploads:/data/uploads
+      # The ZarnoBorsa handoff, READ-ONLY (#3120).
+      #
+      # `zarnoborsa-pull` runs HERE and reads
+      # `/var/lib/agrent/zarnoborsa/latest.json`, which the fetch container
+      # writes. Until this line the volume was declared on exactly ONE service
+      # — the producer — so the ingest reported `unaudited` / `no-file` for a
+      # handoff that existed and was 20 KB. Measured by running the job: it
+      # processed in 7ms and read nothing.
+      #
+      # Read-only because the direction is one way. The fetch writes, the
+      # worker consumes; a writable mount would let the consumer corrupt its
+      # own input.
+      - zarnoborsa:/var/lib/agrent/zarnoborsa:ro
     # Proves the worker is CONSUMING, not merely running (#809). This service
     # had no healthcheck at all, so `docker inspect` reported health=none while
     # app/db/pgbouncer/redis reported healthy — and a wedged worker (blocked
