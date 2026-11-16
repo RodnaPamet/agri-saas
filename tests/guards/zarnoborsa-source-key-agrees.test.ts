@@ -24,6 +24,7 @@ import { join } from 'path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { ZARNOBORSA_SOURCE } from '@/app-layer/jobs/zarnoborsa-ingest';
 import { ZARNOBORSA_LOCKED_MARKER } from '@/lib/market/zarnoborsa-extract';
+import { MZH_SOURCE } from '@/app-layer/jobs/mzh-prices-pull';
 
 const ROOT = process.cwd();
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
@@ -38,12 +39,40 @@ describe('#3081 — duplicated constants stay in step', () => {
         expect(m?.[1]).toBe(ZARNOBORSA_SOURCE);
     });
 
-    it('it is actually USED in the benchmark query and the rank', () => {
-        // A constant that agrees and is unreferenced would satisfy the check
-        // above while the resolver still ignored the feed.
+    it('the resolver looks for the МЗХ key the ingest WRITES too (#3136)', () => {
+        // Second key, identical exposure: the ingest would keep writing under
+        // one spelling while the resolver looked for another, the prices would
+        // still show in «Тенденции», and the reference would quietly stay on
+        // the EC average.
         const trends = read('src/app-layer/usecases/trends.ts');
-        expect(trends).toContain('source: { in: [SOURCE_ZARNOBORSA,');
+        const m = /const SOURCE_MZH = '([^']+)';/.exec(trends);
+        expect(m).not.toBeNull();
+        expect(m?.[1]).toBe(MZH_SOURCE);
+    });
+
+    it('both are actually USED in the benchmark query and the rank', () => {
+        // A constant that agrees and is unreferenced would satisfy the checks
+        // above while the resolver still ignored the feed.
+        //
+        // The FILTER is asserted separately from the RANK because they fail
+        // differently, and the filter is the half that hides: a source absent
+        // from `in: [...]` is never SELECTED, so it is invisible to the
+        // resolver rather than merely outranked — and #3136 shipped its first
+        // version with the rank and without the filter.
+        const trends = read('src/app-layer/usecases/trends.ts');
+        const filter = /source:\s*\{\s*\n?\s*in:\s*\[([^\]]+)\]/.exec(trends);
+        expect(filter).not.toBeNull();
+        // Matched against the extracted list rather than a formatted literal:
+        // the previous needle was `'source: { in: [SOURCE_ZARNOBORSA,'`, which
+        // a line wrap broke while the code stayed correct.
+        expect(filter?.[1]).toContain('SOURCE_ZARNOBORSA');
+        expect(filter?.[1]).toContain('SOURCE_MZH');
         expect(trends).toMatch(/if \(source === SOURCE_ZARNOBORSA\) return 0;/);
+        expect(trends).toMatch(/if \(source === SOURCE_MZH\) return 1;/);
+        // The ORDER the owner ruled: ZarnoBorsa, then МЗХ, then EC. Asserted
+        // as the numbers rather than as text, so a renumbering that put EC
+        // above МЗХ fails here.
+        expect(trends).toMatch(/if \(source === SOURCE_EC_AGRIFOOD\) return 2;/);
     });
 
     it('the extractor inlines the SAME paywall marker it exports', () => {
