@@ -36,6 +36,7 @@
  * was treated as a numeric comparison.
  */
 import { z } from 'zod';
+import { CALENDAR_COST_LINES } from './costs';
 
 /** `MM-DD`. No year: these recur annually. */
 const DayOfYear = z
@@ -95,6 +96,43 @@ export const CalendarWindowSchema = z.object({
     alsoCite: z.array(Citation).optional(),
 });
 
+/**
+ * One published cost line, in integer стотинки EXACTLY AS PRINTED — #637.
+ *
+ * Not per decare and not in euro: `basis.areaDa` says the area the card
+ * states and the division happens once, server-side, at response time. A
+ * pre-divided or pre-converted figure is a number no cited page supports,
+ * which is the dataset's third convention.
+ */
+export const CalendarCostLineSchema = z.object({
+    key: z.enum(CALENDAR_COST_LINES),
+    /** Integer стотинки. `417779` is 4 177,79 лв. */
+    published: z.number().int().nonnegative(),
+});
+
+/**
+ * The «ПРЕКИ РАЗХОДИ» block of a technology card.
+ *
+ * `publishedTotal` is STORED even though it looks derivable, and that is the
+ * point: the card states it in its own right, so the loader can assert the
+ * lines sum to it. A total computed from the lines could not catch a
+ * mistyped line — which is exactly the error it did catch during authoring.
+ */
+export const CalendarCostsSchema = z.object({
+    basis: z.object({
+        /** The area the published figures are for — 100 дка on the vine card. */
+        areaDa: z.number().int().positive(),
+        /** Lev, because that is what the card prints. Closed to one value. */
+        currency: z.literal('BGN'),
+        /** Integer minor units, so nothing is ever a float. */
+        unit: z.literal('stotinki'),
+    }),
+    cite: Citation,
+    lines: z.array(CalendarCostLineSchema).min(1),
+    /** Integer стотинки, as printed. */
+    publishedTotal: z.number().int().positive(),
+});
+
 export const CalendarCropSchema = z.object({
     key: z.string().min(1),
     group: z.enum(['field', 'vegetable', 'perennial']),
@@ -103,6 +141,17 @@ export const CalendarCropSchema = z.object({
     commodityCanonical: z.string().min(1).optional(),
     name: Localised,
     windows: z.array(CalendarWindowSchema).min(1),
+    /**
+     * Published direct costs, where the card prints them — #637.
+     *
+     * OPTIONAL and expected to stay rare: of МЗХ's cards only the vine one
+     * carries prices. The 2024 field, vegetable, legume and perennial cards
+     * are BLANK templates — quantities only, every «Единична цена/Стойност»
+     * cell empty — so deriving costs for those crops from quantities times
+     * today's prices would be a number no card supports. They have no `costs`
+     * block rather than an estimated one.
+     */
+    costs: CalendarCostsSchema.optional(),
 });
 
 export const CalendarSourceSchema = z.object({
@@ -124,4 +173,6 @@ export const CalendarDatasetSchema = z.object({
 export type CalendarDataset = z.infer<typeof CalendarDatasetSchema>;
 export type CalendarWindow = z.infer<typeof CalendarWindowSchema>;
 export type CalendarCrop = z.infer<typeof CalendarCropSchema>;
+export type CalendarCosts = z.infer<typeof CalendarCostsSchema>;
+export type CalendarCostLineRow = z.infer<typeof CalendarCostLineSchema>;
 export type CalendarRegion = 'north' | 'south';

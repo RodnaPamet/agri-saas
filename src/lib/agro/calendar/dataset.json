@@ -5,7 +5,8 @@
     "Every figure is checked against its cited page, never taken from a search summary or a secondary retelling.",
     "A window without a page that supports it is left out, not served uncited.",
     "Units are as the source writes them (seeds/m2, plants/m2, plants/da, kg/da, cm), never converted.",
-    "note and title quote or closely paraphrase the cited page, in a sentence or two."
+    "note and title quote or closely paraphrase the cited page, in a sentence or two.",
+    "Published cost figures are stored exactly as the card prints them, in стотинки for the area it states, and converted to euro only for display — never pre-divided and never pre-converted."
   ],
   "sources": {
     "mzh-ip-2024": {
@@ -2608,7 +2609,41 @@
             "page": 12
           }
         }
-      ]
+      ],
+      "costs": {
+        "basis": {
+          "areaDa": 100,
+          "currency": "BGN",
+          "unit": "stotinki"
+        },
+        "cite": {
+          "source": "mzh-tk-wine-2026",
+          "page": 9
+        },
+        "lines": [
+          {
+            "key": "fuel",
+            "published": 417779
+          },
+          {
+            "key": "materials",
+            "published": 3244644
+          },
+          {
+            "key": "wagesWorkers",
+            "published": 5918399
+          },
+          {
+            "key": "wagesMachineOperators",
+            "published": 508475
+          },
+          {
+            "key": "services",
+            "published": 1020000
+          }
+        ],
+        "publishedTotal": 11109297
+      }
     }
   ]
 }
