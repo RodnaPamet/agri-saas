@@ -92,7 +92,7 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
         kind: 'property-removed',
         schema: 'AgroCalendar',
         contractVersion: 3,
-        pr: 3139,
+        pr: 3141,
         date: '2026-11-16',
         why:
             'The calendar no longer serves citations \u2014 owner instruction 2026-11-16, '
@@ -115,7 +115,7 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
         kind: 'schema-removed',
         schema: 'AgroCalendarCitation',
         contractVersion: 3,
-        pr: 3139,
+        pr: 3141,
         date: '2026-11-16',
         why:
             'The component only ever described the citations removed above, so it has no '
