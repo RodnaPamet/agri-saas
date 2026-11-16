@@ -24,10 +24,25 @@
  * `ParcelLease` or a `Contract`. A lev figure is still unsavable everywhere it
  * was unsavable yesterday.
  *
- * **The boundary to keep:** the moment a farmer ACCEPTS one of these as their
- * own cost it stops being reference data, and what gets written is the
- * converted EURO figure with no МЗХ marker on it. A stored cost citing a
- * ministry card would claim МЗХ backs that farm's number, which it does not.
+ * **THERE IS NO ACCEPT PATH, by owner ruling 2026-11-16.** These figures are
+ * reference data in the calendar and nothing else: there is no «Нов разход»
+ * suggestion and nothing writes them into a `CostEntry`. Three reasons, and
+ * they are about the DATA rather than the plumbing, which is why they are
+ * worth recording — the plumbing would have been easy and wrong:
+ *
+ *   - the calculator has no vineyard crop to attach them to;
+ *   - «Материали, препарати за растителна защита и торове» combines plant
+ *     protection with fertilisers, so it maps to no single cost category;
+ *   - the wage lines are farm-wide salaries, not a per-crop cost.
+ *
+ * This file originally described the boundary that an accept path would have
+ * to respect — that the stored figure be the converted euro one, with no МЗХ
+ * marker, because a stored cost citing a ministry card would claim МЗХ backs
+ * that farm's number. That reasoning is kept, because it is still why
+ * `calendar-peg-stays-out-of-farm-money` exists, and the ruling makes the
+ * guard STRONGER rather than redundant: an import of the peg outside this
+ * subtree is now contrary to an explicit decision, not merely a risk somebody
+ * anticipated.
  *
  * ## What is stored, and what is derived
  *
