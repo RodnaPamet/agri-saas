@@ -259,6 +259,18 @@ jobs:
                     -v "$PWD/scripts/verify-image-deps.mjs:/verify-deps.mjs:ro" \
                     "$LOCAL_TAG" /verify-deps.mjs /app
 
+            # #3099. #3081 shipped a bundle the Dockerfile never built: every
+            # other piece of the chain existed, nothing failed, and the only
+            # symptom was prices that never appeared. A SIZE FLOOR rather than
+            # existsSync, because esbuild can fail after opening its output
+            # file; per artefact, because the six span 1,734 bytes to 3 MB and
+            # any single floor is wrong in both directions.
+            - name: "Gate: every dist/ artefact shipped and above floor"
+              run: |
+                  docker run --rm --entrypoint node \
+                    -v "$PWD/scripts/verify-image-artefacts.mjs:/verify-artefacts.mjs:ro" \
+                    "$LOCAL_TAG" /verify-artefacts.mjs /app
+
             - name: "Gate: Trivy vulnerability scan (critical+high)"
               uses: aquasecurity/trivy-action@v0.36.0
               with:
@@ -328,6 +340,10 @@ jobs:
             #      absent until it has FOUND next/react/react-dom/@prisma/client
             #      in the pulled image. A pull that resolved the wrong tree, or
             #      an empty layer, fails instead of certifying.
+            #   C. `verify-image-artefacts.mjs` likewise refuses to report the
+            #      six dist/ bundles present until `dist/` has resolved and
+            #      held `worker.mjs` — so a pulled image with an empty or
+            #      wrong layer fails rather than certifying every artefact.
             #
             # Without these, an unreachable registry reads as a clean result —
             # which is exactly the shape #801 nearly shipped, when a recursive
@@ -354,5 +370,14 @@ jobs:
                   docker run --rm --entrypoint node \
                     -v "$PWD/scripts/verify-image-deps.mjs:/verify-deps.mjs:ro" \
                     "${REF}@${SERVED}" /verify-deps.mjs /app
+
+                  # And the artefact floor against the PULLED bytes (#3099),
+                  # for the reason the deps gate is repeated here: what was
+                  # verified before the push is not necessarily what the
+                  # registry now serves, and a gate must not pass by failing
+                  # to see.
+                  docker run --rm --entrypoint node \
+                    -v "$PWD/scripts/verify-image-artefacts.mjs:/verify-artefacts.mjs:ro" \
+                    "${REF}@${SERVED}" /verify-artefacts.mjs /app
 
                   echo "✓ ${REF}:latest serves ${SERVED}, gated and verified after pull"

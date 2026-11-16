@@ -72,6 +72,15 @@
             "why": "The generated spec is committed, so a path edit without `npm run openapi:generate` leaves it stale, and the contract snapshots pin its prose."
         },
         {
+            "when": "^src\\/lib\\/dto\\/",
+            "run": [
+                "tests/contracts",
+                "tests/guardrails",
+                "tests/guards"
+            ],
+            "why": "A DTO schema IS the published OpenAPI schema — `LocationListItemDTOSchema` ends `.openapi('LocationListItem', …)` and `src/lib/openapi/paths/*.paths.ts` imports it — so editing one rewrites `src/generated/openapi.json`, which the contract snapshots pin and which `openapi-breaking-change` grades against the PR's base. MEASURED on #3100: adding one field to `location.dto.ts` moved 13 lines of the committed spec, and the derived population contained no contracts suite at all. The existing rules reach contracts from `src/app/api/` and `src/lib/openapi/` only, so the directory where the schemas are DEFINED was the one that derived nothing — the same shape as the README entry this file's own `noTestsNeeded` comment records, where 'no rule covers this' read as 'nothing could'. Guardrails and guards ride along because `location-response-projection` binds the mapper to the schema's key set and lives under guardrails."
+        },
+        {
             "when": "^prisma\\/",
             "run": [
                 "tests/guards",

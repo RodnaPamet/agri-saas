@@ -658,6 +658,15 @@ jobs:
       - name: "Tokens: generated files match design/tokens.json"
         run: npm run tokens:check
 
+      # #3100 — the same shape a third time. `src/lib/geo/oblast-polygons.
+      # generated.ts` carries the 28 oblast rings that decide a block's
+      # north/south suggestion, generated from public/geo/bg-oblasti.geojson.
+      # The unit suite checks the CODE SET matches the source, which a
+      # hand-edited RING would pass, so the byte comparison belongs here where
+      # it answers in thirty seconds rather than in a shard twenty minutes in.
+      - name: "Geo: oblast rings match public/geo/bg-oblasti.geojson"
+        run: npm run geo:oblasts:check
+
       # Same shape again, and here the fast answer matters more than usual:
       # `.secret-patterns` is NOT copied into the runtime image, so the server
       # reads a GENERATED module. A stale one means the egress control is
@@ -3031,6 +3040,27 @@ jobs:
           docker run --rm --entrypoint node \
             -v "$PWD/scripts/verify-image-deps.mjs:/verify-deps.mjs:ro" \
             inflect-compliance:ci-${{ github.sha }} /verify-deps.mjs /app
+
+      # ── Gate: every dist/ bundle shipped, and none is a stub (#3099) ──
+      #
+      # #3081 shipped a fetch bundle whose npm script, compose service and
+      # entrypoint publish all existed and whose Dockerfile build step did
+      # not. Nothing failed — the entrypoint's `[ -f ]` guard correctly
+      # skipped, the share stayed empty, and the only symptom was prices that
+      # never appeared. The owner reported it twice.
+      #
+      # A SIZE FLOOR rather than existsSync, because esbuild can fail after
+      # opening its output file and leave a short file rather than none.
+      # Per-artefact, because the six span 1,734 bytes to 3 MB and any single
+      # floor is wrong in both directions.
+      #
+      # Asserts a POSITIVE CONTROL first, so a run that resolves the wrong
+      # directory fails instead of certifying a perfect image.
+      - name: "Gate: every dist/ artefact shipped and above floor"
+        run: |
+          docker run --rm --entrypoint node \
+            -v "$PWD/scripts/verify-image-artefacts.mjs:/verify-artefacts.mjs:ro" \
+            inflect-compliance:ci-${{ github.sha }} /verify-artefacts.mjs /app
 
       # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
       # Runs in the SAME job as the build above — the image is already

@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "14.48.2",
+    "version": "14.49.0",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -72,6 +72,8 @@
         "secret-patterns:generate": "tsx scripts/generate-secret-patterns.ts",
         "secret-patterns:check": "tsx scripts/generate-secret-patterns.ts --check",
         "tokens:check": "node scripts/generate-tokens.mjs --check",
+        "geo:oblasts": "node scripts/generate-oblast-polygons.mjs",
+        "geo:oblasts:check": "node scripts/generate-oblast-polygons.mjs --check",
         "load:auth": "k6 run tests/load/auth.js",
         "load:lists": "k6 run tests/load/lists.js",
         "load:ag-parcels": "k6 run tests/load/ag-parcel-list.js",
