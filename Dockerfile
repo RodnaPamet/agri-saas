@@ -100,6 +100,26 @@ RUN npm run build:worker
 # see docs/deployment.md.
 RUN npm run build:seed
 
+# ── The ZarnoBorsa fetch bundle (#3081) ──
+#
+# Same requirement as the two above and the same place in the order: it must
+# run BEFORE the dev-dependency prune, and it produces
+# `dist/zarnoborsa-fetch.mjs`, which the existing
+# `COPY --from=builder .../dist ./dist` already ships.
+#
+# Why it is in THIS image at all, when it runs in a different one: the app's
+# entrypoint publishes the file into a shared volume on every start, and the
+# Playwright container mounts that read-only. So the app is the only thing
+# that knows which bundle belongs with which release, and a Watchtower update
+# therefore refreshes the fetch script too.
+#
+# This step was MISSING from the first deploy of #3089 and nothing failed. The
+# npm script existed, the compose service existed, the entrypoint's publish
+# step existed — and the file was never built, so the share stayed empty and
+# the fetch container had nothing to run. Code-complete is not running; a
+# guard now asserts all four pieces together.
+RUN npm run build:zarnoborsa
+
 # Prune dev dependencies before the runner stage copies node_modules.
 # Without this, the runtime image carries ts-jest, semantic-release and
 # friends — including their transitive CVEs (e.g. handlebars@4.7.8 via
