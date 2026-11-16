@@ -74,18 +74,45 @@ function tile(
     }
     if (opts.source) headers.set('x-basemap-source', opts.source);
     const body = new ArrayBuffer(opts.bytes ?? 0);
+    /*
+     * The double MODELS BODY CONSUMPTION, and that is not decoration: a
+     * mutation replacing `res.clone().arrayBuffer()` with
+     * `res.arrayBuffer()` survived the first version of this suite, because a
+     * `clone()` returning `this` makes the two indistinguishable.
+     *
+     * The property is real — the service worker caches `res.clone()` on the
+     * way past, so consuming the ORIGINAL here races it — and a double that
+     * cannot express it leaves the one line protecting it untested.
+     */
     const res = {
         status,
         ok: status >= 200 && status < 300,
         headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
-        arrayBuffer: async () => body,
-        // Returns an equivalent response, like the real `clone()`: the sweep
-        // reads the CLONE so the original stays unconsumed for the service
-        // worker.
-        clone: () => res,
+        bodyUsed: false,
+        async arrayBuffer() {
+            this.bodyUsed = true;
+            return body;
+        },
+        /** A SEPARATE object with its own body, like the real `clone()`. */
+        clone() {
+            return {
+                status,
+                ok: status >= 200 && status < 300,
+                headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
+                bodyUsed: false,
+                async arrayBuffer() {
+                    this.bodyUsed = true;
+                    return body;
+                },
+            };
+        },
     };
+    served.push(res);
     return res as unknown as Response;
 }
+
+/** Every response the sweep was handed this test, for the consumption check. */
+let served: Array<{ bodyUsed: boolean }> = [];
 
 const BOUNDS: [number, number, number, number] = [23.3, 42.6, 23.4, 42.8];
 
@@ -95,6 +122,7 @@ function mockAll(res: () => Response) {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    served = [];
     Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {} });
 });
 
@@ -175,6 +203,26 @@ describe('#780 — the toast must describe the pack that actually exists', () =>
         await clickDownload();
         await waitFor(() => expect(toastError).toHaveBeenCalled());
         expect(toastSuccess).not.toHaveBeenCalled();
+    });
+
+    it('never consumes the ORIGINAL response — the service worker needs it', async () => {
+        /*
+         * The sweep reads a CLONE. Consuming the original would race the
+         * service worker, which caches `res.clone()` on the way past — so a
+         * tile would be counted and then not cached, which is the failure the
+         * whole download exists to avoid.
+         *
+         * Asserted because a mutation proved it was not: swapping
+         * `res.clone().arrayBuffer()` for `res.arrayBuffer()` passed every
+         * other case in this file. A `clone()` that returns `this` cannot
+         * tell them apart, so the double models consumption instead.
+         */
+        mockAll(() => tile(200, { bytes: 38, source: 'upstream' }));
+        await clickDownload();
+        await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+
+        expect(served.length).toBeGreaterThan(0); // control: it served some
+        expect(served.every((r) => r.bodyUsed === false)).toBe(true);
     });
 
     it('real tiles report ready', async () => {
