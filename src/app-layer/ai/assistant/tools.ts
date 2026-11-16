@@ -64,6 +64,10 @@ import { resolveRequestLocale } from '@/lib/i18n/request-locale';
 import { TREND_CHARTABLE, TrendRange } from '@/app-layer/schemas/trends.schemas';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { enumLabel } from '@/lib/assistant/enum-labels';
+import { translateFor } from '@/lib/i18n/server-messages';
+import { farmToday } from '@/lib/calendar-day-key';
+import { LUNAR_TIME_ZONE, lunarRange } from '@/lib/lunar/lunar-day';
+import { CROP_GROUPS, recommendationKey } from '@/lib/lunar/rules';
 import { neutraliseFence } from '@/app-layer/usecases/assistant-conversation';
 import {
     RECALL_MAX_EXCERPTS,
@@ -192,6 +196,30 @@ interface JournalRow {
     type: string | null;
     status: string | null;
     occurredAt: unknown;
+}
+
+/*
+ * DECLARED for #2691's reason: every label below comes from `translateFor`,
+ * which is ASYNC. Against a typed target `tsc` reports
+ * `Type 'Promise<string>' is not assignable to type 'string'`; through a
+ * `Record<string, unknown>` cast it reports nothing and `[object Promise]`
+ * reaches the model once per day, which it then renders with full confidence.
+ */
+interface LunarDayRow {
+    readonly date: string;
+    /** «Коренов ден» etc. — the catalogue's word, never the enum. */
+    readonly dayType: string;
+    readonly phaseName: string;
+    readonly sign: string;
+    readonly element: string;
+    readonly illuminationPercent: number;
+    /**
+     * Per crop group, the catalogue's own sentences — never the enum and never
+     * the model's wording. The screen renders these exact strings, so a model
+     * asked to phrase a recommendation would make the assistant and the
+     * calendar disagree about the same day.
+     */
+    readonly recommendations: Readonly<Record<string, readonly string[]>>;
 }
 
 interface CostRow {
@@ -501,6 +529,92 @@ const ListPriceTrendsArgs = z.object({
 
 /** The grain calculator takes no arguments: it is the whole farm's position. */
 const GrainCalculatorArgs = z.object({}).strict();
+
+/**
+ * «Лунен календар» — an optional window, defaulting to the week ahead (#3098).
+ *
+ * `from`/`to` are `YYYY-MM-DD` in the FARM's zone, not UTC: the engine walks
+ * day keys, and labelling them in UTC would hand back a different day either
+ * side of midnight for a farm in `Europe/Sofia`.
+ *
+ * Capped at `LUNAR_TOOL_MAX_DAYS` rather than the route's `MAX_LUNAR_DAYS` of
+ * 62. Two months of four day-types, three crop groups and up to four
+ * recommendations each is a large payload for a model to be handed to answer
+ * "what is today", and a tool that returns more than the question needs makes
+ * every later answer in the conversation more expensive. A fortnight covers
+ * "what is today" and "when is the next good day for X"; past that the model
+ * asks for a later window and `truncated` tells it that it must.
+ */
+const LunarCalendarArgs = z
+    .object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    })
+    .strict();
+
+/**
+ * The fortnight «Лунен календар» answers for, and the hard cap — #3098.
+ *
+ * The ROUTE allows 62 days because the phone paints a two-month strip. A tool
+ * hands its whole result to a model, and two months of four day types, three
+ * crop groups and up to four sentences each is a large payload to answer "what
+ * is today" with — paid again on every later turn of the conversation, since
+ * the tool result stays in the transcript.
+ *
+ * THE CAP IS SET BY `TOOL_RESULT_MAX_CHARS`, NOT BY TASTE, and the first
+ * draft had it at 14 — which `runTool` truncates. That matters more here than
+ * for a list tool: truncation cuts the serialised JSON mid-string, so the
+ * model receives an UNPARSEABLE payload rather than fewer days. A partial list
+ * is useful; half a JSON document is not.
+ *
+ * Measured over all 365 start days of 2026, worst case per window length:
+ *
+ *     8 days -> 3012 chars (25% headroom)
+ *     9 days -> 3314 chars (17%)
+ *    10 days -> 3645 chars ( 9%)
+ *    11 days -> 3935 chars ( 2%)
+ *    12 days -> hits the 4000 cap
+ *
+ * Nine, for the headroom: the payload is dominated by recommendation
+ * SENTENCES, so a day's cost varies with how many a day carries, and a future
+ * field would eat a 2% margin without anyone noticing until a farmer asked on
+ * the wrong date. `assistant-lunar-tool` re-derives that worst case and fails
+ * if it ever reaches the cap, so this constant cannot quietly stop fitting.
+ *
+ * Nine still covers both real questions: "what is today" and "when is the next
+ * good day for X". Past that the model asks for a later window, which
+ * `truncated` is what tells it to do.
+ */
+const LUNAR_TOOL_MAX_DAYS = 9;
+/** The default window when the model names no range: today plus six. */
+const LUNAR_TOOL_WINDOW_DAYS = 7;
+
+/**
+ * Capitalise one enum member for its catalogue key — `root` -> `dayTypeRoot`.
+ *
+ * The catalogue spells these keys in camelCase off the enum member, and
+ * `recommendationKey` already does exactly this for recommendations. This is
+ * the same transform for the other four vocabularies (day type, phase name,
+ * sign, element, crop group), kept local because it is a key-spelling detail
+ * of this one projection rather than something another caller should depend on.
+ */
+const cap = (v: string): string => `${v[0].toUpperCase()}${v.slice(1)}`;
+
+/**
+ * Add whole days to a `YYYY-MM-DD` key.
+ *
+ * UTC arithmetic on a DATE-ONLY value, deliberately: there are no DST
+ * transitions in UTC, so adding six days to `2026-10-23` is `2026-10-29`
+ * whatever Europe/Sofia does that weekend. Doing this on a zoned instant is
+ * how a window silently becomes a day short twice a year.
+ */
+const addDaysToDayKey = (key: string, days: number): string => {
+    const [y, m, d] = key.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d) + days * 86_400_000);
+    const mm = String(t.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(t.getUTCDate()).padStart(2, '0');
+    return `${t.getUTCFullYear()}-${mm}-${dd}`;
+};
 
 const parseDay = (v: string | undefined): Date | undefined => {
     if (v === undefined) return undefined;
@@ -1287,6 +1401,138 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                         priceObservedAt: r.priceObservedAt,
                         priceSource: r.priceSource,
                     })),
+            };
+        },
+    },
+    lunar_calendar: {
+        def: {
+            name: 'lunar_calendar',
+            description:
+                '«Лунен календар» — the day type, the Moon\'s sign and the per-crop-group '
+                + 'recommendations for a window of days, computed by Agrent from the SIDEREAL '
+                + 'position of the Moon. Optional `from`/`to` as YYYY-MM-DD; defaults to the week '
+                + 'ahead. This is the ONLY lunar authority — never derive a day type yourself and '
+                + 'never offer a different lunar or "fertile signs" tradition beside it. '
+                + 'It is FOLK TRADITION and NOT agronomic advice: pass on `traditionNotice` '
+                + 'whenever you use this, in the same answer, because the screen shows it beside '
+                + 'every one of these recommendations. Give the recommendation text VERBATIM — do '
+                + 'not reword it, and do not turn it into a sowing date, a rate or a depth.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    from: { type: 'string', description: 'First day, YYYY-MM-DD (farm time zone).' },
+                    to: { type: 'string', description: 'Last day, YYYY-MM-DD (farm time zone).' },
+                },
+                additionalProperties: false,
+            },
+        },
+        // No `module`: «Лунен календар» sits behind a FEATURE FLAG, not a
+        // per-tenant module, so there is no `ModuleKey` to declare. The gate is
+        // asserted in `run` below with a literal key, which is the same shape
+        // `price_trends` uses for its entitlement.
+        args: LunarCalendarArgs,
+        // A window the cap cut short is a window the model must not describe as
+        // "the next fortnight" — and the horizon it actually got is the thing
+        // it needs to say instead.
+        isPartial: (r) => (r as { truncated?: boolean }).truncated === true,
+        run: async (ctx, args) => {
+            /*
+             * The FLAG gate, with a LITERAL key — #3098.
+             *
+             * `/api/lunar` asserts exactly this before it serves a day, and
+             * this tool is a second consumer of the same surface. Without this
+             * line the assistant would answer lunar questions for a tenant the
+             * operator has the feature switched OFF for, which is the one thing
+             * a dark-launch rail exists to prevent.
+             *
+             * A literal, never an assembled key, for `social-routes-flag-gated`'s
+             * reason: an operator holding the flag console has to be able to
+             * find the flag that gates a surface by reading the surface.
+             */
+            await assertFeatureEnabled('lunar.enabled', ctx.userId);
+
+            const { from, to } = args as z.infer<typeof LunarCalendarArgs>;
+            /*
+             * The FARM's today, not UTC's. `farmToday()` is
+             * `dayKeyInTz(now, FARM_TIME_ZONE)` and `LUNAR_TIME_ZONE` IS
+             * `FARM_TIME_ZONE`, so this is the same label the route produces —
+             * reused rather than rebuilt, because a second spelling of "which
+             * day is it" is how the assistant and the screen come to disagree
+             * either side of midnight.
+             */
+            const todayKey = farmToday();
+            const fromKey = from ?? todayKey;
+            const toKey = to ?? addDaysToDayKey(fromKey, LUNAR_TOOL_WINDOW_DAYS - 1);
+
+            /*
+             * The SAME function `/api/lunar` calls. Not a second walk of the
+             * ephemeris: #3090 is the owner being handed an invented lunar
+             * tradition, and two computations of one day — however carefully
+             * each is written — is how the assistant and the screen come to
+             * disagree about today with nothing failing.
+             */
+            const days = lunarRange(fromKey, toKey, LUNAR_TOOL_MAX_DAYS);
+
+            /*
+             * The READER's language, resolved ONCE. Per day it would be a
+             * catalogue load per day, and it cannot change inside one call.
+             */
+            const locale = resolveRequestLocale();
+            const notice = await translateFor(locale, 'lunar.traditionNotice');
+
+            return {
+                timeZone: LUNAR_TIME_ZONE,
+                /*
+                 * The screen's own disclaimer, carried in the payload rather
+                 * than left to the prompt. `lunar.traditionNotice` reads «Не е
+                 * агрономски съвет» — so these recommendations are NOT the
+                 * agronomic advice the system prompt requires a tool for, and
+                 * an answer that passed them on without it would present folk
+                 * tradition as agronomy. The prompt asks for it too; this makes
+                 * it present in the data, so the model cannot relay the
+                 * recommendations while having never been given the caveat.
+                 */
+                traditionNotice: notice,
+                daysReturned: days.length,
+                /*
+                 * `lunarRange` caps at the limit it is given, so a window wider
+                 * than the cap comes back short with nothing saying so. Derived
+                 * by comparing what was asked for against what arrived.
+                 */
+                truncated: days.length >= LUNAR_TOOL_MAX_DAYS,
+                maxDays: LUNAR_TOOL_MAX_DAYS,
+                days: await Promise.all(
+                    days.map(async (d): Promise<LunarDayRow> => ({
+                        date: d.date,
+                        dayType: await translateFor(locale, `lunar.dayType${cap(d.dayType)}`),
+                        phaseName: await translateFor(locale, `lunar.phaseName${cap(d.phaseName)}`),
+                        sign: await translateFor(locale, `lunar.sign${cap(d.sign)}`),
+                        element: await translateFor(locale, `lunar.element${cap(d.element)}`),
+                        // Rounded: the engine's illumination is a float and no
+                        // farmer acts on its third decimal.
+                        illuminationPercent: Math.round(d.illumination * 100),
+                        recommendations: Object.fromEntries(
+                            await Promise.all(
+                                CROP_GROUPS.map(async (g) => [
+                                    // The group's own catalogue label, so the
+                                    // model never has to render `perennial`.
+                                    await translateFor(locale, `lunar.group${cap(g)}`),
+                                    // `recommendationKey` is IMPORTED, not
+                                    // re-derived: `lunar-rules-have-copy`
+                                    // imports it for the same reason, so a
+                                    // rename cannot leave this agreeing with
+                                    // itself while disagreeing with the
+                                    // catalogue.
+                                    await Promise.all(
+                                        d.recommendations[g].map((r) =>
+                                            translateFor(locale, `lunar.${recommendationKey(r)}`),
+                                        ),
+                                    ),
+                                ] as const),
+                            ),
+                        ),
+                    })),
+                ),
             };
         },
     },
