@@ -170,6 +170,13 @@ const NOT_A_CREDENTIAL: ReadonlyArray<[reason: string, columns: readonly string[
         ['nightKey'],
     ],
     [
+        // A separate entry again rather than joining the catalogue-slug reason:
+        // that one says "chosen by the tenant", and a crop key is chosen by
+        // nobody at runtime — it is a fixed identifier in a committed dataset.
+        'A CROP IDENTIFIER from the committed agro-calendar dataset (#3095) — `wine-grape`, `wheat-bread` — not key material. `AgroCalendarOverride.cropKey` says which crop a platform-admin correction belongs to, the same 37 values for every reader, and it authenticates nothing: possession of the string grants no access, and the dataset it indexes is served to any signed-in person by `/api/agro-calendar`. Excused rather than redacted because it is the one field that makes an override row legible — an operator reading "which crop was corrected" has nothing else to go on, and the window id beside it is derived from this same key.',
+        ['cropKey'],
+    ],
+    [
         'A domain or regulatory code a person reads off a document.',
         ['lotCode', 'measureCode', 'regionCode', 'reasonCode'],
     ],

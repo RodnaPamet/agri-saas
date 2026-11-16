@@ -199,9 +199,34 @@ export function registerAgroCalendarPaths(registry: OpenAPIRegistry): void {
                                             unit: z.enum(CALENDAR_UNITS),
                                         })
                                         .optional(),
-                                    cites: z.array(Citation).openapi({
+                                    origin: z
+                                        .enum(['corrected', 'added'])
+                                        .optional()
+                                        .openapi({
+                                            description:
+                                                'ABSENT means the window is published МЗХ agronomy — that is the normal case and the absence is the signal, so a farm with no corrections receives byte-identical bytes to before. `corrected` is a published window a platform admin changed; `added` is a window МЗХ does not publish at all. Both render «Коригирано от Agrent».',
+                                        }),
+                                    basis: z
+                                        .object({ bg: z.string(), en: z.string().optional() })
+                                        .optional()
+                                        .openapi({
+                                            description:
+                                                'Why the figure differs from the card. Present whenever `origin` is, and never without it. **Render this INSTEAD of a citation, never beside one** — a corrected window carries no `cites` precisely so that "beside" is not representable: an override changes the value while the published citation still points at a page that no longer supports it, which is worse than an uncited window because it looks sourced.',
+                                        }),
+                                    supersedes: z
+                                        .object({
+                                            from: z.string(),
+                                            to: z.string(),
+                                            cites: z.array(Citation),
+                                        })
+                                        .optional()
+                                        .openapi({
+                                            description:
+                                                'What a CORRECTION replaced — МЗХ\'s own dates and citation. Present only when `origin` is `corrected`; an addition replaced nothing. It exists for traceability and for the admin console, which shows an operator what the card said beside what they typed. It is NOT a live citation and must not be rendered as one.',
+                                        }),
+                                    cites: z.array(Citation).optional().openapi({
                                         description:
-                                            'Never empty. Ordered: the primary citation first, then any additional pages.',
+                                            'Present ONLY on a published window — a corrected or added one carries `basis` instead, and the two are mutually exclusive by construction. Never empty when present. Ordered: the primary citation first, then any additional pages.',
                                     }),
                                 }),
                             ),

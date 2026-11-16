@@ -167,8 +167,14 @@ describe('the query', () => {
         const ws = calendarFor({ region: 'north' }).flatMap((c) => c.windows);
         expect(ws.length).toBeGreaterThan(0);
         for (const w of ws) {
+            // `cites` became OPTIONAL with #3095, because a corrected or added
+            // window carries `basis` INSTEAD. These are all published — this
+            // call passes no overrides — so every one must still have it, and
+            // asserting that is now part of the contract rather than implied
+            // by the type.
+            expect(w.origin).toBeUndefined();
             expect(Array.isArray(w.cites)).toBe(true);
-            expect(w.cites.length).toBeGreaterThanOrEqual(1);
+            expect(w.cites ?? []).not.toHaveLength(0);
             // The served shape replaces them; a client should never have to
             // concatenate two fields itself.
             expect(w).not.toHaveProperty('cite');
@@ -183,8 +189,8 @@ describe('the query', () => {
                 .flatMap((c) => c.windows)
                 .concat(calendarFor({ region: 'south' }).flatMap((c) => c.windows))
                 .find((w) => w.id === multi.id);
-            expect(servedMulti?.cites[0]).toEqual(multi.cite);
-            expect(servedMulti?.cites.length).toBe(1 + (multi.alsoCite?.length ?? 0));
+            expect(servedMulti?.cites?.[0]).toEqual(multi.cite);
+            expect(servedMulti?.cites ?? []).toHaveLength(1 + (multi.alsoCite?.length ?? 0));
         }
     });
 
