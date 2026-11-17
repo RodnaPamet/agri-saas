@@ -200,7 +200,7 @@ describe('a complete treatment, and what is still missing (#3162)', () => {
         doseValue: 0.05,
         doseUnitLabel: 'л/дка',
         targetNote: 'листни въшки',
-        chosenParcels: [{ id: 'p1', label: 'Север · Парцел 1' }],
+        chosenParcels: [{ id: 'p1', label: 'Север · Парцел 1', crop: 'Wheat' }],
     };
 
     it('a complete spray lacks nothing', () => {

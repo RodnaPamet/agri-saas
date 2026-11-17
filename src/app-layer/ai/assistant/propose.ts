@@ -228,7 +228,7 @@ export const DRAFT_STAND_INS: Readonly<Record<string, string>> = {
  */
 export const TreatmentDraftSchema = ProposeTreatmentArgs.extend({
     chosenParcels: z
-        .array(z.object({ id: z.string().min(1), label: z.string().min(1) }).strict())
+        .array(z.object({ id: z.string().min(1), label: z.string().min(1), crop: z.string().min(1) }).strict())
         .min(1)
         .optional(),
     doseUnitLabel: z.string().min(1).max(20).optional(),

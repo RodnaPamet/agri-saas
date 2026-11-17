@@ -33,6 +33,12 @@ export interface ResolvedParcel {
     readonly id: string;
     /** «Север · Парцел 3», for the form and the model alike. */
     readonly label: string;
+    /**
+     * The parcel's stored crop. The form records ONE crop per treatment — it
+     * picks the crop, then that crop's parcels — so it needs the crop to open
+     * on, and the tool needs it to ask when a field spans two.
+     */
+    readonly crop: string | null;
 }
 
 export interface Unresolved {
@@ -79,7 +85,7 @@ function sameCrop(said: string, stored: string | null): boolean {
 export function resolveAgainst(options: readonly Option[], words: PlaceWords): PlaceResolution {
     const chosen = new Map<string, ResolvedParcel>();
     const unresolved: Unresolved[] = [];
-    const take = (o: Option) => chosen.set(o.id, { id: o.id, label: label(o) });
+    const take = (o: Option) => chosen.set(o.id, { id: o.id, label: label(o), crop: o.cropType });
 
     if (words.block !== undefined) {
         const said = fold(words.block);
@@ -113,6 +119,30 @@ export function resolveAgainst(options: readonly Option[], words: PlaceWords): P
     }
 
     return { parcels: [...chosen.values()], unresolved };
+}
+
+/**
+ * Why resolved parcels cannot go on ONE treatment record, or null when they
+ * can. The form records one crop per treatment and lists only parcels that
+ * carry a crop, so a field spanning two crops, or a parcel with none, is a
+ * question to ask rather than a form that cannot show what it was given.
+ */
+export function oneCropProblem(parcels: readonly ResolvedParcel[]): Unresolved | null {
+    const bare = parcels.filter((p) => !p.crop?.trim());
+    if (bare.length > 0) {
+        return {
+            said: 'field has no crop recorded — set the crop in Блокове, or name other parcels',
+            candidates: bare.slice(0, 5).map((p) => p.label),
+        };
+    }
+    const crops = [...new Set(parcels.map((p) => (p.crop as string).trim().toLowerCase()))];
+    if (crops.length > 1) {
+        return {
+            said: 'these parcels grow different crops — one treatment record covers one crop; ask which',
+            candidates: [...new Set(parcels.map((p) => p.crop as string))].slice(0, 5),
+        };
+    }
+    return null;
 }
 
 /** Resolve the words for the caller's farm. A READ; writes nothing. */

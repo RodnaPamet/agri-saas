@@ -77,7 +77,7 @@ import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
-import { resolvePlace } from './place';
+import { oneCropProblem, resolvePlace } from './place';
 import { buildDiaryOffer, DiaryDocumentOfferSchema, OfferDiaryDocumentArgs, type DiaryDocumentOffer } from './documents';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
 import {
@@ -1715,17 +1715,21 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // policy that matters is the one on the route the PERSON posts to.
             const { blockName, parcelNumbers, crop, doseUnit, ...fields } = ProposeTreatmentToolArgs.parse(args);
             const place = await resolvePlace(ctx, { block: blockName, parcels: parcelNumbers, crop });
+            const cropProblem = oneCropProblem(place.parcels);
+            const unresolved = cropProblem ? [...place.unresolved, cropProblem] : place.unresolved;
             const draft = {
                 ...fields,
-                ...(place.parcels.length > 0 ? { chosenParcels: [...place.parcels] } : {}),
+                ...(place.parcels.length > 0 && !cropProblem
+                    ? { chosenParcels: place.parcels.map((p) => ({ id: p.id, label: p.label, crop: p.crop as string })) }
+                    : {}),
                 ...(doseUnit ? { doseUnitLabel: doseUnit } : {}),
             };
             const missing = missingTreatmentItems(draft);
-            if (missing.length > 0 || place.unresolved.length > 0) {
+            if (missing.length > 0 || unresolved.length > 0) {
                 return {
                     prepared: false,
                     missing,
-                    unresolved: place.unresolved,
+                    unresolved,
                     understood: { ...fields, fields: place.parcels.map((p) => p.label) },
                 };
             }

@@ -113,12 +113,32 @@ describe('propose_treatment asks until the record is complete', () => {
                 kind: 'SPRAY', productName: 'Децис', doseValue: 0.05, occurredOn: '2026-11-16',
                 targetNote: 'листни въшки', doseUnitLabel: 'л/дка',
                 chosenParcels: [
-                    { id: 'p1', label: 'Север · Парцел 1' },
-                    { id: 'p2', label: 'Север · Парцел 2' },
+                    { id: 'p1', label: 'Север · Парцел 1', crop: 'Wheat' },
+                    { id: 'p2', label: 'Север · Парцел 2', crop: 'Wheat' },
                 ],
             },
         });
         expect(assertModuleEnabled).toHaveBeenCalledWith(ctx, 'JOURNAL');
+    });
+
+    it('a field spanning two crops is asked about — one record is one crop', async () => {
+        const out = await runTool(ctx, 'propose_treatment', JSON.stringify({
+            kind: 'SPRAY', productName: 'Децис', doseValue: 0.05, doseUnit: 'л/дка',
+            occurredOn: '2026-11-16', targetNote: 'листни въшки', parcelNumbers: ['Парцел 1', 'Парцел 3'],
+        }));
+        expect(out.proposal).toBeNull();
+        const asked = JSON.parse(out.content).unresolved;
+        expect(asked[0].candidates).toEqual(['Wheat', 'Canola']);
+    });
+
+    it('a parcel with no crop recorded is asked about, never proposed', async () => {
+        listParcelPlaceOptions.mockResolvedValue([P('p9', 'Парцел 9', 'Изток')]);
+        const out = await runTool(ctx, 'propose_treatment', JSON.stringify({
+            kind: 'SPRAY', productName: 'Децис', doseValue: 0.05, doseUnit: 'л/дка',
+            occurredOn: '2026-11-16', targetNote: 'листни въшки', blockName: 'Изток',
+        }));
+        expect(out.proposal).toBeNull();
+        expect(JSON.parse(out.content).unresolved[0].candidates).toEqual(['Изток · Парцел 9']);
     });
 
     it('an id from the model is still refused', async () => {
