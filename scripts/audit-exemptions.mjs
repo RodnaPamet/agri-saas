@@ -149,6 +149,42 @@ const REAL_EXEMPT = [
             + 'entry — rule 4 requires deleting and re-arguing it.',
         review: '2026-11-24',
     },
+    {
+        id: 'GHSA-vc7v-qv4w-wrv8',
+        package: 'next',
+        reason:
+            'Cache leak across root param values in NESTED `\'use cache\'` functions via '
+            + 'delayed inner stream metadata. Published 2026-11-17 against next >=16.2.0 '
+            + '<=16.4.4; we are on 16.4.4.\n\n'
+            + 'UNREACHABLE for the same measured reason as GHSA-mfr8-8qww-v76h above: the '
+            + 'vector is a `\'use cache\'` function, and there is no `\'use cache\'` '
+            + 'directive anywhere under src/ or scripts/ (grep, 2026-11-17: zero hits '
+            + 'outside this file). A nested one therefore cannot exist either.\n\n'
+            + 'EXEMPTED RATHER THAN FIXED for the reason that entry gives: the fix is the '
+            + 'next 16.4.5+ bump, which #3147 holds because it breaks the offline-basemap '
+            + 'E2E. One bump retires both entries, so they share a review date. A new '
+            + 'advisory on next still blocks (rule 1).',
+        review: '2026-11-24',
+    },
+    {
+        id: 'GHSA-fc5q-39xc-vjpf',
+        package: 'picomatch',
+        reason:
+            'ReDoS: a crafted glob PATTERN with a single-branch repeated extglob (`+(*)`, '
+            + '`+(*a)`) backtracks exponentially. Every version through 4.0.7 is affected and '
+            + 'NO fixed version is published, so there is no upgrade to take.\n\n'
+            + 'UNREACHABLE, measured: the attacker must supply the PATTERN, and nothing in '
+            + 'this product passes request data to a glob. src/ imports no picomatch, '
+            + 'micromatch or minimatch (grep, 2026-11-17). The production tree reaches '
+            + 'picomatch@4.0.7 only through build and watch tooling — `@sentry/nextjs` → '
+            + '`@rollup/plugin-commonjs` (bundling at `next build`) and `next-intl` → '
+            + '`@parcel/watcher` (file watching) — whose patterns are literals in our own '
+            + 'configuration.\n\n'
+            + 'Re-check on the review date whether picomatch has shipped a fix; when it '
+            + 'has, take it (an override if a dependency pins 4.0.x) and delete this '
+            + 'entry in the same PR (rule 3).',
+        review: '2026-12-01',
+    },
 ];
 
 // Test-only override, same shape as `AUDIT_JSON_OVERRIDE` below — lets
