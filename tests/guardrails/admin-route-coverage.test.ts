@@ -98,6 +98,12 @@ const ADMIN_ONLY_ROUTES = [
     'admin/moderation/suspensions/route.ts',
     'admin/moderation/statements/route.ts',
     'admin/moderation/metrics/route.ts',
+    // #2996 — "which decisions produced no statement of reasons". Same
+    // reasoning as its five neighbours above, and it is the view where the
+    // tenantless-models argument bites hardest: the rows it returns span every
+    // farm's moderation history, so `admin.manage` alone would hand one farm's
+    // ADMIN a list of every other farm's unexplained decisions.
+    'admin/moderation/unexplained-decisions/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's

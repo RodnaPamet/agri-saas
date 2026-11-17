@@ -290,6 +290,30 @@ function missingRow(subjectKind: string, subjectId: string): null {
     return null;
 }
 
+/**
+ * The subject kinds `resolveContentRecipient` HAS an arm for — #2996.
+ *
+ * Data rather than only branches, because a second reader now needs the same
+ * answer: the unexplained-decisions view has to know for which kinds a
+ * statement was ever POSSIBLE, so that a kind with no recipient by design
+ * (PROFILE, THREAD) is not reported as an unexplained decision.
+ *
+ * **This is NOT `REMOVABLE_SUBJECT_KINDS`, though the two hold the same three
+ * values today.** Removable asks "can this platform take the content down";
+ * this asks "is there a person to tell". #2955's guard makes removable a
+ * SUBSET of this — every removable kind must have an arm — and nothing makes
+ * them equal: a kind could gain a recipient arm without becoming removable,
+ * and then a filter derived from the removable list would stop seeing a gap it
+ * is meant to see. Deriving from the wrong one of two coinciding lists is the
+ * #1664 shape, so the view derives from this.
+ *
+ * `statement-recipient-kinds-match-the-arms` asserts this list against the
+ * function's actual behaviour over every `ReportSubjectKind`, because a
+ * constant beside the branches it describes is a second spelling until
+ * something compares them.
+ */
+export const STATEMENT_RECIPIENT_KINDS = ['LISTING', 'MESSAGE', 'CHANNEL_POST'] as const;
+
 export async function resolveContentRecipient(
     subjectKind: string,
     subjectId: string,

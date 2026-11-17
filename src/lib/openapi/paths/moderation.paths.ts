@@ -153,6 +153,53 @@ export function registerModerationPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'get',
+        path: '/api/admin/moderation/unexplained-decisions',
+        operationId: 'listDecisionsWithoutStatement',
+        summary: 'Moderation — decisions that produced no statement of reasons',
+        description:
+            'The MIRROR of the undelivered queue above, newest first.'
+            + '\n\n**Necessarily a separate query.** That view ranges over '
+            + '`StatementOfReasons`, so it structurally cannot see a decision that '
+            + 'produced none — and "written and not sent" and "never written" are '
+            + 'different compliance failures with different remedies.'
+            + '\n\n**Why it still exists after #2955.** That change closed both causes: '
+            + 'a derived guard makes a removable kind with no recipient arm unshippable, '
+            + 'and a `warn` fires when a supported kind\u2019s row has since been deleted. '
+            + 'What remains is durability and queryability — a log line is searchable '
+            + 'until it rotates, and an auditor asking "show me every moderation decision '
+            + 'with no statement of reasons" wants a query over rows.'
+            + '\n\n**The filter is DERIVED** from `ACCOUNT_ACTION_KINDS` and '
+            + '`STATEMENT_RECIPIENT_KINDS`. `NONE` is excluded (a rejected notice took no '
+            + 'action, so it has nothing to explain) and so are the recipientless subject '
+            + 'kinds, whose statement was never possible.'
+            + '\n\n`rationale` is NOT returned: it is encrypted at rest and this view '
+            + 'reads rows raw, so selecting it would return the envelope rather than a '
+            + 'value. `id` is enough to go and read the action properly.'
+            + '\n\nThere is a session-gated twin at '
+            + '`/api/t/{tenantSlug}/admin/moderation/unexplained-decisions` for the '
+            + 'console; this one is for scripts. Neither is a fallback for the other.'
+            + KEY_GATE,
+        tags: ['Moderation'],
+        success: {
+            status: 200,
+            description: 'Decisions with no statement of reasons, newest first.',
+            schema: z.object({
+                decisions: z.array(
+                    z.object({
+                        id: z.string(),
+                        actionKind: z.string(),
+                        subjectKind: z.string(),
+                        subjectId: z.string(),
+                        reportId: z.string().nullable(),
+                        createdAt: z.string().datetime({ offset: true }),
+                    }),
+                ),
+            }),
+        },
+    });
+
+    op(registry, {
         method: 'post',
         path: '/api/admin/moderation/statements',
         operationId: 'queueStatementOfReasons',

@@ -96,9 +96,12 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
             + 'for a person-scoped obligation. `deliveredAt IS NULL` is the queue, and '
             + '`statement-dispatch` drains it every 10 minutes.'
             + '\n\n**What this does NOT answer:** which DECISIONS produced no statement. '
-            + 'Nothing answers that; it is a separate gap. A view labelled "unexplained '
-            + 'decisions" would be claiming it while showing this, which would read as '
-            + 'coverage.'
+            + 'This view ranges over statements, so it structurally cannot see a decision '
+            + 'that produced none — "written and not sent" and "never written" are '
+            + 'different failures with different remedies. That question is answered by '
+            + '`GET /api/t/{tenantSlug}/admin/moderation/unexplained-decisions` (#2996). '
+            + 'This sentence read "Nothing answers that; it is a separate gap" until that '
+            + 'view landed.'
             + TWO_DOORS,
         tags: ['Admin'],
         params: TenantParams,
@@ -435,6 +438,72 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
                 status: z.string(),
                 suspended: z.boolean().optional(),
             }),
+        },
+    });
+    const UnexplainedDecision = z.object({
+        id: z.string().openapi({ description: 'The `ModerationAction` id.' }),
+        actionKind: z.string().openapi({
+            description:
+                'The outcome recorded. Never `NONE` — a rejected notice took no action '
+                + 'against anybody, so it has nothing to explain and is not a gap.',
+        }),
+        subjectKind: z.string().openapi({
+            description:
+                'Always a kind `resolveContentRecipient` has an arm for, or an '
+                + 'account-level outcome. PROFILE and THREAD are recipientless by design '
+                + '(#1690), so their statements were never possible and their absence is '
+                + 'not reported here.',
+        }),
+        subjectId: z.string(),
+        reportId: z.string().nullable().openapi({
+            description: 'Null for a decision with no originating notice, e.g. an auto-hide.',
+        }),
+        createdAt: z.string().datetime({ offset: true }),
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/admin/moderation/unexplained-decisions',
+        operationId: 'listDecisionsWithoutStatementFromConsole',
+        summary: 'Moderation decisions that produced no statement of reasons',
+        description:
+            'Newest first — unlike the undelivered queue next door, which reads '
+            + 'oldest-first because it is measuring LAG. An unexplained decision is an '
+            + 'incident, and the most recent is the one somebody still has time to answer.'
+            + '\n\n**The MIRROR of the statements queue, and necessarily a separate '
+            + 'query.** That one ranges over `StatementOfReasons`, so it cannot see a '
+            + 'decision that produced none.'
+            + '\n\n**Why this still exists after #2955.** That change closed both '
+            + 'CAUSES — a derived guard makes a removable kind with no recipient arm '
+            + 'unshippable, and a `warn` fires when a supported kind\u2019s row has since '
+            + 'been deleted. What is left is durability and queryability: a log line is '
+            + 'searchable until it rotates, and an auditor wants a query over rows. '
+            + '#2996 states its own priority as low for that reason.'
+            + '\n\n**The filter is DERIVED**, from `ACCOUNT_ACTION_KINDS` and '
+            + '`STATEMENT_RECIPIENT_KINDS`, so a subject kind is covered the moment it '
+            + 'gains a recipient arm. It is deliberately NOT derived from '
+            + '`REMOVABLE_SUBJECT_KINDS`, which holds the same three values today and '
+            + 'answers a different question.'
+            + '\n\n**`rationale` is never returned.** It is encrypted at rest and this '
+            + 'view reads rows raw, so selecting it would hand back a `v1:`/`v2:` '
+            + 'envelope that looks like a value. The question is WHICH decisions went '
+            + 'unexplained; `id` is enough to go and read one properly.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        query: z.object({
+            limit: z.string().optional().openapi({
+                description: 'Positive integer, clamped to 200.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_LIMIT — a non-integer `limit`.',
+            404: 'Not the platform-support tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'Decisions with no statement of reasons, newest first.',
+            schema: z.object({ decisions: z.array(UnexplainedDecision) }),
         },
     });
 }

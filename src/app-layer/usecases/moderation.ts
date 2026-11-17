@@ -40,9 +40,15 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { Prisma } from '@prisma/client';
+
 import prisma from '@/lib/prisma';
 import { suspendAccountOnTx } from './account-suspension';
-import { queueStatementForAction, resolveContentRecipient } from './statement-queue';
+import {
+    queueStatementForAction,
+    resolveContentRecipient,
+    STATEMENT_RECIPIENT_KINDS,
+} from './statement-queue';
 import { requestAccountDeletionOnTx } from './account-erasure';
 import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { codedBadRequest } from '@/lib/errors/types';
@@ -230,6 +236,63 @@ export async function listNotices(opts: {
 // one person, and the owner ruled (2026-11-08) that suspension is the remedy
 // there — `dm-is-reportable-not-removable` holds that absence.
 export const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE', 'CHANNEL_POST'] as const;
+
+/**
+ * The outcomes aimed at an ACCOUNT rather than at a piece of content — #2996.
+ *
+ * Extracted because the pair was spelled twice in this file and the second
+ * spelling decided whether an Art 17 statement gets a recipient at all
+ * (`actOnNotice`, below). A third reader now needs the same answer — the
+ * unexplained-decisions view — and three spellings of one rule is how #1664
+ * happened: two were individually correct and the divergence was a silent
+ * disclosure rather than a wrong sentence.
+ *
+ * What makes these two a pair, rather than a list of kinds that happen to
+ * start with the same word: their recipient is SUPPLIED (`suspendUserId`,
+ * which `ActOnNoticeSchema` requires for exactly these) while every other
+ * kind's is RESOLVED from the subject row. So for these a statement is always
+ * expected, and for the rest it depends on whether the subject kind has a
+ * recipient at all.
+ */
+export const ACCOUNT_ACTION_KINDS = ['ACCOUNT_SUSPENDED', 'ACCOUNT_TERMINATED'] as const;
+
+/**
+ * Should this decision have produced a statement of reasons? — #2996.
+ *
+ * The ONE derivation, so the view and the writer cannot disagree. #2996 asks
+ * for the filter to be derived rather than typed, because "a list that drifts
+ * from `REMOVABLE_SUBJECT_KINDS` is the defect #2955 was about, one level
+ * along" — and the issue's own draft SQL hardcoded three action kinds, which
+ * is the drift it warns against.
+ *
+ * Two clauses, each tracing to a decision already made elsewhere:
+ *
+ *   - `NONE` explains nothing. `actOnNotice` queues no statement for it
+ *     because a rejected notice took no action against anybody — so a NONE
+ *     row with no statement is the designed state, not a gap.
+ *   - Otherwise a statement needs a RECIPIENT. For the account kinds that is
+ *     supplied and always present. For a content kind it is resolved from the
+ *     subject row, so the test is `STATEMENT_RECIPIENT_KINDS` — the kinds
+ *     `resolveContentRecipient` actually has an arm for. PROFILE and THREAD
+ *     are recipientless by design (#1690), so they are not gaps either.
+ *
+ * It derives from the ARM set and deliberately NOT from
+ * `REMOVABLE_SUBJECT_KINDS`, though the two hold the same three values today:
+ * removable asks "can this be taken down", the arm set asks "is there anyone
+ * to tell", and #2955's guard makes the first a SUBSET of the second rather
+ * than equal to it. A kind that gained an arm without becoming removable
+ * would be a gap this view stopped seeing.
+ *
+ * It takes STRINGS rather than the Prisma enums deliberately: the view reads
+ * rows back through a raw query, where these arrive as text, and a signature
+ * that only accepted the enum would push a cast to the call site — which is
+ * what `a-cast-erases-the-target` is about.
+ */
+export function expectsStatement(actionKind: string, subjectKind: string): boolean {
+    if (actionKind === 'NONE') return false;
+    if ((ACCOUNT_ACTION_KINDS as readonly string[]).includes(actionKind)) return true;
+    return (STATEMENT_RECIPIENT_KINDS as readonly string[]).includes(subjectKind);
+}
 
 /**
  * Refuse an outcome this platform cannot carry out, before anything is written.
@@ -433,6 +496,14 @@ export async function actOnNotice(input: {
         // 17(3)(b) basis) — so a terminated account is locked out today and
         // pseudonymised when that lands, rather than announced and left
         // reachable.
+        // DELIBERATELY NOT `ACCOUNT_ACTION_KINDS` (#2996). That constant answers
+        // "is this kind's statement recipient SUPPLIED rather than resolved";
+        // this branch answers "does this kind lock an account out". The two
+        // questions have the same answer today and are not the same question,
+        // so collapsing them would make a future kind that suspends without a
+        // supplied recipient — or carries one without suspending — silently
+        // take the wrong branch. Same reasoning as SESSION_MAX_AGE_DAYS and
+        // SESSION_IDLE_MAX_AGE_MINUTES being different numbers on purpose.
         if (input.actionKind === 'ACCOUNT_SUSPENDED'
             || input.actionKind === 'ACCOUNT_TERMINATED') {
             if (!input.suspendUserId) {
@@ -600,7 +671,7 @@ export async function actOnNotice(input: {
     // so there is no decision to explain.
     if (input.actionKind !== 'NONE') {
         const recipientUserId =
-            input.actionKind === 'ACCOUNT_SUSPENDED' || input.actionKind === 'ACCOUNT_TERMINATED'
+            (ACCOUNT_ACTION_KINDS as readonly string[]).includes(input.actionKind)
                 ? input.suspendUserId ?? null
                 : await resolveContentRecipient(report.subjectKind, report.subjectId);
 
@@ -661,6 +732,101 @@ export async function listUndeliveredStatements(limit?: number): Promise<
             createdAt: true,
         },
     });
+}
+
+/**
+ * Decisions that produced NO statement of reasons — #2996.
+ *
+ * The MIRROR of `listUndeliveredStatements` above, and it has to be a separate
+ * query rather than a filter on that one: that view ranges over statements, so
+ * it structurally cannot see a decision that produced none. "Written and not
+ * sent" and "never written" are different compliance failures with different
+ * remedies — dispatch is stuck, versus nobody was ever going to be told.
+ *
+ * ## Why this is still worth having after #2955
+ *
+ * #2955 closed the two causes. A derived guard makes a removable kind with no
+ * recipient arm unshippable, and `missingRow` logs at `warn` when a supported
+ * kind's row has since been deleted. So the remaining gap is DURABILITY AND
+ * QUERYABILITY, not detection: a log line is searchable until it rotates, and
+ * an auditor asking "show me every moderation decision with no statement of
+ * reasons" wants a query over rows. This is that query.
+ *
+ * ## RAW SQL, for P5.5b's reason
+ *
+ * There is no Prisma relation between `ModerationAction` and
+ * `StatementOfReasons` — only `actionId String` with an index — so `none: {}`
+ * is unavailable. The alternative to an anti-join is collecting every
+ * statement's `actionId` into a `notIn`, which grows without bound; the
+ * database does this under a LIMIT instead. Same decision `notice-score` made
+ * for its unscored-notices queue.
+ *
+ * **`rationale` is deliberately not selected, and a raw query is exactly why.**
+ * It is in `ENCRYPTED_FIELDS`, and the Prisma client extension is what
+ * decrypts — so a raw read returns the `v1:`/`v2:` envelope. Adding it to this
+ * SELECT would hand an auditor ciphertext that looks like a value, which is
+ * the P8.5 inbox trap. Nothing here needs it: the question is WHICH decisions
+ * went unexplained, and `actionId` is enough to go and read one properly.
+ *
+ * ## The filter is DERIVED
+ *
+ * #2996 asks for that explicitly, and its own draft SQL hardcoded three action
+ * kinds — the drift it warns about. The clauses are built from
+ * `ACCOUNT_ACTION_KINDS` and `STATEMENT_RECIPIENT_KINDS`, so a fourth subject
+ * kind is covered by the query the moment it gains a recipient arm.
+ * `expectsStatement` holds the same rule for one row, and
+ * the test asserts the two agree over every enum pair — because a SQL clause
+ * and a TypeScript predicate are two spellings, and this view exists because
+ * two spellings diverged once already.
+ *
+ * Newest first, unlike its sibling: the undelivered queue is measuring LAG so
+ * it reads oldest-first, while an unexplained decision is an incident and the
+ * most recent one is the one somebody still has time to answer.
+ */
+export interface UnexplainedDecision {
+    id: string;
+    actionKind: string;
+    subjectKind: string;
+    subjectId: string;
+    reportId: string | null;
+    createdAt: Date;
+}
+
+export async function listDecisionsWithoutStatement(
+    limit?: number,
+): Promise<UnexplainedDecision[]> {
+    const take = limit ?? DEFAULT_QUEUE_PAGE;
+
+    // Bind parameters, never interpolation — and `::text` on the enum columns
+    // so the comparison is against the bound strings rather than requiring a
+    // cast of each literal into the enum type.
+    const accountKinds = Prisma.join(
+        ACCOUNT_ACTION_KINDS.map((k) => Prisma.sql`${k}`),
+        ', ',
+    );
+    const recipientKinds = Prisma.join(
+        STATEMENT_RECIPIENT_KINDS.map((k) => Prisma.sql`${k}`),
+        ', ',
+    );
+
+    return prisma.$queryRaw<UnexplainedDecision[]>(Prisma.sql`
+        SELECT a."id",
+               a."actionKind"::text  AS "actionKind",
+               a."subjectKind"::text AS "subjectKind",
+               a."subjectId",
+               a."reportId",
+               a."createdAt"
+          FROM "ModerationAction" a
+          LEFT JOIN "StatementOfReasons" s ON s."actionId" = a."id"
+         WHERE s."id" IS NULL
+           AND a."actionKind"::text <> 'NONE'
+           AND (
+                a."actionKind"::text IN (${accountKinds})
+                OR a."subjectKind"::text IN (${recipientKinds})
+           )
+         ORDER BY a."createdAt" DESC
+         LIMIT ${take}
+    `);
 }
 
 /**
