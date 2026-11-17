@@ -1,0 +1,342 @@
+{
+  "schemaVersion": 1,
+  "compiledAt": "2026-11-17",
+  "conventions": [
+    "Every figure as printed by its source: yields in kg/ha, support rates in leva (stotinki) per ha. Nothing converted.",
+    "Yields are national averages for the harvest year; rates are per eligible hectare for the campaign year.",
+    "A figure without a cited source is not included."
+  ],
+  "sources": {
+    "mzh-ra460-2024": {
+      "title": "Добиви от полски култури – реколта 2024 (Агростатистика № 460)",
+      "publisher": "МЗХ",
+      "url": "https://www.mzh.government.bg/media/filer_public/2025/09/16/ra460_publicationcrops2024_en.pdf",
+      "published": "2025-09"
+    },
+    "mzh-rd09-440-2025": {
+      "title": "Заповед № РД 09-440 от 25.04.2025 г. — ставки за обвързано подпомагане за плодове и зеленчуци, 2024",
+      "publisher": "МЗХ",
+      "url": "https://dfz.bg/documents/d/guest/zapoved-stavki-2024_frv",
+      "published": "2025-04"
+    },
+    "dfz-ipk-2024": {
+      "title": "Производителите на протеинови култури получиха 31,7 млн. лева за Кампания 2024 (Заповед РД 09-488/13.05.2025)",
+      "publisher": "ДФЗ",
+      "url": "https://www.dfz.bg/en/-/%D0%BF%D1%80%D0%BE%D0%B8%D0%B7%D0%B2%D0%BE%D0%B4%D0%B8%D1%82%D0%B5%D0%BB%D0%B8%D1%82%D0%B5-%D0%BD%D0%B0-%D0%BF%D1%80%D0%BE%D1%82%D0%B5%D0%B8%D0%BD%D0%BE%D0%B2%D0%B8-%D0%BA%D1%83%D0%BB%D1%82%D1%83%D1%80%D0%B8-%D0%BF%D0%BE%D0%BB%D1%83%D1%87%D0%B8%D1%85",
+      "published": "2025-05"
+    }
+  },
+  "yields": [
+    {
+      "commodity": "wheat",
+      "label": {
+        "bg": "Пшеница"
+      },
+      "harvest": 2024,
+      "kgPerHa": 5731,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      },
+      "note": {
+        "bg": "Пшеницата включва обикновена и твърда пшеница, еднозърнест и двузърнест лимец."
+      }
+    },
+    {
+      "commodity": "barley",
+      "label": {
+        "bg": "Ечемик"
+      },
+      "harvest": 2024,
+      "kgPerHa": 5360,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "maize",
+      "label": {
+        "bg": "Царевица за зърно"
+      },
+      "harvest": 2024,
+      "kgPerHa": 3177,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "oats",
+      "label": {
+        "bg": "Овес"
+      },
+      "harvest": 2024,
+      "kgPerHa": 2263,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "rye",
+      "label": {
+        "bg": "Ръж"
+      },
+      "harvest": 2024,
+      "kgPerHa": 1988,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "triticale",
+      "label": {
+        "bg": "Тритикале"
+      },
+      "harvest": 2024,
+      "kgPerHa": 3054,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "peas",
+      "label": {
+        "bg": "Грах за зърно"
+      },
+      "harvest": 2024,
+      "kgPerHa": 1590,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "lentils",
+      "label": {
+        "bg": "Леща"
+      },
+      "harvest": 2024,
+      "kgPerHa": 976,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "chickpeas",
+      "label": {
+        "bg": "Нахут"
+      },
+      "harvest": 2024,
+      "kgPerHa": 1245,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "dry-beans",
+      "label": {
+        "bg": "Фасул"
+      },
+      "harvest": 2024,
+      "kgPerHa": 614,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 1
+      }
+    },
+    {
+      "commodity": "rapeseed",
+      "label": {
+        "bg": "Рапица"
+      },
+      "harvest": 2024,
+      "kgPerHa": 2461,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 3
+      }
+    },
+    {
+      "commodity": "sunflower",
+      "label": {
+        "bg": "Слънчоглед"
+      },
+      "harvest": 2024,
+      "kgPerHa": 1732,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 3
+      }
+    },
+    {
+      "commodity": "soybean",
+      "label": {
+        "bg": "Соя"
+      },
+      "harvest": 2024,
+      "kgPerHa": 1050,
+      "cite": {
+        "source": "mzh-ra460-2024",
+        "page": 3
+      }
+    }
+  ],
+  "supportRates": [
+    {
+      "scheme": "fruit",
+      "label": {
+        "bg": "Плодове"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 183607,
+      "perHaOver30Stotinki": 122406,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 1,
+        "point": "I"
+      }
+    },
+    {
+      "scheme": "fruit-young",
+      "label": {
+        "bg": "Плодови насаждения до встъпване в плододаване"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 67999,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 1,
+        "point": "II"
+      }
+    },
+    {
+      "scheme": "veg-tomato-cucumber",
+      "label": {
+        "bg": "Зеленчуци: домати, краставици, корнишони, патладжани"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 199343,
+      "perHaOver30Stotinki": 132895,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 1,
+        "point": "III"
+      }
+    },
+    {
+      "scheme": "veg-pepper",
+      "label": {
+        "bg": "Зеленчуци: пипер"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 226552,
+      "perHaOver30Stotinki": 151035,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 1,
+        "point": "IV"
+      }
+    },
+    {
+      "scheme": "veg-onion-garlic",
+      "label": {
+        "bg": "Зеленчуци: лук и чесън"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 128477,
+      "perHaOver30Stotinki": 85652,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 1,
+        "point": "V"
+      }
+    },
+    {
+      "scheme": "potato-seed",
+      "label": {
+        "bg": "Семена от картофи"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 152944,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 2,
+        "point": "VI"
+      }
+    },
+    {
+      "scheme": "veg-carrot-cabbage-melon",
+      "label": {
+        "bg": "Зеленчуци: моркови, зеле, дини, пъпеши"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 86366,
+      "perHaOver30Stotinki": 57577,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 2,
+        "point": "VII"
+      }
+    },
+    {
+      "scheme": "greenhouse",
+      "label": {
+        "bg": "Оранжерийно производство"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 1600713,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 2,
+        "point": "VIII"
+      }
+    },
+    {
+      "scheme": "mountain-fruit-veg",
+      "label": {
+        "bg": "Плодове и зеленчуци в планинските райони"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 237548,
+      "cite": {
+        "source": "mzh-rd09-440-2025",
+        "page": 2,
+        "point": "IX"
+      }
+    },
+    {
+      "scheme": "protein",
+      "label": {
+        "bg": "Протеинови култури (фасул, леща, нахут, грах, фъстъци, соя, бакла, люцерна, еспарзета, фий, детелина, вигна, бурчак, лупина, звездан и смески)"
+      },
+      "campaign": 2024,
+      "currency": "BGN",
+      "perHaStotinki": 25474,
+      "cite": {
+        "source": "dfz-ipk-2024"
+      },
+      "commodities": [
+        "peas",
+        "lentils",
+        "chickpeas",
+        "dry-beans",
+        "soybean"
+      ]
+    }
+  ]
+}
