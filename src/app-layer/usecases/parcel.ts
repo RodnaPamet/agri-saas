@@ -35,6 +35,8 @@ export interface CreateParcelInput {
 
 export interface UpdateParcelInput {
     name?: string;
+    /** The farmer's nickname (#3169); null or blank clears it. */
+    displayName?: string | null;
     cropType?: string | null;
     /**
      * КАИ cadastral identifier (`ЕКАТТЕ.масив.парцел`). A non-empty value is
