@@ -43,7 +43,9 @@ export type OutboundPurpose =
     | 'email-verification'
     | 'registration'
     | 'notification-outbox'
-    | 'mail-canary';
+    | 'mail-canary'
+    /** New МЗХ publications, to the owner (agri-saas#3146). */
+    | 'mzh-discovery';
 
 export interface EmailMessage {
     to: string;
