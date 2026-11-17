@@ -158,4 +158,63 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
                 .openapi('AgroThresholds'),
         },
     });
+
+    const Day = z.string().openapi({ format: 'date', example: '2026-11-05' });
+    const table = <T extends z.ZodTypeAny>(row: T) =>
+        z.object({
+            asOf: Day.openapi({ description: 'The table\'s own «към» date — what its figures describe.' }),
+            lastYear: z.number().int().openapi({ example: 2025, description: 'The comparison year.' }),
+            title: z.string().openapi({ example: 'Засети площи с есенници' }),
+            rows: z.array(row),
+        });
+    op(registry, {
+        method: 'get',
+        path: '/api/agro-progress',
+        operationId: 'getAgroProgress',
+        summary: 'The field campaign\'s progress from МЗХ\'s weekly bulletin',
+        description:
+            'Harvested shares and sown hectares from the newest «Оперативен анализ» (#3173), for Табло. Owner ruling 2026-11-17: harvest as a SHARE, sowing as hectares and the printed change on last year — МЗХ gives no plan to divide sowing by.' +
+            '\n\n**Person-scoped and farm-free**, like `GET /api/agro-benchmarks`: national figures, identical for every farm.' +
+            '\n\nThe tables change with the season (summer: the winter-crop harvest; autumn: sunflower and maize, and the autumn sowing; spring: the spring sowing). Every row was checked against the table\'s own arithmetic before it was stored; a row that did not agree with itself is absent rather than guessed. `progress` is null until the weekly job has read a bulletin with progress tables. Attribute as «Източник: МЗХ».',
+        tags: ['Agro'],
+        success: {
+            status: 200,
+            description: 'The newest snapshot, or null.',
+            schema: z
+                .object({
+                    progress: z
+                        .object({
+                            asOf: Day,
+                            bulletinDate: Day,
+                            sourceUrl: z.string(),
+                            harvest: z.array(
+                                table(
+                                    z.object({
+                                        label: z.string().openapi({ example: 'царевица за зърно', description: 'As printed; show it as the crop\'s name.' }),
+                                        commodity: z.string().nullable().openapi({ example: 'maize' }),
+                                        areaHa: z.number().int(),
+                                        harvestedHa: z.number().int(),
+                                        harvestedPct: z.number().int().openapi({ example: 92, description: 'harvestedHa ÷ areaHa, whole percent, half up.' }),
+                                        productionT: z.number().int(),
+                                        yieldKgPerDa: z.number().int(),
+                                    }),
+                                ),
+                            ),
+                            sowing: z.array(
+                                table(
+                                    z.object({
+                                        label: z.string().openapi({ example: 'пшеница' }),
+                                        commodity: z.string().nullable().openapi({ example: 'wheat' }),
+                                        sownHa: z.number().int().openapi({ example: 767199 }),
+                                        lastYearHa: z.number().int().nullable(),
+                                        changePct: z.string().nullable().openapi({ example: '16.6', description: 'The printed year-on-year change, a decimal string with a point; null where МЗХ printed «-».' }),
+                                    }),
+                                ),
+                            ),
+                        })
+                        .nullable(),
+                })
+                .openapi('AgroProgress'),
+        },
+    });
 }

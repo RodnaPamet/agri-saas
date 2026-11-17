@@ -2088,6 +2088,193 @@ exports[`API contract — per-schema snapshots schema: AgroCalendarCitation 1`] 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AgroProgress 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "progress": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "asOf": {
+          "type": "string",
+          "format": "date",
+          "example": "2026-11-05"
+        },
+        "bulletinDate": {
+          "type": "string",
+          "format": "date",
+          "example": "2026-11-05"
+        },
+        "sourceUrl": {
+          "type": "string"
+        },
+        "harvest": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "asOf": {
+                "type": "string",
+                "format": "date",
+                "example": "2026-11-05",
+                "description": "The table's own «към» date — what its figures describe."
+              },
+              "lastYear": {
+                "type": "integer",
+                "example": 2025,
+                "description": "The comparison year."
+              },
+              "title": {
+                "type": "string",
+                "example": "Засети площи с есенници"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "example": "царевица за зърно",
+                      "description": "As printed; show it as the crop's name."
+                    },
+                    "commodity": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "example": "maize"
+                    },
+                    "areaHa": {
+                      "type": "integer"
+                    },
+                    "harvestedHa": {
+                      "type": "integer"
+                    },
+                    "harvestedPct": {
+                      "type": "integer",
+                      "example": 92,
+                      "description": "harvestedHa ÷ areaHa, whole percent, half up."
+                    },
+                    "productionT": {
+                      "type": "integer"
+                    },
+                    "yieldKgPerDa": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "commodity",
+                    "areaHa",
+                    "harvestedHa",
+                    "harvestedPct",
+                    "productionT",
+                    "yieldKgPerDa"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "asOf",
+              "lastYear",
+              "title",
+              "rows"
+            ]
+          }
+        },
+        "sowing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "asOf": {
+                "type": "string",
+                "format": "date",
+                "example": "2026-11-05",
+                "description": "The table's own «към» date — what its figures describe."
+              },
+              "lastYear": {
+                "type": "integer",
+                "example": 2025,
+                "description": "The comparison year."
+              },
+              "title": {
+                "type": "string",
+                "example": "Засети площи с есенници"
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "example": "пшеница"
+                    },
+                    "commodity": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "example": "wheat"
+                    },
+                    "sownHa": {
+                      "type": "integer",
+                      "example": 767199
+                    },
+                    "lastYearHa": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "changePct": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "example": "16.6",
+                      "description": "The printed year-on-year change, a decimal string with a point; null where МЗХ printed «-»."
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "commodity",
+                    "sownHa",
+                    "lastYearHa",
+                    "changePct"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "asOf",
+              "lastYear",
+              "title",
+              "rows"
+            ]
+          }
+        }
+      },
+      "required": [
+        "asOf",
+        "bulletinDate",
+        "sourceUrl",
+        "harvest",
+        "sowing"
+      ]
+    }
+  },
+  "required": [
+    "progress"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AgroSignals 1`] = `
 "{
   "type": "object",

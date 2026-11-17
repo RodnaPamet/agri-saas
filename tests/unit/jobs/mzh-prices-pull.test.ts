@@ -14,10 +14,12 @@
  */
 const upsertSeries = jest.fn();
 const upsertPoint = jest.fn();
+const upsertProgress = jest.fn();
 jest.mock('@/lib/prisma', () => ({
     prisma: {
         marketPriceSeries: { upsert: (...a: unknown[]) => upsertSeries(...a) },
         marketPricePoint: { upsert: (...a: unknown[]) => upsertPoint(...a) },
+        campaignProgressSnapshot: { upsert: (...a: unknown[]) => upsertProgress(...a) },
     },
 }));
 
@@ -72,6 +74,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     upsertSeries.mockImplementation(async () => ({ id: 'series-1' }));
     upsertPoint.mockResolvedValue({ id: 'point-1' });
+    upsertProgress.mockResolvedValue({ id: 'progress-1' });
     invalidate.mockResolvedValue(3);
 });
 
@@ -288,5 +291,43 @@ describe('failure handling', () => {
         // No write, so no cache drop — invalidating here would be work for
         // nothing and would hide a genuinely empty week behind a busy log.
         expect(invalidate).not.toHaveBeenCalled();
+    });
+});
+
+describe('the field campaign\'s progress from the same bulletin (#3173)', () => {
+    const PROGRESS = readFileSync(join(process.cwd(), 'tests/fixtures/mzh/progress-2026-11-11.txt'), 'utf8');
+
+    it('stores the harvest and sowing tables, keyed on the bulletin\'s date', async () => {
+        const r = await runMzhPricesPull({
+            fetchImpl: fetchDouble(INDEX_HTML),
+            extractText: async () => `${PROGRESS}\n${BULLETIN}`,
+        });
+        expect(r.progress).toMatchObject({ harvestTables: 1, sowingTables: 1, stored: true, refused: [] });
+        const args = upsertProgress.mock.calls[0][0] as {
+            where: { bulletinDate: Date };
+            create: { asOf: Date; tablesJson: { harvest: Array<{ rows: Array<{ harvestedPct: number }> }> } };
+        };
+        expect(args.where.bulletinDate.toISOString().slice(0, 10)).toBe('2026-10-07');
+        // Dated on the tables' own «към», never the read time.
+        expect(args.create.asOf.toISOString().slice(0, 10)).toBe('2026-11-05');
+        expect(args.create.tablesJson.harvest[0].rows.map((x) => x.harvestedPct)).toEqual([99, 92]);
+        // The prices are still read from the same text.
+        expect(r.verdict).toBe('clean');
+    });
+
+    it('stores nothing for a bulletin without progress tables, keeping the last snapshot', async () => {
+        const r = await runMzhPricesPull({ fetchImpl: fetchDouble(INDEX_HTML), extractText: async () => BULLETIN });
+        expect(upsertProgress).not.toHaveBeenCalled();
+        expect(r.progress).toMatchObject({ harvestTables: 0, sowingTables: 0, stored: false });
+    });
+
+    it('logs refused rows rather than storing a wrong figure', async () => {
+        const broken = PROGRESS.replace('945 428   943 729', '945 428   953 729');
+        const r = await runMzhPricesPull({ fetchImpl: fetchDouble(INDEX_HTML), extractText: async () => broken });
+        expect(r.progress.refused).toEqual([expect.objectContaining({ label: 'слънчоглед' })]);
+        expect(warn).toHaveBeenCalledWith('mzh.progress_rows_refused', expect.objectContaining({ refused: r.progress.refused }));
+        const stored = (upsertProgress.mock.calls[0][0] as { create: { tablesJson: { harvest: Array<{ rows: Array<{ label: string }> }> } } })
+            .create.tablesJson.harvest[0].rows.map((x) => x.label);
+        expect(stored).toEqual(['царевица за зърно']);
     });
 });
