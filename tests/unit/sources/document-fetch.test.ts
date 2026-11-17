@@ -40,7 +40,10 @@ function reply(
 }
 
 function fetcher(res: Response | (() => Promise<Response>)) {
-    return jest.fn(async () => (typeof res === 'function' ? res() : res));
+    // The `url` parameter is declared even though the double ignores it:
+    // without it `mock.calls[0][0]` indexes a zero-length tuple, and the
+    // call-site assertion below is the whole reason this is a spy.
+    return jest.fn(async (_url: string) => (typeof res === 'function' ? res() : res));
 }
 
 async function measure(
