@@ -804,8 +804,8 @@ model DirectMessage {
   /// «Съобщението е изтрито» copy rather than the original body, which the
   /// soft-deleted row still contains until a retraction overwrites it.
   replyToMessageId String?
-  replyTo          DirectMessage?    @relation("DirectMessageReply", fields: [replyToMessageId], references: [id], onDelete: SetNull)
-  replies          DirectMessage[]   @relation("DirectMessageReply")
+  replyTo          DirectMessage?  @relation("DirectMessageReply", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies          DirectMessage[] @relation("DirectMessageReply")
 
   conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   reactions    MessageReaction[]

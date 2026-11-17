@@ -125,8 +125,8 @@ model Tenant {
   reminderHistories        ReminderHistory[]
   tasks                    Task[]
   taskComments             TaskComment[]
-  parcelComments             ParcelComment[]
-  parcelIndexReadings        ParcelIndexReading[]
+  parcelComments           ParcelComment[]
+  parcelIndexReadings      ParcelIndexReading[]
   taskLinks                TaskLink[]
   taskWatchers             TaskWatcher[]
   identityProviders        TenantIdentityProvider[]
@@ -221,14 +221,14 @@ model Tenant {
   googleOAuthStates          GoogleOAuthState[]
   /// #493 — product-usage telemetry. 90-day retention, swept daily.
   usageEvents                UsageEvent[]
-  machineTrackers       MachineTracker[]
-  machinePositions      MachinePosition[]
-  workedParcels         WorkedParcel[]
-  machineWorkedDays     MachineWorkedDay[]
-  machineAreaStates    MachineAreaState[]
-  taskAssets            TaskAsset[]
-  machineGeofenceStates MachineGeofenceState[]
-  machineTelematicsLinks MachineTelematicsLink[]
+  machineTrackers            MachineTracker[]
+  machinePositions           MachinePosition[]
+  workedParcels              WorkedParcel[]
+  machineWorkedDays          MachineWorkedDay[]
+  machineAreaStates          MachineAreaState[]
+  taskAssets                 TaskAsset[]
+  machineGeofenceStates      MachineGeofenceState[]
+  machineTelematicsLinks     MachineTelematicsLink[]
 
   @@index([organizationId])
 }
@@ -821,7 +821,7 @@ model User {
   /// permitted surfaces on every render — a role can change after the
   /// write, and a list validated only when stored would then offer a
   /// MECHANISATOR a tab that 403s.
-  bottomTabOrder                Json?
+  bottomTabOrder     Json?
   /// The reader's chosen Новини tags — a `string[]`, or null (#231 §7).
   ///
   /// A `Json?` column on `User` rather than a table, following
@@ -846,7 +846,7 @@ model User {
   /// vocabulary by the owner's decision, so an unknown tag on PUT is a client
   /// bug worth a 400. Reject unknown on write, ignore unknown on read — the
   /// two rules answer different questions about who chose the value.
-  newsTagPreferences            Json?
+  newsTagPreferences Json?
 
   /// P9.7 (#2941) — the 07:15 digest of channel activity, opt-in.
   ///
@@ -864,7 +864,7 @@ model User {
   /// per-event pushes sets `UserNotificationPreference.delivery =
   /// DAILY_DIGEST`, which `resolveDelivery` already honours — expressing the
   /// same choice twice would be two sources of truth for one decision.
-  channelDigestOptIn            Boolean   @default(false)
+  channelDigestOptIn Boolean @default(false)
 
   /// The last day a channel digest was sent to this person, in `Europe/Sofia`.
   ///
@@ -877,7 +877,7 @@ model User {
   /// PERSON: 07:15 passes for everybody at the same instant, but a send can
   /// fail for one person and succeed for the rest, and a single cursor would
   /// either re-send to everybody or to nobody.
-  channelDigestSentOn           DateTime? @db.Date
+  channelDigestSentOn           DateTime?                    @db.Date
   accounts                      Account[]
   ownedAssets                   Asset[]                      @relation("AssetOwner")
   auditLogs                     AuditLog[]
@@ -891,7 +891,7 @@ model User {
   createdTasks                  Task[]                       @relation("TaskCreator")
   reviewingTasks                Task[]                       @relation("TaskReviewer")
   taskCommentsCreated           TaskComment[]                @relation("TaskCommentCreator")
-  parcelCommentsCreated           ParcelComment[]                @relation("ParcelCommentCreator")
+  parcelCommentsCreated         ParcelComment[]              @relation("ParcelCommentCreator")
   taskWatches                   TaskWatcher[]
   invitesSent                   TenantInvite[]
   invitedMemberships            TenantMembership[]           @relation("MembershipInviter")
@@ -960,8 +960,9 @@ model User {
   /// question the moderation console needs — without a full scan. PARTIAL in
   /// the migration (`WHERE "suspendedAt" IS NOT NULL`), because the rows that
   /// matter are the handful that are set, not the thousands that are NULL.
-  machineTrackersInformed MachineTracker[] @relation("MachineTrackerDriversInformedBy")
+  machineTrackersInformed   MachineTracker[]        @relation("MachineTrackerDriversInformedBy")
   machineTelematicsInformed MachineTelematicsLink[] @relation("MachineTelematicsDriversInformedBy")
+
   @@index([suspendedAt])
   /// P5.6b (#1597). Both PARTIAL in the migration (`WHERE … IS NOT NULL`),
   /// which Prisma's DSL cannot express — the sweep only ever wants rows where

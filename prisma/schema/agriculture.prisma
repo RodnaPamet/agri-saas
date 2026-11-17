@@ -427,21 +427,21 @@ model Location {
 /// (never client-written). propertiesJson preserves the source
 /// feature's attributes.
 model Parcel {
-  id                 String                                       @id @default(cuid())
-  tenantId           String
-  locationId         String
-  key                String?
-  name               String
-  cropType           String?
+  id                   String                                       @id @default(cuid())
+  tenantId             String
+  locationId           String
+  key                  String?
+  name                 String
+  cropType             String?
   /// Bulgarian КАИС cadastral identifier `EKATTE.masiv.parcel`
   /// (e.g. `68134.8360.729`), parsed from the source attributes at import.
-  cadastralId        String?
+  cadastralId          String?
   /// 5-digit EKATTE settlement prefix of `cadastralId` (leading zeros
   /// significant), indexed for per-settlement cadastre lookups.
-  ekatte             String?
-  geometry           Unsupported("geometry(MultiPolygon, 4326)")?
-  areaHa             Decimal?                                     @db.Decimal(12, 4)
-  propertiesJson     Json?
+  ekatte               String?
+  geometry             Unsupported("geometry(MultiPolygon, 4326)")?
+  areaHa               Decimal?                                     @db.Decimal(12, 4)
+  propertiesJson       Json?
   /// Human-readable soil label (USDA texture class, e.g. "Silty clay
   /// loam", or a WRB group) derived from the modelled soil profile.
   /// A MODELLED ESTIMATE from open data (SoilGrids), never a lab result.
@@ -449,19 +449,19 @@ model Parcel {
   /// diary's per-field header names it ("Дерманци (20688)"). Backfilled from
   /// the spatial import's `virtual_ek`; blank for КАИС-imported parcels,
   /// which carry no equivalent.
-  landDistrict       String?
+  landDistrict         String?
   /// Местност — the traditional field name ("ЛЕШНИЦА, ПЪТИЩА И КАНАЛИ").
   /// Backfilled from the spatial import's `mestnost`.
-  locality           String?
+  locality             String?
   /// Склад за растителна продукция. No import carries it — entered by hand
   /// or left blank, exactly as on the paper form.
-  produceStore       String?
-  soilType           String?
+  produceStore         String?
+  soilType             String?
   /// Structured soil profile — the SoilGrids-derived reading + provenance:
   /// { wrbClass?, textureClass, sandPct, siltPct, clayPct, phH2o, socGkg,
   ///   bulkDensity, depth, uncertainty?, provider, fetchedAt }.
   /// Null until the async soil-fetch job populates it ("soil pending").
-  soilJson           Json?
+  soilJson             Json?
   /// When the most recent spatial import of this parcel's LOCATION did not
   /// find a matching shape for this row, and therefore left it behind.
   ///
@@ -473,7 +473,7 @@ model Parcel {
   /// NULL means the parcel was present in the last import of its location —
   /// or that the location has never been imported into, which is the same
   /// thing from a client's point of view: nothing to warn about.
-  absentFromImportAt DateTime?
+  absentFromImportAt   DateTime?
   /// The window of acquisition dates this parcel's stored satellite readings
   /// have actually been ASKED about — not the window they have readings FOR.
   ///
@@ -486,8 +486,8 @@ model Parcel {
   ///
   /// Both NULL means never asked. Dates, not timestamps: a satellite pass is
   /// identified by its acquisition DAY throughout this feature.
-  indexReadingsFrom    DateTime?                                  @db.Date
-  indexReadingsThrough DateTime?                                  @db.Date
+  indexReadingsFrom    DateTime?                                    @db.Date
+  indexReadingsThrough DateTime?                                    @db.Date
   /// Which scene-selection algorithm the window above was searched under —
   /// `SCENE_SELECTION_VERSION` in `@/lib/agro/earth-engine`.
   ///
@@ -499,12 +499,12 @@ model Parcel {
   /// so a bump re-searches every parcel with no migration step to forget.
   indexReadingsAlgo    Int?
   /// "Try it with sample data" tag — see Location.isSampleData.
-  isSampleData       Boolean                                      @default(false)
-  createdAt          DateTime                                     @default(now())
-  updatedAt          DateTime                                     @updatedAt
-  deletedAt          DateTime?
-  deletedByUserId    String?
-  retentionUntil     DateTime?
+  isSampleData         Boolean                                      @default(false)
+  createdAt            DateTime                                     @default(now())
+  updatedAt            DateTime                                     @updatedAt
+  deletedAt            DateTime?
+  deletedByUserId      String?
+  retentionUntil       DateTime?
 
   tenant               Tenant                      @relation(fields: [tenantId], references: [id])
   location             Location                    @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Cascade)
@@ -512,13 +512,13 @@ model Parcel {
   plantings            Planting[]
   cropPlans            CropPlan[]
   leases               ParcelLease[]
-  comments           ParcelComment[]
-  indexReadings      ParcelIndexReading[]
+  comments             ParcelComment[]
+  indexReadings        ParcelIndexReading[]
   cropSeasons          ParcelCropSeason[]
   weedObservations     ParcelWeedObservation[]
   costEntryAllocations CostEntryAllocationParcel[]
   costEntries          CostEntry[]
-  workedParcels WorkedParcel[]
+  workedParcels        WorkedParcel[]
 
   @@unique([id, tenantId])
   @@index([tenantId, locationId])
@@ -772,14 +772,14 @@ model ParcelIndexReading {
 }
 
 model ParcelComment {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   tenantId         String
   parcelId         String
   /// ENCRYPTED — see the model docblock.
   body             String
   createdByUserId  String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   /// Soft delete (owner ruling 2026-11-06: author or farm ADMIN may remove a
   /// note). The row is RETAINED and the list read filters it out, so a removal
   /// is recoverable and the audit chain's `PARCEL_COMMENT_DELETED` entry still

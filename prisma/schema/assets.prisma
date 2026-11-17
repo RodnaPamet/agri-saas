@@ -86,7 +86,8 @@ model Asset {
   machineAreaStates    MachineAreaState[]
   taskAssets           TaskAsset[]
   machineGeofenceState MachineGeofenceState?
-  telematicsLinks MachineTelematicsLink[]
+  telematicsLinks      MachineTelematicsLink[]
+
   @@unique([tenantId, key])
   /// Composite target for the journal link tables' `[id, tenantId]`
   /// FK style — the same barrier `Location` / `Parcel` / the retired

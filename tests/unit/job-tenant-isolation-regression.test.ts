@@ -309,7 +309,14 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // #3136 — writes the same global `MarketPriceSeries` catalogue from МЗХ's
         // weekly bulletin, so it holds the identical position to its neighbour
         // above: no tenant axis, nothing forgotten.
-        'mzh-prices-pull'];
+        'mzh-prices-pull',
+        // #3146 — hashes the documents the agro calendar CITES and flags one
+        // whose bytes changed. `SourceDocumentWatch` carries no tenantId
+        // because a published МЗХ bulletin is one fact for every farm, and
+        // the job's population comes from the committed calendar dataset
+        // rather than from any farm's rows — so there is no tenant axis to
+        // isolate and a resolved one would be invented.
+        'source-document-watch'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -450,6 +457,10 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // #3081 — takes no arguments: the handoff path and the clock are the
         // job's own, and the catalogue it writes has no tenant.
         'ZarnoBorsaPullPayload', 'MzhPricesPullPayload',
+        // #3146 — takes no arguments: the citation list comes from the
+        // committed calendar dataset and the clock is the job's own. The
+        // registry it writes holds published documents, which have no farm.
+        'SourceDocumentWatchPayload',
         // #3020 — the 06:00 summary's payload: a recipient and the night key
         // that scheduled it. No tenantId for its producer's reason, and the
         // night key is the SCHEDULING identity rather than a scope — the job

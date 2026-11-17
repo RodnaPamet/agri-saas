@@ -314,20 +314,20 @@ model GoogleOAuthState {
 }
 
 model IntegrationConnection {
-  id              String                   @id @default(cuid())
-  tenantId        String
-  provider        String
-  name            String
-  isEnabled       Boolean                  @default(true)
-  configJson      Json                     @default("{}")
-  secretEncrypted String?
-  lastTestedAt    DateTime?
-  lastTestStatus  String?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  tenant          Tenant                   @relation(fields: [tenantId], references: [id])
-  executions      IntegrationExecution[]
-  syncMappings    IntegrationSyncMapping[]
+  id                     String                   @id @default(cuid())
+  tenantId               String
+  provider               String
+  name                   String
+  isEnabled              Boolean                  @default(true)
+  configJson             Json                     @default("{}")
+  secretEncrypted        String?
+  lastTestedAt           DateTime?
+  lastTestStatus         String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id])
+  executions             IntegrationExecution[]
+  syncMappings           IntegrationSyncMapping[]
   machineTelematicsLinks MachineTelematicsLink[]
 
   @@unique([tenantId, provider, name])
