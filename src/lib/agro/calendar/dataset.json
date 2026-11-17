@@ -86,6 +86,42 @@
       "publisher": "МЗХ",
       "url": "https://www.mzh.government.bg/media/filer_public/2019/10/02/operativen_analiz_2019-10-02.pdf",
       "published": "2019-10"
+    },
+    "naas-kal-2014-03-stzagora": {
+      "title": "Календар на земеделеца — март (офис Стара Загора)",
+      "publisher": "НССЗ",
+      "url": "https://www.naas.government.bg/kalendar/2011g/mart/p1933",
+      "published": "2014-02"
+    },
+    "naas-kal-2013-10-stzagora": {
+      "title": "Календар на земеделеца за месец октомври (ТОО Стара Загора)",
+      "publisher": "НССЗ",
+      "url": "https://www.naas.government.bg/data/kalendari/zem.kal.za%20mes.%20okt..pdf",
+      "published": "2013-10"
+    },
+    "naas-kal-2012-04-stzagora": {
+      "title": "Календар на земеделеца — април (офис Стара Загора)",
+      "publisher": "НССЗ",
+      "url": "https://www.naas.government.bg/kalendar/2011g/april/p1192",
+      "published": "2012-04"
+    },
+    "naas-kal-2014-06-pleven": {
+      "title": "Календар на земеделеца — юни (офис Плевен)",
+      "publisher": "НССЗ",
+      "url": "https://www.naas.government.bg/kalendar/2011g/%D0%AE%D0%BD%D0%B8/p2059",
+      "published": "2014-05"
+    },
+    "naas-kal-2014-08-shumen": {
+      "title": "Календар на земеделеца — август (офис Шумен)",
+      "publisher": "НССЗ",
+      "url": "https://www.naas.government.bg/kalendar/2011g/%D0%90%D0%B2%D0%B3%D1%83%D1%81%D1%82/p2070",
+      "published": "2014-05"
+    },
+    "naas-kal-2014-09-pleven": {
+      "title": "Календар на земеделския стопанин — септември (офис Плевен)",
+      "publisher": "НССЗ",
+      "url": "https://www.naas.government.bg/kalendar/2011g/%D0%A1%D0%B5%D0%BF%D1%82%D0%B5%D0%BC%D0%B2%D1%80%D0%B8/p2071",
+      "published": "2014-05"
     }
   },
   "crops": [
@@ -1100,6 +1136,29 @@
             "source": "mzh-tk-vegetables-2024",
             "page": 100
           }
+        },
+        {
+          "id": "tomato.irrigation",
+          "kind": "fieldwork",
+          "region": "both",
+          "from": "05-01",
+          "to": "09-30",
+          "title": {
+            "bg": "Напояване"
+          },
+          "note": {
+            "bg": "Поливане след засаждането на полето (ранните домати се засаждат 17–30 април, средноранните 25 април – 15 май). Краят е по примерната технология на МЗХ."
+          },
+          "cite": {
+            "source": "naas-kal-2012-04-stzagora",
+            "page": 1
+          },
+          "alsoCite": [
+            {
+              "source": "mzh-tk-vegetables-2024",
+              "page": 100
+            }
+          ]
         }
       ]
     },
@@ -1138,6 +1197,29 @@
             "source": "mzh-tk-vegetables-2024",
             "page": 87
           }
+        },
+        {
+          "id": "pepper.irrigation",
+          "kind": "fieldwork",
+          "region": "both",
+          "from": "05-01",
+          "to": "09-30",
+          "title": {
+            "bg": "Напояване"
+          },
+          "note": {
+            "bg": "Поливане след засаждането на полето (ранните домати се засаждат 17–30 април, средноранните 25 април – 15 май). Краят е по примерната технология на МЗХ."
+          },
+          "cite": {
+            "source": "naas-kal-2012-04-stzagora",
+            "page": 1
+          },
+          "alsoCite": [
+            {
+              "source": "mzh-tk-vegetables-2024",
+              "page": 88
+            }
+          ]
         }
       ]
     },
@@ -1176,6 +1258,29 @@
             "source": "mzh-tk-vegetables-2024",
             "page": 74
           }
+        },
+        {
+          "id": "aubergine.irrigation",
+          "kind": "fieldwork",
+          "region": "both",
+          "from": "05-01",
+          "to": "09-30",
+          "title": {
+            "bg": "Напояване"
+          },
+          "note": {
+            "bg": "Поливане след засаждането на полето (ранните домати се засаждат 17–30 април, средноранните 25 април – 15 май). Краят е по примерната технология на МЗХ."
+          },
+          "cite": {
+            "source": "naas-kal-2012-04-stzagora",
+            "page": 1
+          },
+          "alsoCite": [
+            {
+              "source": "mzh-tk-vegetables-2024",
+              "page": 75
+            }
+          ]
         }
       ]
     },
@@ -1323,6 +1428,140 @@
           "cite": {
             "source": "mzh-tk-vegetables-2024",
             "page": 123
+          }
+        }
+      ]
+    },
+    {
+      "key": "garlic",
+      "group": "vegetable",
+      "name": {
+        "bg": "Чесън"
+      },
+      "windows": [
+        {
+          "id": "garlic.sow-spring",
+          "kind": "sowing",
+          "band": "optimal",
+          "region": "south",
+          "from": "03-01",
+          "to": "03-31",
+          "title": {
+            "bg": "Летен (пролетен) чесън"
+          },
+          "seedRate": {
+            "min": 100,
+            "max": 150,
+            "unit": "kg/da"
+          },
+          "note": {
+            "bg": "Засаждане на летния чесън през март, 100–150 кг/дка."
+          },
+          "cite": {
+            "source": "naas-kal-2014-03-stzagora",
+            "page": 1
+          }
+        },
+        {
+          "id": "garlic.sow-winter",
+          "kind": "sowing",
+          "band": "optimal",
+          "region": "south",
+          "from": "10-01",
+          "to": "11-30",
+          "title": {
+            "bg": "Зимен чесън"
+          },
+          "seedRate": {
+            "min": 100,
+            "max": 150,
+            "unit": "kg/da"
+          },
+          "note": {
+            "bg": "Засаждане на зимния чесън през октомври–ноември, 100–150 кг/дка."
+          },
+          "cite": {
+            "source": "naas-kal-2013-10-stzagora",
+            "page": 1
+          }
+        }
+      ]
+    },
+    {
+      "key": "green-pea",
+      "group": "vegetable",
+      "name": {
+        "bg": "Зелен грах"
+      },
+      "windows": [
+        {
+          "id": "green-pea.sow",
+          "kind": "sowing",
+          "band": "optimal",
+          "region": "south",
+          "from": "03-01",
+          "to": "03-10",
+          "seedRate": {
+            "min": 15,
+            "max": 18,
+            "unit": "kg/da"
+          },
+          "note": {
+            "bg": "Сеитба на открито 1–10 март, 15–18 кг/дка."
+          },
+          "cite": {
+            "source": "naas-kal-2014-03-stzagora",
+            "page": 1
+          }
+        }
+      ]
+    },
+    {
+      "key": "carrot",
+      "group": "vegetable",
+      "name": {
+        "bg": "Моркови"
+      },
+      "windows": [
+        {
+          "id": "carrot.sow-early",
+          "kind": "sowing",
+          "band": "optimal",
+          "region": "south",
+          "from": "03-01",
+          "to": "03-31",
+          "title": {
+            "bg": "Ранно производство"
+          },
+          "seedRate": {
+            "min": 0.6,
+            "max": 0.8,
+            "unit": "kg/da"
+          },
+          "note": {
+            "bg": "Сеитба на ранните моркови през март, 0,6–0,8 кг/дка."
+          },
+          "cite": {
+            "source": "naas-kal-2014-03-stzagora",
+            "page": 1
+          }
+        },
+        {
+          "id": "carrot.sow-late",
+          "kind": "sowing",
+          "band": "optimal",
+          "region": "north",
+          "from": "06-01",
+          "to": "06-30",
+          "title": {
+            "bg": "Късно полско производство"
+          },
+          "note": {
+            "bg": "Сеитба през юни, при междуредово разстояние 30–35 см и посевна норма 60–70 г на 100 кв. м."
+          },
+          "cite": {
+            "source": "naas-kal-2014-06-pleven",
+            "page": 1
           }
         }
       ]
@@ -2551,6 +2790,26 @@
             "source": "mzh-tk-perennials-2024",
             "page": 108
           }
+        },
+        {
+          "id": "table-grape.harvest",
+          "kind": "harvest",
+          "region": "north",
+          "from": "08-01",
+          "to": "09-30",
+          "note": {
+            "bg": "През август започва брането на ранните десертни сортове; през септември гроздето от десертните сортове се бере на няколко пъти."
+          },
+          "cite": {
+            "source": "naas-kal-2014-08-shumen",
+            "page": 1
+          },
+          "alsoCite": [
+            {
+              "source": "naas-kal-2014-09-pleven",
+              "page": 1
+            }
+          ]
         }
       ]
     },
