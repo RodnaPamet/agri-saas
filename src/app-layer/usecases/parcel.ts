@@ -370,3 +370,42 @@ export async function listTenantParcelsByCrop(
         ParcelRepository.listTenantParcelsByCrop(db, ctx, cropType, opts),
     );
 }
+
+/**
+ * Every parcel of the farm as the ASSISTANT names fields — agri-saas#3162.
+ *
+ * Owner ruling 2026-11-17: a farmer recording a treatment in the chat names
+ * the field by its block («Север»), by a parcel or cadastral number, or by the
+ * crop («цялата пшеница»). One bounded read answers all three, so resolving a
+ * sentence costs one query rather than one per word.
+ *
+ * Ids, names, the cadastral number, the crop and the block — nothing else: no
+ * geometry (the form draws the map itself) and no lease or owner data. A READ:
+ * `assertCanRead`, under the tenant's RLS.
+ */
+export async function listParcelPlaceOptions(ctx: RequestContext) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.parcel.findMany({
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            select: {
+                id: true,
+                name: true,
+                cadastralId: true,
+                cropType: true,
+                location: { select: { id: true, name: true } },
+            },
+            // Total order, `listTenantParcelOptions`' reason (#1742).
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take: 5000,
+        });
+        return rows.map((p) => ({
+            id: p.id,
+            name: p.name,
+            cadastralId: p.cadastralId,
+            cropType: p.cropType,
+            locationId: p.location.id,
+            locationName: p.location.name,
+        }));
+    });
+}

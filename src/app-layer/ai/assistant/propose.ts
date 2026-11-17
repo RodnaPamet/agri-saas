@@ -188,11 +188,77 @@ export const ProposeActivityArgs = z
         { message: 'harvestKg belongs to a HARVEST' },
     );
 
+/**
+ * What the MODEL may send to `propose_treatment` — agri-saas#3162.
+ *
+ * The draft fields above plus the farmer's own WORDS for the field and the
+ * dose unit (owner ruling 2026-11-17: the assistant asks until the record is
+ * complete, field included). Words, never ids: the server resolves them
+ * (`place.ts`), so `.strict()` still refuses a `parcelIds` or a `doseUnitId`
+ * from the model.
+ */
+export const ProposeTreatmentToolArgs = ProposeTreatmentArgs.extend({
+    /** A block's name, «Север». */
+    blockName: z.string().min(1).max(120).optional(),
+    /** Parcel names or cadastral numbers. */
+    parcelNumbers: z.array(z.string().min(1).max(64)).min(1).max(50).optional(),
+    /** A crop, «пшеница»: every parcel growing it. */
+    crop: z.string().min(1).max(60).optional(),
+    /** The dose unit as said, «л/дка». The form matches it to its catalogue. */
+    doseUnit: z.string().min(1).max(20).optional(),
+}).strict();
+
+/**
+ * The draft keys that are NOT production fields, and the production field
+ * each one stands in for (#3162). The form turns each into its production
+ * field: the resolved parcels into `parcelIds`, the unit's label into the
+ * catalogue's `doseUnitId`. Declared so the registry test can hold the
+ * coupling — a stand-in for a field the real body no longer has fails there.
+ */
+export const DRAFT_STAND_INS: Readonly<Record<string, string>> = {
+    chosenParcels: 'parcelIds',
+    doseUnitLabel: 'doseUnitId',
+};
+
+/**
+ * A treatment DRAFT as it rides the answer — the model's fields plus what the
+ * SERVER resolved. `chosenParcels`, not `parcels`: the production body has a
+ * `parcels` of another shape, and a draft key that collides with a body key
+ * is a form prefilling the wrong thing.
+ */
+export const TreatmentDraftSchema = ProposeTreatmentArgs.extend({
+    chosenParcels: z
+        .array(z.object({ id: z.string().min(1), label: z.string().min(1) }).strict())
+        .min(1)
+        .optional(),
+    doseUnitLabel: z.string().min(1).max(20).optional(),
+}).strict();
+
 /** Kind → its draft schema. The registry the guard and `runTool` both read. */
 export const PROPOSAL_SCHEMAS: Readonly<Record<ProposalKind, z.ZodType<unknown>>> = {
-    treatment: ProposeTreatmentArgs,
+    treatment: TreatmentDraftSchema,
     activity: ProposeActivityArgs,
 };
+
+/**
+ * What a treatment draft still LACKS to be a complete ДНЕВНИК record —
+ * agri-saas#3162. While anything is listed, the tool proposes nothing and the
+ * model asks. The list is the register's: the field, the input, the dose with
+ * its unit, the day, and for a spray what it was against.
+ */
+export function missingTreatmentItems(draft: z.infer<typeof TreatmentDraftSchema>): string[] {
+    const missing: string[] = [];
+    if (!draft.kind) missing.push('kind (spray, fertilise or sow)');
+    if (!draft.chosenParcels?.length) missing.push('field (a block name, a parcel or cadastral number, or a crop)');
+    if (draft.kind === 'FERTILIZE' ? !draft.fertilizerName : !draft.productName) {
+        missing.push(draft.kind === 'FERTILIZE' ? 'fertiliser name' : draft.kind === 'SEED' ? 'seed variety' : 'product name');
+    }
+    if (draft.doseValue === undefined) missing.push('dose');
+    if (!draft.doseUnitLabel) missing.push('dose unit (e.g. л/дка, кг/дка)');
+    if (!draft.occurredOn) missing.push('date');
+    if (draft.kind === 'SPRAY' && !draft.targetNote) missing.push('target (the pest, disease or weed)');
+    return missing;
+}
 
 /**
  * The `kind` values each proposal admits, DERIVED from the production enum so

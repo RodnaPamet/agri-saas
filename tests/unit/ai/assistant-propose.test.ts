@@ -18,6 +18,9 @@ import {
     ACTIVITY_KIND_VALUES,
     PROPOSAL_KINDS,
     PROPOSAL_SCHEMAS,
+    DRAFT_STAND_INS,
+    missingTreatmentItems,
+    ProposeTreatmentToolArgs,
     proposeDraft,
     TREATMENT_KIND_VALUES,
 } from '@/app-layer/ai/assistant/propose';
@@ -169,7 +172,9 @@ describe('the proposal registry', () => {
         for (const [kind, draftShape, prodShape] of pairs) {
             const draftKeys = Object.keys(draftShape);
             expect(draftKeys.length).toBeGreaterThan(0);
-            const strays = draftKeys.filter((k) => !(k in prodShape));
+            // A server-resolved stand-in counts when the field it stands in
+            // for is on the production body (#3162).
+            const strays = draftKeys.filter((k) => !(k in prodShape) && !(DRAFT_STAND_INS[k] && DRAFT_STAND_INS[k] in prodShape));
             expect({ kind, strays }).toEqual({ kind, strays: [] });
             console.log(`[proposal-kinds] ${kind}: ${draftKeys.length} draft field(s) — ${draftKeys.join(', ')}`);
         }
@@ -184,5 +189,41 @@ describe('the proposal registry', () => {
                 expect(proposeDraft(kind, junk).ok).toBe(false);
             }
         }
+    });
+});
+
+describe('a complete treatment, and what is still missing (#3162)', () => {
+    const complete = {
+        kind: 'SPRAY' as const,
+        occurredOn: '2026-11-16',
+        productName: 'Децис',
+        doseValue: 0.05,
+        doseUnitLabel: 'л/дка',
+        targetNote: 'листни въшки',
+        chosenParcels: [{ id: 'p1', label: 'Север · Парцел 1' }],
+    };
+
+    it('a complete spray lacks nothing', () => {
+        expect(missingTreatmentItems(complete)).toEqual([]);
+    });
+
+    it('each register item, removed, is named as missing', () => {
+        for (const key of ['occurredOn', 'productName', 'doseValue', 'doseUnitLabel', 'targetNote', 'chosenParcels', 'kind'] as const) {
+            const { [key]: _gone, ...rest } = complete;
+            expect({ key, missing: missingTreatmentItems(rest).length }).toEqual({ key, missing: 1 });
+        }
+    });
+
+    it('a fertiliser needs its fertiliser name and no target', () => {
+        const { productName: _p, targetNote: _t, ...rest } = complete;
+        expect(missingTreatmentItems({ ...rest, kind: 'FERTILIZE' })).toEqual(['fertiliser name']);
+        expect(missingTreatmentItems({ ...rest, kind: 'FERTILIZE', fertilizerName: 'Амониев нитрат' })).toEqual([]);
+    });
+
+    it('the stand-ins are accepted on a draft, never from the model', () => {
+        expect(proposeDraft('treatment', complete).ok).toBe(true);
+        expect(ProposeTreatmentToolArgs.safeParse({ chosenParcels: complete.chosenParcels }).success).toBe(false);
+        expect(ProposeTreatmentToolArgs.safeParse({ parcelIds: ['p1'] }).success).toBe(false);
+        expect(ProposeTreatmentToolArgs.safeParse({ blockName: 'Север', doseUnit: 'л/дка' }).success).toBe(true);
     });
 });
