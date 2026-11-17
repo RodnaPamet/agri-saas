@@ -147,3 +147,41 @@ describe('emitAnswer (#2578)', () => {
         expect(types(sent)).not.toContain('done');
     });
 });
+
+describe('emitAnswer carries the promotions block (#3159)', () => {
+    const collect = (): { sent: string[]; send: (c: string) => void } => {
+        const sent: string[] = [];
+        return { sent, send: (c) => sent.push(c) };
+    };
+    const event = (c: string) => JSON.parse(c.replace(/^data: /, '').trim()) as Record<string, unknown>;
+    const promotion = {
+        id: 'pr_1',
+        company: 'Агро ООД',
+        product: 'Тестов фунгицид',
+        details: '10% отстъпка до края на месеца',
+        validTo: '2026-11-30',
+        safetyWording: 'Използвайте продуктите за растителна защита безопасно.',
+    };
+
+    it('puts the block on the answer — it was dropped at this choke point before', async () => {
+        const { sent, send } = collect();
+        await emitAnswer(send, 'Пръскайте при сухо време.', { tenantId: 't1', promotions: [promotion] });
+        expect(event(sent[0] as string)).toMatchObject({ type: 'answer', promotions: [promotion] });
+    });
+
+    it('leaves an empty list OFF the event, as links', async () => {
+        const { sent, send } = collect();
+        await emitAnswer(send, 'Да.', { tenantId: 't1', promotions: [] });
+        expect(event(sent[0] as string)).not.toHaveProperty('promotions');
+    });
+
+    it('a secret-shaped word in a promotion discards the whole answer', async () => {
+        const { sent, send } = collect();
+        const out = await emitAnswer(send, 'Да.', {
+            tenantId: 't1',
+            promotions: [{ ...promotion, details: `код ${AWS_EXAMPLE}` }],
+        });
+        expect(out.sent).toBe(false);
+        expect(sent.join('')).not.toContain(AWS_EXAMPLE);
+    });
+});
