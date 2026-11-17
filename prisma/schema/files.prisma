@@ -55,7 +55,7 @@ model FileRecord {
   deletedByUserId      String?
   retentionUntil       DateTime?
   evidence             Evidence[]
-  farmDocuments             FarmDocument[]
+  farmDocuments        FarmDocument[]
   tenant               Tenant         @relation(fields: [tenantId], references: [id])
   uploadedBy           User           @relation("FileUploader", fields: [uploadedByUserId], references: [id])
   // Epic G-4 — campaigns whose evidence PDF this row carries.
@@ -209,11 +209,11 @@ model EvidenceReview {
 /// the wrong file". Keeping it would preserve indefinitely the one field
 /// encrypted *because* it names third parties.
 model FarmDocument {
-  id               String                @id @default(cuid())
-  tenantId         String
+  id       String @id @default(cuid())
+  tenantId String
 
   /// Display title. ENCRYPTED. Null once a DELETED tombstone has cleared it.
-  name             String?
+  name String?
 
   /// The stored bytes. Stays set on a tombstone, pointing at a `FileRecord`
   /// moved to `DELETED` — so "what was this file" survives without the bytes.
@@ -227,7 +227,7 @@ model FarmDocument {
   /// can say «Пази се 1 година, до …», and an audit can tell a 1-year
   /// document from a 2-year one uploaded a year earlier. It is also what
   /// makes a settings change unable to touch existing documents.
-  retention        DocumentRetention
+  retention DocumentRetention
 
   /// Expiry as a CALENDAR DAY KEY (`YYYY-MM-DD`), null for «Без срок».
   ///
@@ -243,15 +243,15 @@ model FarmDocument {
   ///
   /// The migration adds a CHECK constraint on the shape, so a malformed key
   /// cannot be written by any path.
-  expiresOn        String?
+  expiresOn String?
 
   /// Set when the bytes were deleted. ONE field for every tombstone, whatever
   /// the reason — `purgeReason` carries the distinction. Two fields for one
   /// fact is how a client ends up reading whichever is populated.
-  purgedAt         DateTime?
-  purgeReason      DocumentPurgeReason?
+  purgedAt       DateTime?
+  purgeReason    DocumentPurgeReason?
   /// Who, when a person did it. Null when `EXPIRED`.
-  purgedByUserId   String?
+  purgedByUserId String?
 
   /// Caller-supplied dedup key, so a retried upload cannot create a second
   /// document. Enforced by a PARTIAL unique index
@@ -264,22 +264,22 @@ model FarmDocument {
   /// table without it while the step-2 contract specifies the header. An
   /// accepted-but-ignored `Idempotency-Key` is worse than none: it tells the
   /// client a retry is safe when it is not.
-  idempotencyKey   String?
+  idempotencyKey String?
 
-  driveState       DocumentDriveState    @default(OFF)
+  driveState    DocumentDriveState @default(OFF)
   /// The Drive file id, so a copy can be verified or re-pointed. Never a URL.
-  driveFileId      String?
-  driveCopiedAt    DateTime?
+  driveFileId   String?
+  driveCopiedAt DateTime?
   /// Automatic retries before the row goes FAILED and an admin sees «Опитай пак».
-  driveAttempts    Int                   @default(0)
+  driveAttempts Int                @default(0)
 
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  fileRecord       FileRecord            @relation(fields: [fileRecordId], references: [id])
-  uploadedBy       User                  @relation("FarmDocumentUploader", fields: [uploadedByUserId], references: [id])
-  purgedBy         User?                 @relation("FarmDocumentPurger", fields: [purgedByUserId], references: [id])
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fileRecord FileRecord @relation(fields: [fileRecordId], references: [id])
+  uploadedBy User       @relation("FarmDocumentUploader", fields: [uploadedByUserId], references: [id])
+  purgedBy   User?      @relation("FarmDocumentPurger", fields: [purgedByUserId], references: [id])
 
   @@unique([id, tenantId])
   @@index([tenantId])
@@ -310,15 +310,15 @@ model FarmDocument {
 /// VM, so every tenant resolves to ENTERPRISE and every ENTERPRISE limit is
 /// null.
 model TenantDocumentSettings {
-  id         String            @id @default(cuid())
-  tenantId   String            @unique
+  id        String            @id @default(cuid())
+  tenantId  String            @unique
   /// Applies to NEW uploads only; each document carries its own period.
-  retention  DocumentRetention @default(P1Y)
+  retention DocumentRetention @default(P1Y)
   /// Turning this off stops new copies. It does NOT revoke the Google
   /// connection, which the ДНЕВНИК export still uses.
-  driveSync  Boolean           @default(false)
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
+  driveSync Boolean           @default(false)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
-  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

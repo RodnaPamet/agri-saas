@@ -96,14 +96,14 @@
 /// offer. Owner ruling (#2948 §3) chose this listener over a separate
 /// ingest VM with that trade on the table.
 model MachineTracker {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   tenantId String
   assetId  String
   /// 15 digits with a check digit. UNIQUE across the whole deployment, not
   /// per tenant: an IMEI is globally unique by construction, and a
   /// per-tenant unique would let two farms claim one device and make the
   /// tenant a tracker resolves to depend on insertion order.
-  imei     String @unique
+  imei     String  @unique
   /// Operator-facing name for the box itself ("cab unit, left console"),
   /// distinct from the machine's name. Free text, no personal data.
   label    String?
@@ -120,15 +120,15 @@ model MachineTracker {
   /// creation — `POST /trackers` without them is a 400 — because the
   /// obligation is to have told the drivers BEFORE the box starts
   /// reporting, and a nullable column records an intention instead.
-  driversInformedAt        DateTime
-  driversInformedByUserId  String
+  driversInformedAt       DateTime
+  driversInformedByUserId String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant             Tenant @relation(fields: [tenantId], references: [id])
-  asset              Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
-  driversInformedBy  User   @relation("MachineTrackerDriversInformedBy", fields: [driversInformedByUserId], references: [id])
+  tenant            Tenant @relation(fields: [tenantId], references: [id])
+  asset             Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  driversInformedBy User   @relation("MachineTrackerDriversInformedBy", fields: [driversInformedByUserId], references: [id])
 
   positions MachinePosition[]
 
@@ -149,7 +149,7 @@ model MachineTracker {
 /// and it is why the 30-day sweep is a feature of the schema rather than
 /// tidiness.
 model MachinePosition {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   tenantId  String
   assetId   String
   /// Nullable so a position outlives the tracker row it arrived through —
@@ -415,11 +415,11 @@ model MachineGeofenceState {
   tenantId String
   assetId  String
 
-  outsideSince DateTime?
-  alertedAt    DateTime?
+  outsideSince    DateTime?
+  alertedAt       DateTime?
   /// The position that caused the current state, for an operator asking
   /// "outside according to what". Cleared with the state.
-  lastEvaluatedAt DateTime @default(now())
+  lastEvaluatedAt DateTime  @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -471,7 +471,7 @@ model MachineTelematicsLink {
   tenantId String
   assetId  String
 
-  provider TelematicsProvider
+  provider          TelematicsProvider
   /// The vendor's own identifier for the machine. Opaque to us: never parsed,
   /// never displayed as an identity, and the only thing joining our `Asset` to
   /// their fleet.

@@ -136,16 +136,16 @@ model AiUsageEvent {
 /// makes a per-tenant DEK correct here. The profile is per PERSON and read
 /// while ANY farm is open, so no single tenant's key can serve it.
 model AssistantConversation {
-  id        String   @id @default(cuid())
-  tenantId  String
+  id          String    @id @default(cuid())
+  tenantId    String
   /// The person. No FK: a conversation is kept as history even if the user row
   /// is later pseudonymised by the erasure sweep, which rewrites columns rather
   /// than cascading.
-  userId    String
-  startedAt DateTime @default(now())
+  userId      String
+  startedAt   DateTime  @default(now())
   /// Touched on every turn, so an idle timeout can decide a conversation ENDED
   /// without a client telling us. "Ended" is what triggers extraction.
-  lastTurnAt DateTime @default(now())
+  lastTurnAt  DateTime  @default(now())
   /// Stamped once the extraction sweep has read this conversation (#2671).
   ///
   /// The QUEUE is `extractedAt IS NULL AND lastTurnAt < cutoff`, which is why
@@ -245,24 +245,24 @@ model AssistantTurn {
 ///   · rule 7 — evidence kept server-side. `sourceQuote` + `sourceAt` are what
 ///     make rules 4 and 5 checkable, and support the Art 15 export.
 model AssistantMemoryFact {
-  id       String @id @default(cuid())
+  id             String    @id @default(cuid())
   /// The person this is about. No FK, for the same reason as above.
-  userId   String
+  userId         String
   /// The remembered point: one short sentence in the person's own language,
   /// MODEL-EXTRACTED into a constrained shape and sanitised. Never a span
   /// copied out of what they typed — the extraction is a narrowing, and that
   /// narrowing is what bounds what can be smuggled into the profile.
   ///
   /// ENCRYPTED under the GLOBAL KEK (`GLOBAL_KEK_MODELS`).
-  text     String
+  text           String
   /// The person's OWN sentence this was learned from — rule 3 and rule 7.
   /// ENCRYPTED under the global KEK, like `text`.
-  sourceQuote String
+  sourceQuote    String
   /// When they said it. Rule 4: the latest statement wins, and repetition adds
   /// evidence rather than rewriting.
-  sourceAt    DateTime
+  sourceAt       DateTime
   /// Set when the person edits the point. Rule 6.
-  editedByPerson Boolean @default(false)
+  editedByPerson Boolean   @default(false)
   /// Set when the EXTRACTOR replaces this point with a newer one — rule 4.
   ///
   /// A SEPARATE column from `deletedAt` on purpose. That one means "the person
@@ -271,11 +271,11 @@ model AssistantMemoryFact {
   /// writing both through one column would make one field carry two meanings
   /// from two producers — at which point neither reader can tell what it was
   /// told. Rule 5 is a promise to a person; a supersede is bookkeeping.
-  supersededAt DateTime?
+  supersededAt   DateTime?
   /// Set by «Изтрий». The row SURVIVES — rule 5.
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   /// The live profile read: this person's undeleted points, newest first.
   @@index([userId, deletedAt, sourceAt])
@@ -320,32 +320,32 @@ model AssistantMemoryFact {
 /// is what keeps the first sweep after an outage from being the
 /// longest-running statement on the box.
 model AssistantStageTiming {
-  id             String   @id @default(cuid())
-  tenantId       String
+  id            String   @id @default(cuid())
+  tenantId      String
   /// Wall clock for the whole answered question.
-  totalMs        Int
+  totalMs       Int
   /// Summed time inside provider calls.
-  providerMs     Int
+  providerMs    Int
   /// How many provider calls this one answer took — 2+ in the normal case,
   /// which is why this cannot live on a per-call row.
-  providerCalls  Int
+  providerCalls Int
   /// The tool-PICKING round(s).
-  toolSelectMs   Int
+  toolSelectMs  Int
   /// `providerMs - toolSelectMs` — the answering round, stored rather than
   /// derived so a later change to either stage cannot silently redefine a
   /// historical row.
-  answerMs       Int
+  answerMs      Int
   /// Running the tools themselves.
-  toolPhaseMs    Int
+  toolPhaseMs   Int
   /// The residual: route checks, prompt build, egress scan, emits. Reported
   /// rather than itemised so the three stages above stay the ones that add up.
-  otherMs        Int
-  toolCallsMade  Int
+  otherMs       Int
+  toolCallsMade Int
   /// The halt code when the turn was cut short (tool budget, time budget,
   /// partial data), NULL on a clean answer. A timing is only comparable
   /// against others that halted the same way.
-  halt           String?
-  createdAt      DateTime @default(now())
+  halt          String?
+  createdAt     DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

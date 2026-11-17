@@ -1040,6 +1040,19 @@ export interface MzhPricesPullPayload {
     _?: never;
 }
 
+/**
+ * source-document-watch — hash the documents the agro calendar cites and flag
+ * one that changed (#3146, first slice of the server half of agrent-ios#639).
+ *
+ * Tenantless like its МЗХ sibling: `SourceDocumentWatch` is a global registry
+ * of external publications with no `tenantId`, so `job-scope-audit` records
+ * it as platform-scoped rather than as a job that forgot one.
+ */
+export interface SourceDocumentWatchPayload {
+    /** No arguments — the citation list and the clock are the job's own. */
+    _?: never;
+}
+
 export interface ZarnoBorsaPullPayload {
     /** No arguments — the path and the clock are the job's own. */
     _?: never;
@@ -1175,6 +1188,7 @@ export interface JobPayloadMap {
     'channel-digest': ChannelDigestPayload;
     'zarnoborsa-pull': ZarnoBorsaPullPayload;
     'mzh-prices-pull': MzhPricesPullPayload;
+    'source-document-watch': SourceDocumentWatchPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'mail-canary': MailCanaryPayload;
@@ -1343,6 +1357,25 @@ export const JOB_DEFAULTS: Record<JobName, {
          * on the table's own date, so a later run stores the same figures
          * rather than duplicating them — which is what makes the next run a
          * real retry rather than a hope.
+         */
+        attempts: 1,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'source-document-watch': {
+        /*
+         * ONE attempt, for the third distinct reason on this list.
+         *
+         * Its МЗХ sibling uses 1 because a retry re-downloads a PDF;
+         * `zarnoborsa-pull` because a retry is a no-op dressed as recovery.
+         * Here a retry would re-download THIRTEEN documents from two
+         * publishers, and the job is already built so a single unreachable
+         * document is a recorded `failures[]` entry rather than a thrown
+         * run — so the only way the run itself fails is something a retry in
+         * the same minute will not fix. The next daily run is the retry, and
+         * it is a real one: the comparison is against a stored hash, so a
+         * day's gap costs a day of detection latency and nothing else.
          */
         attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },

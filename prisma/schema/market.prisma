@@ -185,3 +185,98 @@ model MarketNewsItem {
   /// also written explicitly in the migration.
   @@index([tags], type: Gin)
 }
+
+/// GLOBAL registry of one EXTERNAL DOCUMENT this product cites, watched for
+/// revision (#3146, server half of agrent-ios#639). NO tenantId — a cited
+/// publication is identical for every farm, the same class as
+/// `MarketPriceSeries` above, so the DMMF RLS auto-enroller leaves it out of
+/// TENANT_SCOPED_MODELS and there is deliberately no per-tenant filter.
+///
+/// ── Why it lives in market.prisma ──
+///
+/// It is not market-specific: the first population is the 13 documents the
+/// AGRO CALENDAR cites, of which 12 are МЗХ and one is a seed company's
+/// variety sheet. It sits here because this is the file whose header already
+/// establishes the tenantless, no-RLS posture this model needs, and because
+/// the largest series it watches — МЗХ's «Оперативен анализ» — is the same
+/// publication `mzh-prices-pull` reads for the price series. `agro.prisma`
+/// states in its own header that all of its models carry a NON-NULL
+/// tenantId, which this one does not.
+///
+/// ── Why a flag and not an overwrite ──
+///
+/// `sha256` is the baseline: the bytes last ACCEPTED as what the citation
+/// points at. When a check finds different bytes the job writes `changedAt` +
+/// `changedSha256` and LEAVES `sha256` alone, because agrent-ios#639 asks for
+/// a changed document to be flagged rather than silently replaced. Replacing
+/// it would destroy the only record of what the figure was checked against —
+/// and a cited document being revised means a published agronomic window may
+/// no longer be supported by the page it names, which is the signal this
+/// model exists to preserve rather than consume.
+///
+/// So a flagged row is STICKY and stays flagged until a human promotes the
+/// new hash. That is deliberate and it is also this slice's known limit: the
+/// only reader of the flag today is the job's own structured log. A console
+/// or notification that lets a superuser acknowledge one is the next slice —
+/// see #3146.
+///
+/// ── A CHECK the schema cannot express ──
+///
+/// The migration adds `source_document_watch_flag_is_complete`: the three
+/// `changed*` columns are all null or all set. Prisma has no syntax for a
+/// CHECK, so it lives in the migration only — the same arrangement as
+/// `channel_post_says_something`. It matters because a row with `changedAt`
+/// set and `changedSha256` null would read as "changed, hash unknown", and
+/// the job compares against that column on its next run — so the partial
+/// state would re-flag the document every day for ever.
+model SourceDocumentWatch {
+  id            String    @id @default(cuid())
+  /// Absolute URL of the watched document. The natural key: the citation is
+  /// what the calendar renders, and two citations may legitimately name one
+  /// URL, so the DOCUMENT is the thing with one row.
+  url           String    @unique
+  /// The agro-calendar dataset's own citation slug — a key of
+  /// `CALENDAR.sources`. Named `citation` and not `sourceKey` because that is
+  /// what it is: a dataset citation, authenticating nothing.
+  citation      String
+  /// Publisher exactly as the dataset names it — `МЗХ`, `KWS`.
+  publisher     String
+  /// Which of agrent-ios#639's five series, when the URL classifies into one;
+  /// null when it does not, because guessing is what #3136 measured as
+  /// unreliable for this publisher.
+  series        String?
+  /// sha256 (hex) of the bytes last accepted as the baseline.
+  sha256        String
+  /// Byte length of the baseline, MEASURED from the body — never taken from
+  /// `Content-Length`, which is the #3147 lesson one layer out.
+  bytes         Int
+  /// Content-Type the server reported for the baseline, verbatim and
+  /// unparsed. A change here is a weaker signal than a hash change but it is
+  /// the one that says a PDF became an HTML error page.
+  contentType   String?
+  firstSeenAt   DateTime  @default(now())
+  /// When the document was last successfully OR unsuccessfully reached. Null
+  /// only between the row being minted and the first check.
+  lastCheckedAt DateTime?
+  /// Outcome of the most recent check: `ok` | `unchanged` | `changed` |
+  /// `unreachable` | `refused` | `too-large` | `empty`. A string and not an
+  /// enum because the set is this job's own vocabulary and a migration per
+  /// new outcome buys nothing.
+  lastStatus    String?
+  /// Set when a check found bytes hashing to something other than `sha256`.
+  /// Null means the citation still points at the bytes we checked it against.
+  changedAt     DateTime?
+  /// The hash of the CHANGED bytes. Held beside the baseline rather than
+  /// replacing it, so both are readable when somebody reviews the flag.
+  changedSha256 String?
+  /// Byte length of the changed document, measured the same way as `bytes`.
+  changedBytes  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The flagged set is the query a review surface runs, and it is a tiny
+  /// fraction of the table, so it gets its own index.
+  @@index([changedAt])
+  @@index([series])
+}

@@ -186,7 +186,7 @@ model ChannelMembership {
   /// No relation to `User`: these models are tenantless and person-scoped, and
   /// `DirectMessage.senderUserId` is the precedent — a bare id, so a channel
   /// never needs a tenant context to resolve its author.
-  userId String
+  userId    String
 
   joinedAt DateTime @default(now())
 
@@ -339,9 +339,9 @@ model ChannelPost {
   /// `attachmentKey` is an opaque storage key and deliberately NOT encrypted:
   /// it is not content, it authenticates nothing, and `FileRecord.pathKey` is
   /// plaintext for the same reason.
-  attachmentKey String?
-  attachmentMime String?
-  attachmentBytes Int?
+  attachmentKey    String?
+  attachmentMime   String?
+  attachmentBytes  Int?
   attachmentSha256 String?
 
   /// The DECLARED duration in milliseconds, audio only, and METADATA rather
@@ -354,7 +354,7 @@ model ChannelPost {
   /// #2938). Separate from `kind`, which only says CARD: one channel gets one
   /// NEWS card and one LISTING card on the same day, so the identity needs the
   /// card's own kind.
-  cardKind ChannelCardKind?
+  cardKind        ChannelCardKind?
   /// The card's DATA, locale-independent, or NULL for a written post.
   ///
   /// A card cannot put its text in `body` alone and be correct, and that is
@@ -383,7 +383,7 @@ model ChannelPost {
   /// and the uniqueness is the whole point. With it, a retry cannot double-post
   /// and there is no `generated` flag for anything to forget to set, which is
   /// the P5.5b pattern (`NoticeScore.reportId`).
-  cardDay DateTime? @db.Date
+  cardDay         DateTime?        @db.Date
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -402,7 +402,6 @@ model ChannelPost {
   @@index([parentPostId])
   /// "my posts", and the FK index layer B requires.
   @@index([authorUserId])
-
   /// P9.6 — serving an attachment resolves it by key, after the route has
   /// authorised by membership. The migration makes it PARTIAL; Prisma has no
   /// syntax for that, so this declaration is the index's EXISTENCE and the
