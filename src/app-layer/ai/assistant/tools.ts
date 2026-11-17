@@ -1713,7 +1713,14 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // the person can read (`place.ts`), and the draft is proposed only
             // when nothing a complete record needs is missing (#3162). The
             // policy that matters is the one on the route the PERSON posts to.
-            const { blockName, parcelNumbers, crop, doseUnit, ...fields } = ProposeTreatmentToolArgs.parse(args);
+            // Typed by hand for `TreatmentDraftView`'s reason: the lifted
+            // production shape infers as `unknown` per key.
+            const { blockName, parcelNumbers, crop, doseUnit, ...fields } = ProposeTreatmentToolArgs.parse(args) as {
+                blockName?: string;
+                parcelNumbers?: string[];
+                crop?: string;
+                doseUnit?: string;
+            } & Record<string, unknown>;
             const place = await resolvePlace(ctx, { block: blockName, parcels: parcelNumbers, crop });
             const cropProblem = oneCropProblem(place.parcels);
             const unresolved = cropProblem ? [...place.unresolved, cropProblem] : place.unresolved;

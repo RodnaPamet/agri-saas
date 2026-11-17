@@ -246,7 +246,23 @@ export const PROPOSAL_SCHEMAS: Readonly<Record<ProposalKind, z.ZodType<unknown>>
  * model asks. The list is the register's: the field, the input, the dose with
  * its unit, the day, and for a spray what it was against.
  */
-export function missingTreatmentItems(draft: z.infer<typeof TreatmentDraftSchema>): string[] {
+/**
+ * The fields `missingTreatmentItems` reads, typed by hand: the draft schema's
+ * shape is lifted from production through an index signature, so zod infers
+ * its keys as `unknown` and the checks below would not typecheck against it.
+ */
+export interface TreatmentDraftView {
+    readonly kind?: unknown;
+    readonly occurredOn?: unknown;
+    readonly productName?: unknown;
+    readonly fertilizerName?: unknown;
+    readonly doseValue?: unknown;
+    readonly targetNote?: unknown;
+    readonly doseUnitLabel?: string;
+    readonly chosenParcels?: readonly unknown[];
+}
+
+export function missingTreatmentItems(draft: TreatmentDraftView): string[] {
     const missing: string[] = [];
     if (!draft.kind) missing.push('kind (spray, fertilise or sow)');
     if (!draft.chosenParcels?.length) missing.push('field (a block name, a parcel or cadastral number, or a crop)');
