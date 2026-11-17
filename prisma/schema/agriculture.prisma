@@ -435,6 +435,11 @@ model Parcel {
   cropType             String?
   /// Bulgarian КАИС cadastral identifier `EKATTE.masiv.parcel`
   /// (e.g. `68134.8360.729`), parsed from the source attributes at import.
+  /// The farmer's own NICKNAME for the parcel (agri-saas#3169; owner,
+  /// 2026-11-17): what the app and the assistant call it. The ДНЕВНИК never
+  /// prints it — it keeps `name` («Поле №») and `cadastralId` («Имот №»).
+  /// Null is "no nickname", and every reader falls back to `name`.
+  displayName          String?
   cadastralId          String?
   /// 5-digit EKATTE settlement prefix of `cadastralId` (leading zeros
   /// significant), indexed for per-settlement cadastre lookups.

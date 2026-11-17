@@ -5551,9 +5551,9 @@
             "hapticFeedbackAria": "Haptic feedback on marking work done"
         },
         "assistantMemory": {
-            "title": "What the assistant remembers",
-            "explainer": "A short profile built from your own questions — what you grow, what problems recur, what you prefer. It is used in every answer so the assistant need not ask again. It holds no farm data: the assistant reads that from your records.",
-            "emptyTitle": "The assistant does not remember anything about you yet",
+            "title": "What Agrent remembers",
+            "explainer": "A short profile built from your own questions — what you grow, what problems recur, what you prefer. It is used in every answer so Agrent need not ask again. It holds no farm data: Agrent reads that from your records.",
+            "emptyTitle": "Agrent does not remember anything about you yet",
             "emptyBody": "When you mention something about your farm in a conversation — a crop, a recurring problem, a preferred product — it will appear here and you will be able to delete it.",
             "rememberedOn": "Remembered on {date}",
             "forget": "Delete",
@@ -5561,14 +5561,14 @@
             "undo": "Undo",
             "forgetAll": "Delete everything",
             "forgetAllConfirmTitle": "Delete everything remembered?",
-            "forgetAllConfirmBody": "The assistant will forget every point below and start again. This cannot be undone. Your conversations are kept.",
+            "forgetAllConfirmBody": "Agrent will forget every point below and start again. This cannot be undone. Your conversations are kept.",
             "forgetAllConfirm": "Delete everything"
         },
         "assistantConversations": {
             "title": "Past conversations",
-            "explainer": "Every conversation you have had with the assistant, across all your farms. They are kept while your account exists, and the assistant can look back through them when you ask about something from before. Deleting a conversation does not delete the points remembered from it — those are separate, above.",
+            "explainer": "Every conversation you have had with Agrent, across all your farms. They are kept while your account exists, and Agrent can look back through them when you ask about something from before. Deleting a conversation does not delete the points remembered from it — those are separate, above.",
             "emptyTitle": "No conversations recorded",
-            "emptyBody": "When you talk to the assistant, the conversation will appear here and you will be able to delete it.",
+            "emptyBody": "When you talk to Agrent, the conversation will appear here and you will be able to delete it.",
             "noOpening": "(conversation with no question)",
             "meta": "{date} · {turns} turns",
             "delete": "Delete",
@@ -5576,7 +5576,7 @@
             "undo": "Undo",
             "deleteAll": "Delete all",
             "deleteAllConfirmTitle": "Delete all conversations?",
-            "deleteAllConfirmBody": "The assistant will forget every conversation below and will not be able to look back through them. This cannot be undone. The remembered points are kept.",
+            "deleteAllConfirmBody": "Agrent will forget every conversation below and will not be able to look back through them. This cannot be undone. The remembered points are kept.",
             "deleteAllConfirm": "Delete all"
         },
         "security": {
@@ -7100,7 +7100,7 @@
         "ASSISTANT_PROVIDER_UNAVAILABLE": "I could not reach the model. This farm's records were not read and nothing was created.",
         "ASSISTANT_QUESTION_INVALID": "The question was empty, too long, or not text. Try shortening it.",
         "ASSISTANT_REQUEST_REJECTED": "The model refused the request, so there is no answer and nothing was created. This is a fault on our side, not something you did — please report it.",
-        "ASSISTANT_SPEND_CEILING": "The answer above is incomplete because this farm has reached its monthly limit for the assistant.",
+        "ASSISTANT_SPEND_CEILING": "The answer above is incomplete because this farm has reached its monthly limit for Agrent.",
         "ASSISTANT_TIME_BUDGET": "The answer above is incomplete — it was taking too long, so I stopped rather than leave you waiting.",
         "ASSISTANT_TOOL_BUDGET": "The answer above is real but incomplete — I reached the limit on how much I may look up for one question.",
         "ASSISTANT_TRUNCATED_RESULT": "The answer above uses part of the data — one of the lists I read was too long to use whole.",
