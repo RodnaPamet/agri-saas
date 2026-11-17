@@ -56,6 +56,8 @@ export const SupportRateSchema = z.object({
     /** The app's commodity slugs the scheme covers, where it maps onto them. */
     commodities: z.array(z.string().min(1)).optional(),
     cite: Citation,
+    /** A caveat shown beside the rate (e.g. "2025 not yet published"). */
+    note: Localised.optional(),
 });
 
 const Source = z.object({

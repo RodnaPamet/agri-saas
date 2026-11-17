@@ -35,7 +35,7 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
         description:
             'Bulgarian national average yields per crop (МЗХ Agrostatistics) and coupled-support rates per eligible hectare (the minister\'s order and the ДФЗ notice). **Every figure carries a citation.**' +
             '\n\n**Person-scoped and farm-free**, like `GET /api/agro-calendar`: no `tenantSlug`, identical for every farm. Not behind a feature flag.' +
-            '\n\n**Figures are as printed and never converted.** Yields are kg/ha — divide by 10 for kg/дка, which is exact. Rates are integer minor units of the order\'s own `currency` (стотинки for BGN), untouched: `25474` is 254,74 лв/ha. Beside each, `perDaEurCents` is euro cents per DECARE at the fixed peg, derived server-side so no client holds the rate (owner ruling 2026-11-17, as the vine card\'s costs). Show the euro, marked as converted; the lev figure is the traceable one.' +
+            '\n\n**Figures are as printed and never converted.** Yields are kg/ha — divide by 10 for kg/дка, which is exact. Rates are integer minor units of the order\'s own `currency` (стотинки for BGN), untouched: `25474` is 254,74 лв/ha. Beside each, `perDaEurCents` is euro cents per DECARE, derived server-side: from an order in BGN at the fixed peg, so no client holds the rate (owner ruling 2026-11-17, as the vine card\'s costs), and from an order in EUR (Campaign 2025 on) by division alone. Show the euro; mark it as converted ONLY when `currency` is BGN.' +
             '\n\nAn unknown `commodity` is a **400, never an empty list** — an empty list would read as "covered, no figure".',
         tags: ['Agro'],
         query: z.object({
@@ -84,7 +84,7 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
                             }),
                             perDaEurCents: z.number().int().nullable().openapi({
                                 example: 1302,
-                                description: 'Euro cents per decare, derived from `perHaStotinki` at the fixed peg, rounded half up once. Null only if the figure could not be converted exactly.',
+                                description: 'Euro cents per decare, rounded half up once. From an order in BGN it is converted at the fixed peg; from an order in EUR (Campaign 2025 on) it is only divided by 10, with no conversion — a client must not mark that figure as converted. Null only if the figure could not be converted exactly.',
                             }),
                             perDaOver30EurCents: z.number().int().nullable().openapi({
                                 description: 'The same for `perHaOver30Stotinki`; null when the order sets no over-30 rate.',
@@ -96,6 +96,9 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
                                 source: z.string(),
                                 page: z.union([z.number(), z.string()]).optional(),
                                 point: z.string().optional().openapi({ example: 'I' }),
+                            }),
+                            note: Localised.optional().openapi({
+                                description: 'A caveat to show beside the rate — e.g. that a newer campaign is not yet published and an older rate is shown.',
                             }),
                         }),
                     ),
