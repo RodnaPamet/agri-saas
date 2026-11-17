@@ -170,6 +170,11 @@
       "documented": true
     },
     {
+      "path": "/api/admin/moderation/unexplained-decisions",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/admin/news-derived-events",
       "status": "live",
       "documented": false
@@ -992,6 +997,11 @@
     },
     {
       "path": "/api/t/{tenantSlug}/admin/moderation/suspensions",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/moderation/unexplained-decisions",
       "status": "live",
       "documented": true
     },
