@@ -23,12 +23,13 @@ import { BENCHMARKS, benchmarkCommodities, benchmarksFor } from '@/lib/agro/benc
  * ungated rather than gated-and-flipped. Signed-in only, as every
  * `/api/` route outside the public list.
  *
- * ## Figures as printed, never converted
+ * ## Figures as printed, plus ONE derived euro figure per rate
  *
- * Yields in kg/ha, rates in the order's own currency as integer minor units.
- * A client wanting kg/дка divides by 10, which is exact; nothing here
- * divides, indexes or converts, because a derived figure is a number no
- * cited page supports.
+ * Yields in kg/ha; a client wanting kg/дка divides by 10, which is exact.
+ * Rates keep the order's own currency as integer minor units, untouched,
+ * and beside them `perDaEurCents` — euro cents per decare at the fixed
+ * peg, derived here (owner, 2026-11-17: "convert, mark it", as the vine
+ * card). The phone shows the euro under «по МЗХ (2024), превалутирано».
  */
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     await getUserCtx(req);

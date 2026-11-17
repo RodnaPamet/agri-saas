@@ -17,6 +17,7 @@
  *     vocabulary (triticale, chickpeas) is fine: it has no slug to clash with.
  */
 import { BenchmarksDatasetSchema, type BenchmarksDataset, type BenchmarkYield, type SupportRate } from './schema';
+import { perDaEurCents } from '../calendar/costs';
 import { assertCanonicalSlug } from '../reference-slugs';
 import raw from './dataset.json';
 
@@ -80,11 +81,40 @@ export interface BenchmarksQuery {
     commodity?: string;
 }
 
-/** The yields and rates for a query; everything when none is given. */
-export function benchmarksFor(q: BenchmarksQuery = {}): { yields: BenchmarkYield[]; supportRates: SupportRate[] } {
-    if (!q.commodity) return { yields: BENCHMARKS.yields, supportRates: BENCHMARKS.supportRates };
+/**
+ * A rate as served: the published figure untouched, plus euro cents per
+ * DECARE derived here (owner, 2026-11-17: "convert, mark it", as the vine
+ * card). Derived on the server so no client holds the lev peg and no two
+ * clients round differently. 1 ha is 10 дка exactly, so the hectare figure
+ * goes through the calendar's converter with an area of 10.
+ */
+export type ServedSupportRate = SupportRate & {
+    perDaEurCents: number | null;
+    perDaOver30EurCents: number | null;
+};
+
+function perDaEur(perHaMinor: number, currency: SupportRate['currency']): number | null {
+    if (currency === 'BGN') return perDaEurCents(perHaMinor, 10);
+    // Already euro: per hectare to per decare, half up, integer only.
+    return Math.floor((2 * perHaMinor + 10) / 20);
+}
+
+export function served(rate: SupportRate): ServedSupportRate {
     return {
-        yields: BENCHMARKS.yields.filter((y) => y.commodity === q.commodity),
-        supportRates: BENCHMARKS.supportRates.filter((r) => r.commodities?.includes(q.commodity!)),
+        ...rate,
+        perDaEurCents: perDaEur(rate.perHaStotinki, rate.currency),
+        perDaOver30EurCents:
+            rate.perHaOver30Stotinki === undefined ? null : perDaEur(rate.perHaOver30Stotinki, rate.currency),
+    };
+}
+
+/** The yields and rates for a query; everything when none is given. */
+export function benchmarksFor(q: BenchmarksQuery = {}): { yields: BenchmarkYield[]; supportRates: ServedSupportRate[] } {
+    const rates = q.commodity
+        ? BENCHMARKS.supportRates.filter((r) => r.commodities?.includes(q.commodity!))
+        : BENCHMARKS.supportRates;
+    return {
+        yields: q.commodity ? BENCHMARKS.yields.filter((y) => y.commodity === q.commodity) : BENCHMARKS.yields,
+        supportRates: rates.map(served),
     };
 }

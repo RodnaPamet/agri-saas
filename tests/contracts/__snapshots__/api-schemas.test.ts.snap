@@ -1549,6 +1549,21 @@ exports[`API contract — per-schema snapshots schema: AgroBenchmarks 1`] = `
             "type": "integer",
             "description": "The rate above the 30th eligible hectare, where the order sets one. Never higher than \`perHaStotinki\`."
           },
+          "perDaEurCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1302,
+            "description": "Euro cents per decare, derived from \`perHaStotinki\` at the fixed peg, rounded half up once. Null only if the figure could not be converted exactly."
+          },
+          "perDaOver30EurCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The same for \`perHaOver30Stotinki\`; null when the order sets no over-30 rate."
+          },
           "commodities": {
             "type": "array",
             "items": {
@@ -1588,6 +1603,8 @@ exports[`API contract — per-schema snapshots schema: AgroBenchmarks 1`] = `
           "campaign",
           "currency",
           "perHaStotinki",
+          "perDaEurCents",
+          "perDaOver30EurCents",
           "cite"
         ]
       }

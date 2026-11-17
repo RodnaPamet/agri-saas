@@ -33,10 +33,14 @@ module load (`load.ts`), served through `jsonWithETag`. Person-scoped
   need a production row written by hand before either route answered
   anything but 404; ungated ships it on merge. Both are added to the
   tenant-path exemption beside `agro-calendar`, for the same reason.
-- **Figures as printed.** Yields stay kg/ha; rates stay integer стотинки in
-  the order's own currency. No conversion (EUR-only ruling, 2026-11-06,
-  covers what the app computes, not a published order's own figure — the
-  phone shows it as «лв» with the order named).
+- **Figures as printed, one derived euro figure per rate.** Yields stay
+  kg/ha; rates stay integer стотинки in the order's own currency, untouched.
+  Beside each rate the server adds `perDaEurCents` at the fixed peg (owner,
+  2026-11-17: "convert, mark it", as the vine card), through the calendar's
+  integer converter with an area of 10 дка per ha. The peg guard now allows
+  `src/lib/agro/benchmarks/` beside the calendar, and detects an import of
+  the converter as well as of the constant — matching the constant alone,
+  the population had been zero while a conversion could still be imported.
 - **Thresholds stay prose.** The guide mixes counts, percentages and damage
   descriptions; splitting into number + unit would invent structure the
   page does not support. The phone shows the sentence, it does not compare.

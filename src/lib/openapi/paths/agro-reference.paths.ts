@@ -35,7 +35,7 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
         description:
             'Bulgarian national average yields per crop (МЗХ Agrostatistics) and coupled-support rates per eligible hectare (the minister\'s order and the ДФЗ notice). **Every figure carries a citation.**' +
             '\n\n**Person-scoped and farm-free**, like `GET /api/agro-calendar`: no `tenantSlug`, identical for every farm. Not behind a feature flag.' +
-            '\n\n**Figures are as printed and never converted.** Yields are kg/ha — divide by 10 for kg/дка, which is exact. Rates are integer minor units of the order\'s own `currency` (стотинки for BGN): `25474` is 254,74 лв/ha. A converted figure is a number no cited page supports.' +
+            '\n\n**Figures are as printed and never converted.** Yields are kg/ha — divide by 10 for kg/дка, which is exact. Rates are integer minor units of the order\'s own `currency` (стотинки for BGN), untouched: `25474` is 254,74 лв/ha. Beside each, `perDaEurCents` is euro cents per DECARE at the fixed peg, derived server-side so no client holds the rate (owner ruling 2026-11-17, as the vine card\'s costs). Show the euro, marked as converted; the lev figure is the traceable one.' +
             '\n\nAn unknown `commodity` is a **400, never an empty list** — an empty list would read as "covered, no figure".',
         tags: ['Agro'],
         query: z.object({
@@ -81,6 +81,13 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
                             }),
                             perHaOver30Stotinki: z.number().int().optional().openapi({
                                 description: 'The rate above the 30th eligible hectare, where the order sets one. Never higher than `perHaStotinki`.',
+                            }),
+                            perDaEurCents: z.number().int().nullable().openapi({
+                                example: 1302,
+                                description: 'Euro cents per decare, derived from `perHaStotinki` at the fixed peg, rounded half up once. Null only if the figure could not be converted exactly.',
+                            }),
+                            perDaOver30EurCents: z.number().int().nullable().openapi({
+                                description: 'The same for `perHaOver30Stotinki`; null when the order sets no over-30 rate.',
                             }),
                             commodities: z.array(z.string()).optional().openapi({
                                 description: 'The commodity slugs the scheme covers, where it maps onto them.',

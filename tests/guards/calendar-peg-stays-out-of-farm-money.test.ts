@@ -39,8 +39,16 @@ import * as path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
-/** The only subtree that may convert a published lev figure. */
-const ALLOWED_PREFIX = 'src/lib/agro/calendar/';
+/**
+ * The only subtrees that may convert a published lev figure.
+ *
+ * The calendar (МЗХ technology cards, #637) and, since agrent-ios#638, the
+ * benchmarks: МЗХ's coupled-support rates, which the order prints in leva per
+ * hectare. Same ruling, applied by the owner on 2026-11-17 ("convert, mark
+ * it", as the vine card): a ministry document's figure shown in euro, never
+ * the farm's own money.
+ */
+const ALLOWED_PREFIXES: readonly string[] = ['src/lib/agro/calendar/', 'src/lib/agro/benchmarks/'];
 
 /**
  * Paths that refuse lev and must therefore never hold a rate — named
@@ -61,7 +69,7 @@ const FARM_MONEY_FILES: readonly string[] = [
  * unrelated code, and `[^}]*` cannot cross the closing brace — which is what
  * let the first version's `[^;]*` swallow a whole docblock.
  */
-const IMPORTS_PEG = /import\s*\{[^}]*\bBGN_PER_EUR\b[^}]*\}\s*from/;
+const IMPORTS_PEG = /import\s*\{[^}]*\b(?:BGN_PER_EUR|perDaEurCents)\b[^}]*\}\s*from/;
 
 /**
  * Comments blanked, because all five files DISCUSS the peg at length.
@@ -94,24 +102,15 @@ describe('the calendar peg stays out of the farm\'s money (#637)', () => {
         }
     });
 
-    it('[calendar-peg] nothing outside the calendar subtree imports BGN_PER_EUR', () => {
+    it('[calendar-peg] nothing outside the allowed subtrees imports the peg or its converter', () => {
         /*
-         * THE POPULATION IS LEGITIMATELY ZERO TODAY, and the first version of
-         * this test hid that behind a bug worth recording.
-         *
-         * It matched `/\bimport\b[^;]*\bBGN_PER_EUR\b/` against the RAW
-         * source and reported one importer: `costs.ts`, the file that
-         * DECLARES the constant and imports nothing at all. The match was on
-         * its docblock — "Do not import this into a cost, lease or contract
-         * path" — with `[^;]*` spanning the prose. So a comment satisfied the
-         * "it IS imported somewhere" control, which would then have passed
-         * whether or not the detector could see a real import.
-         *
-         * Nothing imports `BGN_PER_EUR`: `load.ts` takes `perDaEurCents`, and
-         * the rate stays inside the module that owns it. That is the desired
-         * state, so there is nothing live to assert against — and an empty
-         * population needs its detector proved on a crafted input instead,
-         * which is the next test.
+         * The population was ZERO while this matched `BGN_PER_EUR` alone —
+         * nothing imports the constant; the loaders take `perDaEurCents`. That
+         * hid a hole: a converter import is a conversion all the same, and the
+         * detector could not see one. It matches both names since
+         * agrent-ios#638, so the calendar and benchmarks loaders are a live
+         * positive. (The first version also matched its own docblock prose
+         * through `[^;]*`; the crafted self-test below pins that it cannot.)
          */
         const importers = FILES.map((abs) => ({
             rel: path.relative(REPO_ROOT, abs).split(path.sep).join('/'),
@@ -120,7 +119,10 @@ describe('the calendar peg stays out of the farm\'s money (#637)', () => {
             .filter(({ code }) => IMPORTS_PEG.test(code))
             .map(({ rel }) => rel);
         console.log(`[calendar-peg] ${importers.length} importer(s): ${importers.join(', ') || 'none'}`);
-        expect(importers.filter((r) => !r.startsWith(ALLOWED_PREFIX))).toEqual([]);
+        expect(importers.filter((r) => !ALLOWED_PREFIXES.some((p) => r.startsWith(p)))).toEqual([]);
+        // The converter IS imported now (calendar + benchmarks loaders), so the
+        // detector has a live positive as well as the crafted one below.
+        expect(importers.length).toBeGreaterThanOrEqual(2);
     });
 
     it('SELF-TEST: the detector finds a real import and ignores the prose', () => {
@@ -130,6 +132,9 @@ describe('the calendar peg stays out of the farm\'s money (#637)', () => {
         ))).toBe(true);
         expect(IMPORTS_PEG.test(blankComments(
             "import { perDaEurCents, BGN_PER_EUR } from './costs';",
+        ))).toBe(true);
+        expect(IMPORTS_PEG.test(blankComments(
+            "import { perDaEurCents } from '../calendar/costs';",
         ))).toBe(true);
         // ...and the sentence that fooled the first version does not match.
         expect(IMPORTS_PEG.test(blankComments(

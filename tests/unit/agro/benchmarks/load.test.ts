@@ -4,7 +4,7 @@
  * otherwise read as working.
  */
 import raw from '@/lib/agro/benchmarks/dataset.json';
-import { BENCHMARKS, benchmarkCommodities, benchmarksFor, validateBenchmarks } from '@/lib/agro/benchmarks/load';
+import { BENCHMARKS, benchmarkCommodities, benchmarksFor, served, validateBenchmarks } from '@/lib/agro/benchmarks/load';
 
 const clone = () => JSON.parse(JSON.stringify(raw));
 
@@ -82,5 +82,25 @@ describe('commodity slugs', () => {
 
     it('accepts a crop the vocabulary does not know (control)', () => {
         expect(benchmarkCommodities()).toContain('triticale');
+    });
+});
+
+describe('the euro figure per decare', () => {
+    it('converts a lev rate per hectare at the peg, half up, once', () => {
+        // 254,74 лв/ha = 25,474 лв/дка = 13,0247 € → 1302 cents.
+        const protein = benchmarksFor({ commodity: 'peas' }).supportRates.find((r) => r.scheme === 'protein');
+        expect(protein).toMatchObject({ perHaStotinki: 25474, perDaEurCents: 1302, perDaOver30EurCents: null });
+    });
+
+    it('converts the over-30 rate too, and it stays below the first-30 one', () => {
+        // 1 836,07 лв/ha → 93,88 €/дка; 1 224,06 лв/ha → 62,59 €/дка.
+        const fruit = benchmarksFor().supportRates.find((r) => r.scheme === 'fruit');
+        expect(fruit).toMatchObject({ perDaEurCents: 9388, perDaOver30EurCents: 6259 });
+    });
+
+    it('divides a euro rate without converting it', () => {
+        const eur = served({ ...BENCHMARKS.supportRates[0], currency: 'EUR', perHaStotinki: 12345, perHaOver30Stotinki: undefined });
+        expect(eur.perDaEurCents).toBe(1235);
+        expect(eur.perDaOver30EurCents).toBeNull();
     });
 });
