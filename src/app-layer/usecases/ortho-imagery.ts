@@ -15,7 +15,7 @@ import { logger } from '@/lib/observability';
 import { notFound } from '@/lib/errors/types';
 import { tileTo3857Bbox, tileToLonLatBbox, isTileInBulgaria } from '@/lib/geo/cadastre-tiles';
 import { bboxTouchesBulgaria } from '@/lib/geo/ortho-bbox';
-import {
+import { ORTHO_BLOCK_LAYER_PREFIX,
     ORTHO_ATTRIBUTION,
     ORTHO_YEARS,
     orthoBlockYearCandidates,
@@ -557,8 +557,11 @@ type YearProbe =
     | { kind: 'blocks'; year: number; raw: RawFeature[] }
     /** The layer exists and there is genuinely nothing here. */
     | { kind: 'empty'; year: number }
-    /** Try an older year: no layer, a failure, or the wrong numbering. */
-    | { kind: 'next' };
+    /**
+     * Try an older year: no layer, a failure, or the wrong numbering.
+     * `refused` when МЗХ answered non-OK — no such layer for that year.
+     */
+    | { kind: 'next'; refused?: true };
 
 interface RawFeature {
     properties?: Record<string, unknown>;
@@ -569,7 +572,7 @@ const hasBlockId = (f: RawFeature): boolean =>
     typeof f.properties?.PHBIDENT === 'string' && (f.properties.PHBIDENT as string).length > 0;
 
 /**
- * Ask ONE year's `Agricultural_Land` layer about this bbox.
+ * Ask ONE year's physical-block layer (`ORTHO_BLOCK_LAYER_PREFIX`) about this bbox.
  *
  * The three outcomes are the whole design, and the middle one is why this is
  * not a simple "first year that returns features" loop:
@@ -598,7 +601,12 @@ async function probeBlockYear(
         deps,
         'application/json',
     );
-    if (!res || !res.ok) return { kind: 'next' };
+    if (!res) return { kind: 'next' };
+    // A 400 is how МЗХ's GeoServer says "no such layer" (InvalidParameterValue,
+    // «Feature type … unknown») — a year not yet published, or a layer it
+    // renamed. Marked, so the walk can tell "every year was refused" (a renamed
+    // layer) from an outage (5xx) or "no year had blocks here".
+    if (!res.ok) return res.status === 400 ? { kind: 'next', refused: true } : { kind: 'next' };
     const json = (await res.json().catch(() => null)) as { features?: RawFeature[] } | null;
     const raw = json?.features;
     // A missing `features` key is a malformed or Exception body, NOT an empty
@@ -673,9 +681,22 @@ export async function fetchOrthoBlocks(
         : orthoBlockYearCandidates(deps.now ?? new Date()).slice(0, BLOCKS_YEAR_MAX_PROBES);
 
     let resolved: YearProbe = { kind: 'next' };
+    let refused = 0;
     for (const year of candidates) {
         resolved = await probeBlockYear(src.url, year, bbox, deps);
+        if (resolved.kind === 'next' && resolved.refused) refused += 1;
         if (resolved.kind !== 'next') break;
+    }
+
+    // EVERY probed year refused: the layer itself is gone, which is how the
+    // `Agricultural_Land` → `Physical_Blocks` rename hid for a day behind a
+    // 200 with no blocks. Logged, never thrown — the photo still serves.
+    if (resolved.kind === 'next' && candidates.length > 0 && refused === candidates.length) {
+        logger.warn('ortho.block_layer_refused', {
+            component: 'ortho',
+            years: candidates.join(','),
+            layer: ORTHO_BLOCK_LAYER_PREFIX,
+        });
     }
 
     // Nothing answered. `year: null` says "we could not establish a block

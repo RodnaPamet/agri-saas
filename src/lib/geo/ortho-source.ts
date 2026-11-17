@@ -47,7 +47,7 @@
  *     10,368 bytes for a real tile at the same point in a covered year;
  *   • the coverage property is **`Date`**, an ISO timestamp, NOT `FlightDate`
  *     in `dd/mm/yyyy`;
- *   • `Dates_YYYY` and `Agricultural_Land_YYYY` return geometry in
+ *   • `Dates_YYYY` and `Physical_Blocks_YYYY` return geometry in
  *     **EPSG:32635** (UTM 35N) unless `srsName` asks otherwise — which
  *     matters because the phone wants EPSG:4326 lon/lat GeoJSON;
  *   • the WFS `BBOX` in `urn:ogc:def:crs:EPSG::4326` is **lat,lon**, and it
@@ -74,9 +74,23 @@ export const ORTHO_YEARS = [2025, 2024, 2023, 2022, 2021, 2020] as const;
 
 /**
  * The earliest year that could carry a physical-block layer. The
- * `Agricultural_Land_YYYY` layers exist back to 2020.
+ * `Physical_Blocks_YYYY` layers exist back to 2021 (`Agricultural_Land_YYYY` before the rename).
  */
 export const ORTHO_BLOCKS_EARLIEST_YEAR = 2020;
+
+/**
+ * The physical-block (ФБ) layer, by year — `VectorData:Physical_Blocks_YYYY`.
+ *
+ * It was `Agricultural_Land_YYYY` until МЗХ renamed it. Measured live
+ * 2026-11-17: every `Agricultural_Land_*` name answers 400 «Feature type …
+ * unknown», and GetCapabilities lists `Physical_Blocks_2021`–`_2025` instead,
+ * with the same properties (`PHBIDENT`, `USAGEBUL`, `USAGECODE`) and the same
+ * EPSG:32635 geometry — 281 blocks over the owner's farm in 2025. The rename
+ * reached the farmer as a map with no ФБ at all and a 200, because every year
+ * looked like "no layer this year" (agrent-ios report, 2026-11-17).
+ * `fetchOrthoBlocks` now logs when no probed year answers at all.
+ */
+export const ORTHO_BLOCK_LAYER_PREFIX = 'VectorData:Physical_Blocks_';
 
 /**
  * Candidate years for the PHYSICAL BLOCK layer, NEWEST FIRST — a SECOND year
@@ -258,7 +272,7 @@ export function buildOrthoBlocksUrl(
     bbox: LonLatBbox,
     count: number,
 ): string {
-    return `${base}?${wfsQuery(`VectorData:Agricultural_Land_${year}`, bbox, count).toString()}`;
+    return `${base}?${wfsQuery(`${ORTHO_BLOCK_LAYER_PREFIX}${year}`, bbox, count).toString()}`;
 }
 
 /**

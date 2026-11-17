@@ -57,6 +57,7 @@ jest.mock('@/lib/redis', () => ({
     getRedis: () => (redisPresent ? redisDouble : null),
 }));
 
+import { logger } from '@/lib/observability';
 import {
     __resetOrthoLimiterForTests,
     fetchOrthoBlocks,
@@ -108,7 +109,7 @@ function router(handlers: {
         const year = Number(/_(\d{4})/.exec(u)?.[1] ?? 0);
         const pick = u.includes('Dates_')
             ? handlers.dates
-            : u.includes('Agricultural_Land_')
+            : u.includes('Physical_Blocks_')
               ? handlers.blocks
               : handlers.tile;
         if (!pick) throw new Error(`no handler for ${u}`);
@@ -505,7 +506,7 @@ describe('the physical blocks (#2421)', () => {
             blocks: (y) => jsonRes(y === 2025 ? blocksBody(1) : { features: [] }),
         });
         const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
-        expect(seen.some((u) => u.includes('Agricultural_Land'))).toBe(true);
+        expect(seen.some((u) => u.includes('Physical_Blocks'))).toBe(true);
         // 2026 answers with an EMPTY feature array, which means "the layer
         // covers this and there is nothing here" — so the search stops there
         // rather than falling back to 2025's blocks.
@@ -535,7 +536,7 @@ describe('the physical blocks (#2421)', () => {
     });
 
     it('an ExceptionReport year is skipped, not treated as empty', async () => {
-        // 2026 has no `Agricultural_Land` layer today — measured. A non-OK
+        // 2026 has no `Physical_Blocks` layer today — measured. A non-OK
         // response must fall through to an older year; treating it as "nothing
         // here" would show no blocks for the whole country until the Ministry
         // publishes.
@@ -564,6 +565,38 @@ describe('the physical blocks (#2421)', () => {
         expect(r).toEqual({ year: null, features: [], truncated: false });
     });
 
+    it('says so in the log when EVERY year refuses the layer — a renamed layer, not an empty area', async () => {
+        // МЗХ renamed `Agricultural_Land_YYYY` to `Physical_Blocks_YYYY`; every
+        // old name answered 400 «Feature type … unknown», and the farmer saw a
+        // 200 with no blocks and nothing anywhere said why (2026-11-17).
+        const warn = jest.spyOn(logger, 'warn').mockImplementation(() => undefined as never);
+        try {
+            const { impl } = router({
+                dates: () => jsonRes(coverageBody(0)),
+                blocks: () => new Response('ExceptionReport', { status: 400 }),
+            });
+            const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
+            expect(r).toEqual({ year: null, features: [], truncated: false });
+            expect(warn).toHaveBeenCalledWith('ortho.block_layer_refused', expect.objectContaining({ component: 'ortho' }));
+
+            // Controls: one refused year then blocks, and an outage, both stay quiet.
+            warn.mockClear();
+            const partly = router({
+                dates: () => jsonRes(coverageBody(0)),
+                blocks: (y) => (y === 2026 ? new Response('ExceptionReport', { status: 400 }) : jsonRes(blocksBody(2))),
+            });
+            await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: partly.impl, now: NOW });
+            const outage = router({
+                dates: () => jsonRes(coverageBody(0)),
+                blocks: () => new Response('nope', { status: 503 }),
+            });
+            await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: outage.impl, now: NOW });
+            expect(warn).not.toHaveBeenCalledWith('ortho.block_layer_refused', expect.anything());
+        } finally {
+            warn.mockRestore();
+        }
+    });
+
     it('probes newest-first and stops — it does not sweep every year', async () => {
         const { impl, seen } = router({
             dates: () => jsonRes(coverageBody(0)),
@@ -571,8 +604,8 @@ describe('the physical blocks (#2421)', () => {
         });
         await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
         const years = seen
-            .filter((u) => u.includes('Agricultural_Land'))
-            .map((u) => Number(/Agricultural_Land_(\d{4})/.exec(u)?.[1]));
+            .filter((u) => u.includes('Physical_Blocks'))
+            .map((u) => Number(/Physical_Blocks_(\d{4})/.exec(u)?.[1]));
         // Exactly one probe: the newest candidate answered.
         expect(years).toEqual([2026]);
     });

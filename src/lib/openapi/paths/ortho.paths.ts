@@ -50,7 +50,7 @@ const Blocks = z
         type: z.literal('FeatureCollection'),
         year: z.number().int().nullable().openapi({
             description:
-                'The **physical-block (ФБ) year** — the `Agricultural_Land_YYYY` layer these '
+                'The **physical-block (ФБ) year** — the `Physical_Blocks_YYYY` layer these '
                 + 'outlines came from. **Not the photo\u2019s year**, which is '
                 + '`/ortho/coverage`\u2019s `year` and can differ.\n\n'
                 + 'The Ministry renumbers ФБ between years, so this is the number to show '
