@@ -7,9 +7,12 @@
  *   - a citation naming a source the map does not hold — a threshold that
  *     looks sourced and resolves to nothing;
  *   - a duplicate `id` — two entries a client cannot tell apart, one of
- *     which it will show and the other silently not.
+ *     which it will show and the other silently not;
+ *   - an alias where a canonical commodity slug exists — see
+ *     `../reference-slugs`.
  */
 import { ThresholdsDatasetSchema, type PestThreshold, type ThresholdsDataset } from './schema';
+import { assertCanonicalSlug } from '../reference-slugs';
 import raw from './dataset.json';
 
 export function validateThresholds(input: unknown): ThresholdsDataset {
@@ -24,6 +27,7 @@ export function validateThresholds(input: unknown): ThresholdsDataset {
     for (const t of data.thresholds) {
         if (ids.has(t.id)) throw new Error(`agro-thresholds: duplicate id ${t.id}`);
         ids.add(t.id);
+        for (const c of t.crops) assertCanonicalSlug('agro-thresholds', t.id, c);
         if (!(t.cite.source in data.sources)) unresolved.push(`${t.id} -> ${t.cite.source}`);
     }
     if (unresolved.length > 0) {

@@ -55,3 +55,9 @@ describe('what the validator refuses', () => {
         expect(() => validateThresholds(clone())).not.toThrow();
     });
 });
+
+it('refuses an alias where a canonical slug exists', () => {
+    const d = clone();
+    d.thresholds[0].crops = ['corn'];
+    expect(() => validateThresholds(d)).toThrow(/canonical commodity is `maize`/);
+});

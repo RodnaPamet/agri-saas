@@ -10,9 +10,14 @@
  *   - a commodity or scheme listed twice — the client picks one of two
  *     national averages for the same crop and nothing says which;
  *   - an "over 30 ha" rate HIGHER than the first-30 rate. Every order so far
- *     degresses, so an inversion is a transposed pair, not a policy.
+ *     degresses, so an inversion is a transposed pair, not a policy;
+ *   - an ALIAS where the product has a canonical slug (`canola` for
+ *     `rapeseed`). Clients join on `commodity-vocabulary`'s canonical values,
+ *     so an alias is a figure no crop ever finds. A crop outside that
+ *     vocabulary (triticale, chickpeas) is fine: it has no slug to clash with.
  */
 import { BenchmarksDatasetSchema, type BenchmarksDataset, type BenchmarkYield, type SupportRate } from './schema';
+import { assertCanonicalSlug } from '../reference-slugs';
 import raw from './dataset.json';
 
 export function validateBenchmarks(input: unknown): BenchmarksDataset {
@@ -30,6 +35,7 @@ export function validateBenchmarks(input: unknown): BenchmarksDataset {
     const commodities = new Set<string>();
     for (const y of data.yields) {
         check(`yield ${y.commodity}`, y.cite.source);
+        assertCanonicalSlug('agro-benchmarks', `yield ${y.commodity}`, y.commodity);
         if (commodities.has(y.commodity)) {
             throw new Error(`agro-benchmarks: yield for ${y.commodity} is listed twice`);
         }
@@ -43,6 +49,7 @@ export function validateBenchmarks(input: unknown): BenchmarksDataset {
             throw new Error(`agro-benchmarks: support scheme ${r.scheme} is listed twice`);
         }
         schemes.add(r.scheme);
+        for (const c of r.commodities ?? []) assertCanonicalSlug('agro-benchmarks', `rate ${r.scheme}`, c);
         if (r.perHaOver30Stotinki !== undefined && r.perHaOver30Stotinki > r.perHaStotinki) {
             throw new Error(
                 `agro-benchmarks: ${r.scheme} pays more above 30 ha (${r.perHaOver30Stotinki}) than for the `

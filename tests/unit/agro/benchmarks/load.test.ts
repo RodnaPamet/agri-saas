@@ -71,3 +71,16 @@ describe('what the validator refuses', () => {
         expect(() => validateBenchmarks(clone())).not.toThrow();
     });
 });
+
+describe('commodity slugs', () => {
+    it('refuses an alias where a canonical slug exists', () => {
+        const d = clone();
+        const r = d.yields.find((y: { commodity: string }) => y.commodity === 'rapeseed');
+        r.commodity = 'canola';
+        expect(() => validateBenchmarks(d)).toThrow(/canonical commodity is `rapeseed`/);
+    });
+
+    it('accepts a crop the vocabulary does not know (control)', () => {
+        expect(benchmarkCommodities()).toContain('triticale');
+    });
+});
