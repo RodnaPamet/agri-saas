@@ -115,12 +115,19 @@ export async function fetchPurchasePrices(
     link: MzhBulletinLink,
     opts: MzhFetchOptions = {},
 ): Promise<MzhPurchasePrices | null> {
+    return parsePurchasePrices(await fetchBulletinText(link, opts));
+}
+
+/**
+ * A bulletin's extracted text, once — the prices and the campaign progress
+ * (#3173) are both read from it, so the PDF is downloaded a single time.
+ */
+export async function fetchBulletinText(link: MzhBulletinLink, opts: MzhFetchOptions = {}): Promise<string> {
     const url = link.href.startsWith('http') ? link.href : `${MZH_ORIGIN}${link.href}`;
     const response = await get(url, opts, 'application/pdf');
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.byteLength > MAX_PDF_BYTES) {
         throw new Error(`МЗХ bulletin at ${url} is ${bytes.byteLength} bytes, over the cap`);
     }
-    const text = await (opts.extractText ?? extractPdfText)(bytes);
-    return parsePurchasePrices(text);
+    return (opts.extractText ?? extractPdfText)(bytes);
 }

@@ -680,6 +680,12 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // calls getTenantCtx before serving — and the payload is public
         // reference data. The review queue is PLATFORM_ADMIN_API_KEY-gated.
         'support-schemes.ts',
+        // #3173 — `CampaignProgressSnapshot` is GLOBAL reference data (no
+        // tenantId / no RLS, like MarketPricePoint): МЗХ's national harvest
+        // and sowing figures, the same for every farm. The one read takes the
+        // newest snapshot with the global client; the route gates it on a
+        // signed-in caller, like /api/agro-benchmarks.
+        'campaign-progress.ts',
         // #2671 — `assistant-memory.ts` is the `trust-safety.ts` shape: the
         // READ and the WRITES use different clients ON PURPOSE.
         //

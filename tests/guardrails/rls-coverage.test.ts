@@ -552,6 +552,12 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
     ['MarketPricePoint', 'A dated observation on a MarketPriceSeries; inherits the series decision.'],
     ['MarketNewsItem', 'Global agri-news cache aggregated from public feeds.'],
     [
+        'CampaignProgressSnapshot',
+        '#3173 \u2014 the field campaign\'s progress (harvested shares, sown hectares) from \u041c\u0417\u0425\'s ' +
+            'public weekly bulletin. One fact for every farm, like MarketPricePoint: national ' +
+            'figures, nothing about any farm or person. Written only by the mzh-prices-pull job.',
+    ],
+    [
         'SourceDocumentWatch',
         '#3146 \u2014 the registry of EXTERNAL documents this product cites, watched for ' +
             'revision. The same decision as MarketPriceSeries above and for the same reason: a ' +

@@ -335,6 +335,11 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // under /api/t/[tenantSlug] instead.
             'agro-benchmarks',
             'agro-thresholds',
+            // #3173 — МЗХ's national harvest and sowing progress for Табло.
+            // Unlike the three above it reads a TABLE, but a tenantless one
+            // (CampaignProgressSnapshot, like MarketPricePoint): the same
+            // national figures for every farm, nothing about any farm.
+            'agro-progress',
             // P5.2a (#1593) — the person-scoped SOCIAL surface, starting with
             // `reports` (file a DSA Art 16 notice, read your own back).
             // AUTHENTICATED like `me`, and with no tenant for a stronger

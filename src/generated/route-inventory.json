@@ -220,6 +220,11 @@
       "documented": true
     },
     {
+      "path": "/api/agro-progress",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/agro-thresholds",
       "status": "live",
       "documented": true

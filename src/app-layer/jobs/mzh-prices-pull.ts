@@ -36,8 +36,9 @@
 import { Prisma } from '@prisma/client';
 
 import { invalidatePriceTrendsCache } from '@/app-layer/usecases/trends';
-import { fetchBulletinIndex, fetchPurchasePrices, MZH_ORIGIN, type MzhFetchOptions } from '@/lib/market/mzh-client';
-import { COMMODITY_BY_LABEL } from '@/lib/market/mzh-parse';
+import { fetchBulletinIndex, fetchBulletinText, MZH_ORIGIN, type MzhFetchOptions } from '@/lib/market/mzh-client';
+import { COMMODITY_BY_LABEL, parsePurchasePrices } from '@/lib/market/mzh-parse';
+import { parseCampaignProgress, type RefusedProgressRow } from '@/lib/market/mzh-progress';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 
@@ -90,6 +91,20 @@ export interface MzhPricesPullResult {
     missingCommodities: string[];
     cacheKeysInvalidated: number;
     cacheInvalidationFailed: boolean;
+    /**
+     * The field campaign's progress from the same bulletin (#3173): how many
+     * harvest and sowing tables were read and stored, which rows were refused
+     * because their figures did not agree with themselves, and which crops
+     * carry no commodity mapping. Independent of the price verdict — a
+     * bulletin can carry one and not the other.
+     */
+    progress: {
+        harvestTables: number;
+        sowingTables: number;
+        stored: boolean;
+        refused: RefusedProgressRow[];
+        unmappedLabels: string[];
+    };
 }
 
 export async function runMzhPricesPull(
@@ -107,6 +122,7 @@ export async function runMzhPricesPull(
         missingCommodities: [],
         cacheKeysInvalidated: 0,
         cacheInvalidationFailed: false,
+        progress: { harvestTables: 0, sowingTables: 0, stored: false, refused: [], unmappedLabels: [] },
     };
 
     const index = await fetchBulletinIndex(opts);
@@ -119,7 +135,10 @@ export async function runMzhPricesPull(
     }
     result.bulletinDate = newest.date;
 
-    const parsed = await fetchPurchasePrices(newest, opts);
+    const text = await fetchBulletinText(newest, opts);
+    await storeCampaignProgress(text, newest.date, `${MZH_ORIGIN}${newest.href}`, result);
+
+    const parsed = parsePurchasePrices(text);
     if (!parsed) {
         result.verdict = 'unreadable';
         logger.error('mzh.unreadable_bulletin', {
@@ -238,7 +257,52 @@ export async function runMzhPricesPull(
         missingCommodities: result.missingCommodities,
         cacheKeysInvalidated: result.cacheKeysInvalidated,
         cacheInvalidationFailed: result.cacheInvalidationFailed,
+        progressHarvestTables: result.progress.harvestTables,
+        progressSowingTables: result.progress.sowingTables,
+        progressStored: result.progress.stored,
+        progressRefused: result.progress.refused.length,
+        progressUnmapped: result.progress.unmappedLabels,
     });
 
     return result;
+}
+
+/**
+ * The field campaign's progress (#3173), from the bulletin text the prices
+ * were read from. Stored only when at least one table was read; a bulletin
+ * without progress tables (or one whose rows were all refused) leaves the
+ * previous snapshot as the newest, which is the right thing for the line on
+ * Табло to keep showing — with its own «към» date.
+ */
+async function storeCampaignProgress(
+    text: string,
+    bulletinDate: string,
+    sourceUrl: string,
+    result: MzhPricesPullResult,
+): Promise<void> {
+    const progress = parseCampaignProgress(text);
+    result.progress.harvestTables = progress.harvest.length;
+    result.progress.sowingTables = progress.sowing.length;
+    result.progress.refused = progress.refused;
+    result.progress.unmappedLabels = progress.unmappedLabels;
+
+    if (progress.refused.length > 0) {
+        logger.warn('mzh.progress_rows_refused', {
+            component: 'mzh-prices',
+            bulletinDate,
+            refused: progress.refused,
+        });
+    }
+    const tables = [...progress.harvest, ...progress.sowing];
+    if (tables.length === 0) return;
+
+    const asOf = tables.map((t) => t.asOf).sort().at(-1) as string;
+    const tablesJson = { harvest: progress.harvest, sowing: progress.sowing } as unknown as Prisma.InputJsonValue;
+    await prisma.campaignProgressSnapshot.upsert({
+        where: { bulletinDate: new Date(bulletinDate) },
+        update: { asOf: new Date(asOf), sourceUrl, tablesJson },
+        create: { bulletinDate: new Date(bulletinDate), asOf: new Date(asOf), sourceUrl, tablesJson },
+        select: { id: true },
+    });
+    result.progress.stored = true;
 }

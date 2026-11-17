@@ -280,3 +280,26 @@ model SourceDocumentWatch {
   @@index([changedAt])
   @@index([series])
 }
+
+/// The field campaign's progress from МЗХ's weekly «Оперативен анализ»
+/// (#3173): one row per bulletin, holding its harvest and sowing tables as
+/// parsed and checked against their own arithmetic (`mzh-progress.ts`).
+/// GLOBAL reference data — no tenantId, the same as MarketPricePoint. The
+/// phone's Табло reads the newest one.
+model CampaignProgressSnapshot {
+  id           String   @id @default(cuid())
+  /// The bulletin's own date, from its filename. Unique, so re-reading a
+  /// bulletin is an upsert rather than a second snapshot.
+  bulletinDate DateTime @unique @db.Date
+  /// The newest «към» date among its tables — what the figures describe.
+  asOf         DateTime @db.Date
+  sourceUrl    String
+  /// `{ harvest: ProgressTable[], sowing: ProgressTable[] }`, as parsed. A
+  /// document rather than columns: the tables change with the season, and
+  /// only the newest snapshot is ever served.
+  tablesJson   Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([asOf])
+}
