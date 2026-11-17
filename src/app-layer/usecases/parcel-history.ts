@@ -111,7 +111,7 @@ export interface ParcelHistoryWeedObservation {
 }
 
 export interface ParcelHistory {
-    parcel: { id: string; name: string; cropType: string | null };
+    parcel: { id: string; name: string; displayName: string | null; cropType: string | null };
     cropSeasons: ParcelHistoryCropSeason[];
     operations: ParcelHistoryOperation[];
     weedObservations: ParcelHistoryWeedObservation[];
@@ -136,7 +136,7 @@ export interface ParcelHistory {
 async function requireParcel(db: PrismaTx, ctx: RequestContext, parcelId: string) {
     const parcel = await db.parcel.findFirst({
         where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, name: true, cropType: true },
+        select: { id: true, name: true, displayName: true, cropType: true },
     });
     if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found.');
     return parcel;

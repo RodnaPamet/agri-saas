@@ -18,7 +18,7 @@ import { runTool } from '@/app-layer/ai/assistant/tools';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const P = (id: string, name: string, locationName: string, extra: Record<string, unknown> = {}) => ({
-    id, name, cadastralId: null, cropType: null, locationId: `loc_${locationName}`, locationName, ...extra,
+    id, name, displayName: null, cadastralId: null, cropType: null, locationId: `loc_${locationName}`, locationName, ...extra,
 });
 const FARM = [
     P('p1', 'Парцел 1', 'Север', { cropType: 'Wheat', cadastralId: '12345.67.89' }),
@@ -63,6 +63,17 @@ describe('resolveAgainst', () => {
         const none = resolveAgainst(FARM as never, { crop: 'царевица' });
         expect(none.parcels).toEqual([]);
         expect(none.unresolved[0]?.candidates).toEqual(['Wheat', 'Canola', 'Sunflower']);
+    });
+
+    it('the farmer\'s nickname finds the parcel, and labels it beside its number (#3169)', () => {
+        const farm = [...FARM, P('p6', '20688.13', 'Изток', { displayName: 'Нивата до реката', cropType: 'Maize' })];
+        const r = resolveAgainst(farm as never, { parcels: ['нивата до реката'] });
+        expect(r.parcels).toEqual([{ id: 'p6', label: 'Изток · Нивата до реката (20688.13)', crop: 'Maize' }]);
+        // The field number still answers, and a part of the nickname too.
+        expect(resolveAgainst(farm as never, { parcels: ['20688.13'] }).parcels.map((p) => p.id)).toEqual(['p6']);
+        expect(resolveAgainst(farm as never, { parcels: ['до реката'] }).parcels.map((p) => p.id)).toEqual(['p6']);
+        // Control: a parcel with no nickname is labelled as before.
+        expect(resolveAgainst(farm as never, { parcels: ['Парцел 3'] }).parcels[0]?.label).toBe('Юг · Парцел 3');
     });
 
     it('fold drops the noun, the case and the quotes', () => {

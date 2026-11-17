@@ -35,6 +35,8 @@ export interface CreateParcelInput {
 
 export interface UpdateParcelInput {
     name?: string;
+    /** The farmer's nickname (#3169); null or blank clears it. */
+    displayName?: string | null;
     cropType?: string | null;
     /**
      * КАИ cadastral identifier (`ЕКАТТЕ.масив.парцел`). A non-empty value is
@@ -146,6 +148,9 @@ export async function updateParcel(ctx: RequestContext, parcelId: string, input:
 
         const res = await ParcelRepository.updateOne(db, ctx, parcelId, {
             name: input.name !== undefined ? sanitizePlainText(input.name.trim()) : undefined,
+            // The nickname (#3169): sanitized, and blank clears it — the same
+            // rule as the header fields, since it is free text a farmer types.
+            displayName: headerField(input.displayName),
             landDistrict: headerField(input.landDistrict),
             locality: headerField(input.locality),
             produceStore: headerField(input.produceStore),
@@ -391,6 +396,7 @@ export async function listParcelPlaceOptions(ctx: RequestContext) {
             select: {
                 id: true,
                 name: true,
+                displayName: true,
                 cadastralId: true,
                 cropType: true,
                 location: { select: { id: true, name: true } },
@@ -402,6 +408,7 @@ export async function listParcelPlaceOptions(ctx: RequestContext) {
         return rows.map((p) => ({
             id: p.id,
             name: p.name,
+            displayName: p.displayName,
             cadastralId: p.cadastralId,
             cropType: p.cropType,
             locationId: p.location.id,

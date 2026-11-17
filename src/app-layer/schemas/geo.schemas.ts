@@ -66,6 +66,11 @@ export const CreateParcelSchema = z
 export const UpdateParcelSchema = z
     .object({
         name: z.string().min(1).max(200).optional(),
+        /**
+         * The farmer's nickname for the parcel (#3169) — the app and the
+         * assistant use it; the ДНЕВНИК keeps `name`. Null or blank clears it.
+         */
+        displayName: z.string().max(120).nullable().optional(),
         cropType: z.string().max(120).nullable().optional(),
         cadastralId: z.string().max(50).nullable().optional(),
         // ДНЕВНИК per-field header (Прил.1 РД 11-3194/31.12.2021). No import
@@ -80,6 +85,7 @@ export const UpdateParcelSchema = z
     .refine(
         (b) =>
             b.name !== undefined ||
+            b.displayName !== undefined ||
             b.cropType !== undefined ||
             b.cadastralId !== undefined ||
             b.landDistrict !== undefined ||
