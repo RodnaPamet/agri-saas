@@ -1053,6 +1053,16 @@ export interface SourceDocumentWatchPayload {
     _?: never;
 }
 
+/**
+ * source-document-discovery — find NEW documents on МЗХ's listing pages and
+ * email the owner (#3146, second slice of the server half of agrent-ios#639).
+ * Tenantless like its sibling: a publication has no farm.
+ */
+export interface SourceDocumentDiscoveryPayload {
+    /** No arguments — the listings and the clock are the job's own. */
+    _?: never;
+}
+
 export interface ZarnoBorsaPullPayload {
     /** No arguments — the path and the clock are the job's own. */
     _?: never;
@@ -1189,6 +1199,7 @@ export interface JobPayloadMap {
     'zarnoborsa-pull': ZarnoBorsaPullPayload;
     'mzh-prices-pull': MzhPricesPullPayload;
     'source-document-watch': SourceDocumentWatchPayload;
+    'source-document-discovery': SourceDocumentDiscoveryPayload;
     'exchange-expiry-sweep': ExchangeExpirySweepPayload;
     'unverified-account-sweep': UnverifiedAccountSweepPayload;
     'mail-canary': MailCanaryPayload;
@@ -1376,6 +1387,17 @@ export const JOB_DEFAULTS: Record<JobName, {
          * the same minute will not fix. The next daily run is the retry, and
          * it is a real one: the comparison is against a stored hash, so a
          * day's gap costs a day of detection latency and nothing else.
+         */
+        attempts: 1,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'source-document-discovery': {
+        /*
+         * ONE attempt, as its sibling: a retry in the same minute re-reads the
+         * same pages, and a failed send already leaves every row unstamped, so
+         * the next daily run IS the retry — and announces them then.
          */
         attempts: 1,
         backoff: { type: 'exponential', delay: 5000 },

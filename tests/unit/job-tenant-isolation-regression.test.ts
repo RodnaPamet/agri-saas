@@ -316,7 +316,10 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // the job's population comes from the committed calendar dataset
         // rather than from any farm's rows — so there is no tenant axis to
         // isolate and a resolved one would be invented.
-        'source-document-watch'];
+        'source-document-watch',
+        // #3146 second slice — reads МЗХ's listing pages; the rows it writes
+        // are published documents, which have no farm.
+        'source-document-discovery'];
 
     test('no executor uses _payload (unused parameter = ignored tenantId)', () => {
         const pattern = /executorRegistry\.register\('[^']+',\s*async\s*\(_payload\)/g;
@@ -461,6 +464,7 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // committed calendar dataset and the clock is the job's own. The
         // registry it writes holds published documents, which have no farm.
         'SourceDocumentWatchPayload',
+        'SourceDocumentDiscoveryPayload',
         // #3020 — the 06:00 summary's payload: a recipient and the night key
         // that scheduled it. No tenantId for its producer's reason, and the
         // night key is the SCHEDULING identity rather than a scope — the job

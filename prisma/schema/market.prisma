@@ -280,3 +280,56 @@ model SourceDocumentWatch {
   @@index([changedAt])
   @@index([series])
 }
+
+/// A document FOUND on one of МЗХ's listing pages — agri-saas#3146, second
+/// slice (the server half of agrent-ios#639: "a cron job for querying the МЗХ
+/// for new series content every day").
+///
+/// `SourceDocumentWatch` watches what the calendar already CITES for revision;
+/// this records what МЗХ PUBLISHES, so a new technology card, guide, support
+/// order or «Аграрен доклад» is noticed the day it appears.
+///
+/// The first crawl of a listing records everything already on it as
+/// `baseline` — known, never announced — so switching discovery on does not
+/// mail years of back catalogue. From then on a URL not seen before is new,
+/// and `notifiedAt` is stamped only after the owner's email went out (owner,
+/// 2026-11-17: "email me").
+///
+/// Global like its sibling: a published МЗХ document is one fact for every
+/// farm, so there is no tenant axis, and nothing about any person is held.
+model SourceDocumentDiscovery {
+  id          String    @id @default(cuid())
+  /// Absolute URL of the document (a PDF, or a news item for the series that
+  /// МЗХ announces only as news). The natural key.
+  url         String    @unique
+  /// Which watched series found it — the listing's own slug, never parsed out
+  /// of the filename (#3154 measured МЗХ's filenames as unreliable).
+  series      String
+  /// The listing page it was found on.
+  listingUrl  String
+  /// The link text as МЗХ wrote it, for the email. Null when the link had none.
+  title       String?
+  /// Already on the listing at its first crawl: known, never announced.
+  baseline    Boolean   @default(false)
+  firstSeenAt DateTime  @default(now())
+  /// When the owner's email naming it was sent. Null until a send succeeded.
+  notifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([series])
+  @@index([notifiedAt])
+}
+
+/// One row per МЗХ listing page discovery has read at least once — agri-saas#3146.
+///
+/// Separate from the documents, because "this listing has been read" is not
+/// "this listing has rows": the news list records only items that match a
+/// watched series, so a first read with no match leaves no document behind —
+/// and judging "first read" by rows would then baseline the first real
+/// support order silently. A test caught exactly that.
+model SourceListingRead {
+  listingUrl  String   @id
+  firstReadAt DateTime @default(now())
+  lastReadAt  DateTime @default(now())
+}

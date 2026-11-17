@@ -244,6 +244,8 @@ describe('Infrastructure Regression Guards', () => {
             // `no-bulletin`, which is indistinguishable from a week with no
             // bulletin. Repetition is free because the point is keyed on the
             // table's own «към» date.
+            // 42 -> 43 by #3146's second slice: `source-document-discovery`,
+            // 05:10 UTC daily — МЗХ's listing pages, for NEW documents.
             // 41 -> 42 by #3146: `source-document-watch`, 04:55 UTC daily.
             // Daily because the thing detected is a REVISION, which has no
             // schedule of its own — МЗХ re-publishes a guide when it does — so
@@ -252,7 +254,7 @@ describe('Infrastructure Regression Guards', () => {
             // 05:40 so it does not share a minute with `mzh-prices-pull`: both
             // hit mzh.government.bg, and separating them keeps either job's
             // failure readable as its own rather than as contention.
-            expect(SCHEDULED_JOBS).toHaveLength(42);
+            expect(SCHEDULED_JOBS).toHaveLength(43);
         });
 
         test('scheduled job names match expected set', () => {
@@ -392,6 +394,9 @@ describe('Infrastructure Regression Guards', () => {
                 // CITES and flags one whose bytes changed. The baseline hash
                 // is never overwritten by a flag, so the record of what a
                 // published figure was checked against survives the revision.
+                // #3146 second slice — daily, reads МЗХ's listing pages for
+                // NEW documents and emails the owner what it found.
+                'source-document-discovery',
                 'source-document-watch',
                 // P5.4b — every 10 minutes, delivers queued DSA Art 17
                 // statements of reasons in the RECIPIENT's language, resolved

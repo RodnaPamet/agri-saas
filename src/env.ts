@@ -701,6 +701,13 @@ export const env = createEnv({
         // placeholder that reads as a real address — an authority writing to
         // an invented address is worse served than one told to ask.
         DSA_CONTACT_EMAIL: z.string().email().optional(),
+        /**
+         * Where the daily МЗХ discovery job emails newly published documents
+         * (agri-saas#3146; owner, 2026-11-17: "email me"). Unset means the job
+         * records what it finds and sends nothing — and stamps nothing, so
+         * setting it later announces what was found meanwhile.
+         */
+        MZH_WATCH_NOTIFY_EMAIL: z.string().email().optional(),
 
         /*
          * ZarnoBorsa's subscriber login (#3081). OPTIONAL, because a
@@ -1001,6 +1008,7 @@ export const env = createEnv({
         PRIVACY_CONTROLLER_ADDRESS: process.env.PRIVACY_CONTROLLER_ADDRESS,
         PRIVACY_CONTROLLER_PHONE: process.env.PRIVACY_CONTROLLER_PHONE,
         DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
+        MZH_WATCH_NOTIFY_EMAIL: process.env.MZH_WATCH_NOTIFY_EMAIL,
         ZARNOBORSA_EMAIL: process.env.ZARNOBORSA_EMAIL,
         ZARNOBORSA_PASSWORD: process.env.ZARNOBORSA_PASSWORD,
         APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,

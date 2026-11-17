@@ -7629,5 +7629,17 @@
             "wagesMachineOperators": "Machine operators' wages and social security",
             "services": "Services"
         }
+    },
+    "mzhDiscovery": {
+        "subject": "MZH: new documents ({count})",
+        "intro": "MZH published new documents ({count}) in the watched series:",
+        "more": "… and {count} more",
+        "series": {
+            "operativen-analiz": "Operational analysis",
+            "technology-card": "Technology card",
+            "agraren-doklad": "Agrarian report",
+            "coupled-support": "Coupled support",
+            "integrated-production": "Integrated production"
+        }
     }
 }

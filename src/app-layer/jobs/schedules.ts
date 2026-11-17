@@ -270,6 +270,19 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        /*
+         * agri-saas#3146, second slice: МЗХ's listing pages, daily, for NEW
+         * documents (owner, 2026-11-16: "querying the МЗХ for new series content
+         * every day"). 05:10, between the citation watch at 04:55 and the
+         * bulletin pull at 05:40, so no two of the three share a minute on
+         * МЗХ's CMS.
+         */
+        name: 'source-document-discovery',
+        pattern: '10 5 * * *',
+        description: 'Find new МЗХ publications on their listing pages and email the owner (#3146)',
+        defaultPayload: {},
+    },
+    {
         name: 'channel-digest',
         pattern: '*/15 * * * *',
         description: 'Send the opt-in 07:15 channel digest (#2941)',

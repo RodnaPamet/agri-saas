@@ -800,6 +800,27 @@ executorRegistry.register('source-document-watch', async () => {
     );
 });
 
+// ── source-document-discovery ───────────────────────────────────────
+//
+// #3146, second slice. Reads МЗХ's listing pages for NEW documents and emails
+// the owner. Tenantless: a publication has no farm.
+
+executorRegistry.register('source-document-discovery', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runSourceDocumentDiscovery } = await import('./source-document-discovery');
+    const r = await runSourceDocumentDiscovery();
+    // scanned = listings, actioned = new documents announced, skipped =
+    // listings that could not be read. The meta names each listing's status,
+    // because "nothing new" over a listing that did not parse is not news.
+    const unread = r.listings.filter((l) => l.status !== 'read').length;
+    return makeResult(
+        'source-document-discovery', startedAt, startMs,
+        r.listings.length, r.notified, unread,
+        { found: r.found, notified: r.notified, mail: r.mail, listings: r.listings },
+    );
+});
+
 // ── channel-digest ──────────────────────────────────────────────────
 //
 // P9.7's opt-in 07:15 recap (#2941). Tenantless for the same reason as
