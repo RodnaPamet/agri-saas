@@ -34,6 +34,7 @@ import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import { scanEgress } from '../safety/egress-scan';
 import type { AssistantLink } from './links';
 import type { AssistantProposal } from './propose';
+import type { DiaryDocumentOffer } from './documents';
 import { logger } from '@/lib/observability';
 
 /** What `emitAnswer` decided, so a caller can report it without re-deciding. */
@@ -58,6 +59,8 @@ export async function emitAnswer(
         tenantId: string;
         links?: readonly AssistantLink[];
         proposal?: AssistantProposal | null;
+        /** A ДНЕВНИК download (#3158). Server-built; nothing is generated until tapped. */
+        document?: DiaryDocumentOffer | null;
     },
 ): Promise<AnswerOutcome> {
     const trimmed = text.trim();
@@ -79,6 +82,7 @@ export async function emitAnswer(
     // decision this module makes.
     const links = meta.links ?? [];
     const proposal = meta.proposal ?? null;
+    const document = meta.document ?? null;
     // The DRAFT is scanned too, and for the label's reason taken one step
     // further: a draft's `title` and `notes` are prose the model wrote FROM
     // farm data, so they are outgoing text by the same route. Serialised
@@ -89,6 +93,9 @@ export async function emitAnswer(
             trimmed,
             ...links.map((l) => l.label),
             ...(proposal ? [JSON.stringify(proposal.draft)] : []),
+            // The offer's LABEL names a block from the farm's own data, so it
+            // is outgoing text by the link label's route.
+            ...(document ? [document.label] : []),
         ].join('\n'),
     );
     if (!verdict.clean) {
@@ -114,6 +121,7 @@ export async function emitAnswer(
         // "none" from "omitted" for either field.
         ...(links.length > 0 ? { links } : {}),
         ...(proposal ? { proposal } : {}),
+        ...(document ? { document } : {}),
     };
     send(sseFormat(event));
     return { sent: true, ruleIds: [] };

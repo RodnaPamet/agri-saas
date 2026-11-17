@@ -35,6 +35,7 @@
 import { endingEvent } from './endings';
 import { mergeLinks, type AssistantLink } from './links';
 import type { AssistantProposal } from './propose';
+import type { DiaryDocumentOffer } from './documents';
 import { runTool, toolDefs, type AssistantPromotionBlock } from './tools';
 import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import type { HaltCode } from '../safety/refusal-codes';
@@ -62,6 +63,12 @@ export interface ToolLoopResult {
      * between drafts the assistant could not decide between itself.
      */
     readonly proposal: AssistantProposal | null;
+    /**
+     * The LAST download offered this turn (#3158), last-call-wins like
+     * `proposal`: one button, not a choice between documents the assistant
+     * could not decide between itself.
+     */
+    readonly document: DiaryDocumentOffer | null;
     readonly truncatedAny: boolean;
     /** Any tool reported its own result INCOMPLETE — #2639. */
     readonly partialAny: boolean;
@@ -146,6 +153,7 @@ export async function runToolLoop(
      */
     const promotions: AssistantPromotionBlock[] = [];
     let proposal: AssistantProposal | null = null;
+    let document: DiaryDocumentOffer | null = null;
     let halt: HaltCode | null = null;
     let text: string | null = null;
     /*
@@ -263,6 +271,7 @@ export async function runToolLoop(
                 promotions.push(...outcome.promotions);
             }
             if (outcome.proposal !== null) proposal = outcome.proposal;
+            if (outcome.document) document = outcome.document;
             emit({
                 type: 'tool_result',
                 name: call.name,
@@ -358,6 +367,7 @@ export async function runToolLoop(
         text,
         links: mergeLinks(linkGroups),
         proposal,
+        document,
         truncatedAny,
         partialAny,
         halt,
