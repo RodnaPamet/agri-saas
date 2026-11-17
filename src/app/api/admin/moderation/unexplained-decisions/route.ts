@@ -66,7 +66,7 @@ export const GET = withApiErrorHandling(
             verifyPlatformApiKey(req);
         } catch (err) {
             if (err instanceof PlatformAdminError) {
-                return NextResponse.json({ error: err.code }, { status: err.status });
+                return NextResponse.json({ error: err.message }, { status: err.status });
             }
             throw err;
         }
