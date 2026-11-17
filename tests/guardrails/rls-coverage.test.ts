@@ -561,6 +561,18 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
             '`source-document-watch` job, never by a tenant request.',
     ],
     [
+        'SourceDocumentDiscovery',
+        '#3146 \u2014 documents FOUND on \u041c\u0417\u0425\u2019s listing pages. The ' +
+            'same decision as SourceDocumentWatch above: a publication is one fact for every ' +
+            'farm. It holds a URL, a series, a title and two timestamps \u2014 nothing about ' +
+            'any farm or person. Written only by the daily `source-document-discovery` job.',
+    ],
+    [
+        'SourceListingRead',
+        '#3146 \u2014 which \u041c\u0417\u0425 listing pages discovery has read: a URL and two ' +
+            'timestamps, global like SourceDocumentDiscovery above. Nothing about any farm or person.',
+    ],
+    [
         'PppRegisterImport',
         '#2077 \u2014 one dated upload of the \u0411\u0410\u0411\u0425 register of approved ' +
             'plant-protection products. NATIONAL public reference data: the register is identical ' +

@@ -7629,5 +7629,17 @@
             "wagesMachineOperators": "Заплати и осигуровки на механизаторите",
             "services": "Услуги"
         }
+    },
+    "mzhDiscovery": {
+        "subject": "МЗХ: нови документи ({count})",
+        "intro": "МЗХ публикува нови документи ({count}) в следените раздели:",
+        "more": "… и още {count}",
+        "series": {
+            "operativen-analiz": "Оперативен анализ",
+            "technology-card": "Технологична карта",
+            "agraren-doklad": "Аграрен доклад",
+            "coupled-support": "Обвързано подпомагане",
+            "integrated-production": "Интегрирано производство"
+        }
     }
 }
