@@ -1382,6 +1382,245 @@ exports[`API contract — per-schema snapshots schema: AgDashboardTaskItem 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AgroBenchmarks 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number"
+    },
+    "compiledAt": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-17"
+    },
+    "conventions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string",
+            "example": "МЗХ"
+          },
+          "url": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "publisher",
+          "url"
+        ]
+      },
+      "description": "Every \`cite.source\` in this response is a key here; the server refuses to load a dataset where one is not."
+    },
+    "yields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "commodity": {
+            "type": "string",
+            "example": "wheat"
+          },
+          "label": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bg"
+            ]
+          },
+          "harvest": {
+            "type": "integer",
+            "example": 2024
+          },
+          "kgPerHa": {
+            "type": "integer",
+            "example": 5731
+          },
+          "cite": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "page": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "point": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "note": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bg"
+            ]
+          }
+        },
+        "required": [
+          "commodity",
+          "label",
+          "harvest",
+          "kgPerHa",
+          "cite"
+        ]
+      }
+    },
+    "supportRates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scheme": {
+            "type": "string",
+            "example": "protein"
+          },
+          "label": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bg"
+            ]
+          },
+          "campaign": {
+            "type": "integer",
+            "example": 2024
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "BGN",
+              "EUR"
+            ]
+          },
+          "perHaStotinki": {
+            "type": "integer",
+            "example": 25474,
+            "description": "Integer minor units of \`currency\` per eligible hectare."
+          },
+          "perHaOver30Stotinki": {
+            "type": "integer",
+            "description": "The rate above the 30th eligible hectare, where the order sets one. Never higher than \`perHaStotinki\`."
+          },
+          "perDaEurCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 1302,
+            "description": "Euro cents per decare, derived from \`perHaStotinki\` at the fixed peg, rounded half up once. Null only if the figure could not be converted exactly."
+          },
+          "perDaOver30EurCents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The same for \`perHaOver30Stotinki\`; null when the order sets no over-30 rate."
+          },
+          "commodities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The commodity slugs the scheme covers, where it maps onto them."
+          },
+          "cite": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "page": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "point": {
+                "type": "string",
+                "example": "I"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          }
+        },
+        "required": [
+          "scheme",
+          "label",
+          "campaign",
+          "currency",
+          "perHaStotinki",
+          "perDaEurCents",
+          "perDaOver30EurCents",
+          "cite"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "compiledAt",
+    "conventions",
+    "sources",
+    "yields",
+    "supportRates"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AgroCalendar 1`] = `
 "{
   "type": "object",
@@ -1898,6 +2137,191 @@ exports[`API contract — per-schema snapshots schema: AgroSignals 1`] = `
     "horizon",
     "frostThresholdC",
     "truncated"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgroThresholds 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number"
+    },
+    "compiledAt": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-11-17"
+    },
+    "conventions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string",
+            "example": "МЗХ"
+          },
+          "url": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "publisher",
+          "url"
+        ]
+      },
+      "description": "Every \`cite.source\` in this response is a key here; the server refuses to load a dataset where one is not."
+    },
+    "thresholds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "powdery-mildew"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "disease",
+              "pest"
+            ]
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bg"
+            ]
+          },
+          "latin": {
+            "type": "string",
+            "example": "Blumeria graminis"
+          },
+          "crops": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "object",
+                  "properties": {
+                    "bg": {
+                      "type": "string"
+                    },
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bg"
+                  ],
+                  "description": "The growth stage or season, as the guide words it."
+                },
+                "threshold": {
+                  "type": "object",
+                  "properties": {
+                    "bg": {
+                      "type": "string"
+                    },
+                    "en": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "bg"
+                  ]
+                }
+              },
+              "required": [
+                "stage",
+                "threshold"
+              ]
+            }
+          },
+          "cite": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "page": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "page"
+            ]
+          },
+          "note": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bg"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "latin",
+          "crops",
+          "levels",
+          "cite"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "compiledAt",
+    "conventions",
+    "sources",
+    "thresholds"
   ]
 }"
 `;

@@ -160,7 +160,11 @@ describe('a timestamp a client reads declares its format (#1391)', () => {
             // instant. `date-time` would invent a precision the value does not
             // have, and a client showing 00:00:00 would be reporting a time
             // nobody recorded.
+            'AgroBenchmarks.compiledAt',
             'AgroCalendar.compiledAt',
+            // The benchmarks and thresholds datasets (agrent-ios#638, #636):
+            // committed files compiled on a day, the calendar's reasoning.
+            'AgroThresholds.compiledAt',
             'CalculatorRow.priceObservedAt',
             'MarketReference.observedAt',
             'TrendSeries.lastObservedAt',

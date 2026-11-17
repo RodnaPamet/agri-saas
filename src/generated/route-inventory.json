@@ -210,7 +210,17 @@
       "documented": false
     },
     {
+      "path": "/api/agro-benchmarks",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/agro-calendar",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/agro-thresholds",
       "status": "live",
       "documented": true
     },

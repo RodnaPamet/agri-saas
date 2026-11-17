@@ -330,6 +330,7 @@ describe('assistant tools (#2578)', () => {
             items: [
                 {
                     id: 'j1',
+                    treatmentGroupId: 'tg_1',
                     title: 'Пръскане',
                     type: 'INPUT_APPLICATION',
                     status: 'DONE',
@@ -340,6 +341,8 @@ describe('assistant tools (#2578)', () => {
         });
         const out = await runTool(ctx, 'list_journal_entries', '{}');
         expect(out.content).toContain('Пръскане');
+        // The handle `offer_diary_document` takes for one treatment (#3158).
+        expect(JSON.parse(out.content).rows[0].treatmentGroupId).toBe('tg_1');
         expect(out.content).not.toContain('SENSITIVE-NOTES');
         expect(out.links).toEqual([{ route: '/journal/j1', label: 'Пръскане' }]);
     });

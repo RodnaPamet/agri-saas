@@ -177,6 +177,29 @@ export type AssistantStreamEvent =
            */
           readonly proposal?: { readonly kind: string; readonly draft: Record<string, unknown> };
           /**
+           * A ДНЕВНИК PDF the person may download — agri-saas#3158, owner
+           * ruling 2026-11-17. Nothing was generated: the client calls the
+           * document's own route under the person's session when they tap,
+           * and that route answers `REGISTER_EMPTY_FOR_PERIOD` for an empty
+           * period exactly as it does from the client's own screens.
+           *
+           * `farm-campaign` → `POST /reports/campaign-diary?campaign=`;
+           * `block-register` → `POST /locations/{locationId}/farm-record`
+           * with `{ from, to }`; `treatment` →
+           * `GET /journal/treatments/{treatmentGroupId}/farm-record`.
+           * `label` is Bulgarian and server-built. Absent when none was offered.
+           */
+          readonly document?:
+              | { readonly kind: 'farm-campaign'; readonly label: string; readonly campaign: string }
+              | {
+                    readonly kind: 'block-register';
+                    readonly label: string;
+                    readonly locationId: string;
+                    readonly from: string;
+                    readonly to: string;
+                }
+              | { readonly kind: 'treatment'; readonly label: string; readonly treatmentGroupId: string };
+          /**
            * Supplier promotions, as a DISTINCT block the client renders apart
            * from the answer text — #2665, owner ruling 2026-11-05 ("marked as
            * a promotion and kept separate from its advice").

@@ -77,6 +77,7 @@ import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
+import { buildDiaryOffer, DiaryDocumentOfferSchema, OfferDiaryDocumentArgs, type DiaryDocumentOffer } from './documents';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
 import {
     ACTIVITY_KIND_VALUES,
@@ -127,6 +128,13 @@ export interface ToolOutcome {
      * see `propose.ts` and the guard that holds it.
      */
     readonly proposal: AssistantProposal | null;
+    /**
+     * A ДНЕВНИК document the person may download — agri-saas#3158. Built by
+     * `documents.ts` from what the tool READ, re-validated in `runTool`, and
+     * absent unless the tool offers documents. Nothing is generated until the
+     * person taps.
+     */
+    readonly document?: DiaryDocumentOffer;
     /**
      * Promotions to render as a DISTINCT block beside the answer — #2665.
      *
@@ -192,6 +200,8 @@ interface TaskRow {
 
 interface JournalRow {
     id: unknown;
+    /** The treatment handle — what `offer_diary_document` takes (#3158). */
+    treatmentGroupId: unknown;
     title: unknown;
     type: string | null;
     status: string | null;
@@ -254,6 +264,12 @@ interface AssistantTool {
      */
     readonly buildsPromotionBlock?: boolean;
     /** A PROPOSE tool: its result becomes a draft on the answer. */
+    /**
+     * An OFFER tool (#3158): its result's `document` becomes a download on
+     * the answer. A flag on the registry, like `buildsPromotionBlock`, so the
+     * lifting lives once in `runTool`.
+     */
+    readonly offersDocument?: boolean;
     /**
      * The per-tenant MODULE this tool's surface sits behind, asserted by
      * `runTool` before `run` — #2629.
@@ -912,6 +928,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     (rows as Array<Record<string, unknown>>).map(
                         async (r): Promise<JournalRow> => ({
                             id: r.id,
+                            treatmentGroupId: r.treatmentGroupId,
                             title: r.title,
                             type: await enumLabel('logType', r.type as string, locale),
                             status: await enumLabel('logStatus', r.status as string, locale),
@@ -1717,6 +1734,44 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         },
         proposes: 'activity',
     },
+    offer_diary_document: {
+        def: {
+            name: 'offer_diary_document',
+            description:
+                'OFFER a ДНЕВНИК PDF for the person to download — owner ruling 2026-11-17. '
+                + 'Generates and writes NOTHING: the app shows a button and makes the PDF when the '
+                + 'person taps it. Use it whenever asked for the journal, the diary or a ДНЕВНИК as a '
+                + 'document or PDF. Three documents: farm-campaign = «Дневник на стопанството», the '
+                + 'whole farm for one campaign (1 October – 30 September; omit campaign for the current '
+                + 'one); block-register = the БАБХ ДНЕВНИК for ONE block over a period (locationId from '
+                + 'list_blocks; from/to default to the campaign); treatment = one recorded treatment '
+                + '(treatmentGroupId from list_journal_entries). Never invent an id. To RECORD work, use '
+                + 'propose_treatment or propose_activity instead — this tool only offers what is recorded.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    document: { type: 'string', enum: ['farm-campaign', 'block-register', 'treatment'] },
+                    campaign: { type: 'string', description: 'YYYY-YYYY, e.g. 2025-2026. Omit for the current campaign.' },
+                    locationId: { type: 'string', description: 'A block id from list_blocks. Never invent one.' },
+                    from: { type: 'string', description: 'First day, YYYY-MM-DD (block-register only).' },
+                    to: { type: 'string', description: 'Last day, YYYY-MM-DD (block-register only).' },
+                    treatmentGroupId: {
+                        type: 'string',
+                        description: 'A treatmentGroupId from list_journal_entries. Never invent one.',
+                    },
+                },
+                required: ['document'],
+                additionalProperties: false,
+            },
+        },
+        module: 'JOURNAL',
+        args: OfferDiaryDocumentArgs,
+        offersDocument: true,
+        run: async (ctx, args) => {
+            const document = await buildDiaryOffer(ctx, OfferDiaryDocumentArgs.parse(args));
+            return { offered: true, document };
+        },
+    },
 };
 
 /** The definitions handed to the model. */
@@ -1792,6 +1847,13 @@ export async function runTool(
         const proposal = tool.proposes
             ? (proposeDraft(tool.proposes, check.data).proposal ?? null)
             : null;
+        // The download offer, re-validated against the event's own schema
+        // rather than trusted from `result` — one definition of what an offer
+        // may carry, as for drafts.
+        const offered = tool.offersDocument
+            ? DiaryDocumentOfferSchema.safeParse((result as { document?: unknown } | null)?.document)
+            : null;
+        const document = offered?.success ? offered.data : undefined;
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
         const links = tool.link ? linksFromRows(tool.link, result) : [];
@@ -1833,6 +1895,7 @@ export async function runTool(
                 links,
                 proposal,
                 partial,
+                ...(document ? { document } : {}),
                 ...(promotions && promotions.length > 0 ? { promotions } : {}),
             };
         }
@@ -1846,6 +1909,7 @@ export async function runTool(
             partial,
             links,
             proposal,
+            ...(document ? { document } : {}),
             ...(promotions && promotions.length > 0 ? { promotions } : {}),
         };
     } catch (err) {

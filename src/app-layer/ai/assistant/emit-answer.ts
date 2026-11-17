@@ -34,6 +34,8 @@ import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import { scanEgress } from '../safety/egress-scan';
 import type { AssistantLink } from './links';
 import type { AssistantProposal } from './propose';
+import type { DiaryDocumentOffer } from './documents';
+import type { AssistantPromotionBlock } from './tools';
 import { logger } from '@/lib/observability';
 
 /** What `emitAnswer` decided, so a caller can report it without re-deciding. */
@@ -58,6 +60,16 @@ export async function emitAnswer(
         tenantId: string;
         links?: readonly AssistantLink[];
         proposal?: AssistantProposal | null;
+        /** A ДНЕВНИК download (#3158). Server-built; nothing is generated until tapped. */
+        document?: DiaryDocumentOffer | null;
+        /**
+         * The promotions block (#2665), server-built. It was passed here by
+         * the route and silently dropped until #3159: this type had no such
+         * field, and the route's conditional SPREAD escaped TypeScript's
+         * excess-property check. The route now passes it as a plain property,
+         * so a field this type lacks is a compile error again.
+         */
+        promotions?: readonly AssistantPromotionBlock[];
     },
 ): Promise<AnswerOutcome> {
     const trimmed = text.trim();
@@ -79,6 +91,8 @@ export async function emitAnswer(
     // decision this module makes.
     const links = meta.links ?? [];
     const proposal = meta.proposal ?? null;
+    const document = meta.document ?? null;
+    const promotions = meta.promotions ?? [];
     // The DRAFT is scanned too, and for the label's reason taken one step
     // further: a draft's `title` and `notes` are prose the model wrote FROM
     // farm data, so they are outgoing text by the same route. Serialised
@@ -89,6 +103,12 @@ export async function emitAnswer(
             trimmed,
             ...links.map((l) => l.label),
             ...(proposal ? [JSON.stringify(proposal.draft)] : []),
+            // The offer's LABEL names a block from the farm's own data, so it
+            // is outgoing text by the link label's route.
+            ...(document ? [document.label] : []),
+            // A promotion's words are outgoing text too: company, product and
+            // details come from the catalogue's rows, which a supplier wrote.
+            ...promotions.map((p) => [p.company, p.product, p.details ?? '', p.safetyWording ?? ''].join('\n')),
         ].join('\n'),
     );
     if (!verdict.clean) {
@@ -114,6 +134,9 @@ export async function emitAnswer(
         // "none" from "omitted" for either field.
         ...(links.length > 0 ? { links } : {}),
         ...(proposal ? { proposal } : {}),
+        ...(document ? { document } : {}),
+        // Absent rather than empty, as `links`.
+        ...(promotions.length > 0 ? { promotions } : {}),
     };
     send(sseFormat(event));
     return { sent: true, ruleIds: [] };

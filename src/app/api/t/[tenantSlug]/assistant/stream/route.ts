@@ -503,14 +503,15 @@ export const POST = withApiErrorHandling(
                             tenantId: ctx.tenantId,
                             links: loop.links,
                             /*
-                             * The promotions block (#2665). Absent rather than
-                             * empty, so a client need not distinguish the two
-                             * — the same convention `links` uses.
+                             * The promotions block (#2665). A PLAIN property,
+                             * not a conditional spread: the spread escaped the
+                             * excess-property check while `emitAnswer` had no
+                             * such field, and every block was dropped (#3159).
+                             * `emitAnswer` leaves an empty list off the event.
                              */
-                            ...(loop.promotions.length > 0
-                                ? { promotions: loop.promotions }
-                                : {}),
+                            promotions: loop.promotions,
                             proposal: loop.proposal,
+                            document: loop.document,
                         });
                         // The halt comes AFTER the answer, because it says the
                         // answer above is incomplete — and only when the
