@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "compiledAt": "2026-11-17",
   "conventions": [
-    "Every figure as printed by its source: yields in kg/ha, support rates in leva (stotinki) per ha. Nothing converted.",
+    "Every figure as printed by its source: yields in kg/ha, support rates per ha in the order's own currency — euro cents for an order in euro, stotinki for one in leva. Nothing converted here.",
     "Yields are national averages for the harvest year; rates are per eligible hectare for the campaign year.",
     "A figure without a cited source is not included."
   ],
@@ -13,17 +13,17 @@
       "url": "https://www.mzh.government.bg/media/filer_public/2025/09/16/ra460_publicationcrops2024_en.pdf",
       "published": "2025-09"
     },
-    "mzh-rd09-440-2025": {
-      "title": "Заповед № РД 09-440 от 25.04.2025 г. — ставки за обвързано подпомагане за плодове и зеленчуци, 2024",
-      "publisher": "МЗХ",
-      "url": "https://dfz.bg/documents/d/guest/zapoved-stavki-2024_frv",
-      "published": "2025-04"
-    },
     "dfz-ipk-2024": {
       "title": "Производителите на протеинови култури получиха 31,7 млн. лева за Кампания 2024 (Заповед РД 09-488/13.05.2025)",
       "publisher": "ДФЗ",
       "url": "https://www.dfz.bg/en/-/%D0%BF%D1%80%D0%BE%D0%B8%D0%B7%D0%B2%D0%BE%D0%B4%D0%B8%D1%82%D0%B5%D0%BB%D0%B8%D1%82%D0%B5-%D0%BD%D0%B0-%D0%BF%D1%80%D0%BE%D1%82%D0%B5%D0%B8%D0%BD%D0%BE%D0%B2%D0%B8-%D0%BA%D1%83%D0%BB%D1%82%D1%83%D1%80%D0%B8-%D0%BF%D0%BE%D0%BB%D1%83%D1%87%D0%B8%D1%85",
       "published": "2025-05"
+    },
+    "mzh-rd09-470-2026": {
+      "title": "Заповед № РД 09-470 от 24.04.2026 г. — ставки за обвързано подпомагане за плодове и зеленчуци, Кампания 2025",
+      "publisher": "МЗХ",
+      "url": "https://www.mzh.government.bg/media/filer_public/2026/04/24/zapoved_stavki_2025_coupled_support_frv_23_04_2026-1.pdf",
+      "published": "2026-04"
     }
   },
   "yields": [
@@ -193,12 +193,12 @@
       "label": {
         "bg": "Плодове"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 183607,
-      "perHaOver30Stotinki": 122406,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 112654,
+      "perHaOver30Stotinki": 75103,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 1,
         "point": "I"
       }
@@ -208,11 +208,11 @@
       "label": {
         "bg": "Плодови насаждения до встъпване в плододаване"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 67999,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 52152,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 1,
         "point": "II"
       }
@@ -222,12 +222,12 @@
       "label": {
         "bg": "Зеленчуци: домати, краставици, корнишони, патладжани"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 199343,
-      "perHaOver30Stotinki": 132895,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 123685,
+      "perHaOver30Stotinki": 82457,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 1,
         "point": "III"
       }
@@ -237,12 +237,12 @@
       "label": {
         "bg": "Зеленчуци: пипер"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 226552,
-      "perHaOver30Stotinki": 151035,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 151032,
+      "perHaOver30Stotinki": 100688,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 1,
         "point": "IV"
       }
@@ -252,12 +252,12 @@
       "label": {
         "bg": "Зеленчуци: лук и чесън"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 128477,
-      "perHaOver30Stotinki": 85652,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 86030,
+      "perHaOver30Stotinki": 57354,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 1,
         "point": "V"
       }
@@ -267,11 +267,11 @@
       "label": {
         "bg": "Семена от картофи"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 152944,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 110000,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 2,
         "point": "VI"
       }
@@ -281,12 +281,12 @@
       "label": {
         "bg": "Зеленчуци: моркови, зеле, дини, пъпеши"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 86366,
-      "perHaOver30Stotinki": 57577,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 55199,
+      "perHaOver30Stotinki": 36799,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 2,
         "point": "VII"
       }
@@ -296,11 +296,11 @@
       "label": {
         "bg": "Оранжерийно производство"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 1600713,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 982133,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 2,
         "point": "VIII"
       }
@@ -310,11 +310,11 @@
       "label": {
         "bg": "Плодове и зеленчуци в планинските райони"
       },
-      "campaign": 2024,
-      "currency": "BGN",
-      "perHaStotinki": 237548,
+      "campaign": 2025,
+      "currency": "EUR",
+      "perHaStotinki": 145749,
       "cite": {
-        "source": "mzh-rd09-440-2025",
+        "source": "mzh-rd09-470-2026",
         "page": 2,
         "point": "IX"
       }
@@ -336,7 +336,10 @@
         "chickpeas",
         "dry-beans",
         "soybean"
-      ]
+      ],
+      "note": {
+        "bg": "Ставката за Кампания 2025 още не е обявена. Показана е ставката за 2024 г."
+      }
     }
   ]
 }
