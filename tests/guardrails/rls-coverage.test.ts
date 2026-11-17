@@ -552,6 +552,15 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
     ['MarketPricePoint', 'A dated observation on a MarketPriceSeries; inherits the series decision.'],
     ['MarketNewsItem', 'Global agri-news cache aggregated from public feeds.'],
     [
+        'SourceDocumentWatch',
+        '#3146 \u2014 the registry of EXTERNAL documents this product cites, watched for ' +
+            'revision. The same decision as MarketPriceSeries above and for the same reason: a ' +
+            'published \u041c\u0417\u0425 bulletin or guide is one fact for every farm, so there is no tenant ' +
+            'axis to filter on. It holds a URL, a publisher, a sha256 and two byte counts \u2014 ' +
+            'nothing about any farm and nothing about any person. Written only by the daily ' +
+            '`source-document-watch` job, never by a tenant request.',
+    ],
+    [
         'PppRegisterImport',
         '#2077 \u2014 one dated upload of the \u0411\u0410\u0411\u0425 register of approved ' +
             'plant-protection products. NATIONAL public reference data: the register is identical ' +

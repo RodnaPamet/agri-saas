@@ -768,6 +768,38 @@ executorRegistry.register('mzh-prices-pull', async () => {
     );
 });
 
+// ── source-document-watch ───────────────────────────────────────────
+//
+// #3146. Hashes the documents the agro calendar CITES and flags one that
+// changed. Tenantless: a cited publication has no farm.
+
+executorRegistry.register('source-document-watch', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runSourceDocumentWatch } = await import('./source-document-watch');
+    const r = await runSourceDocumentWatch();
+    // scanned = citations the calendar offered, actioned = documents READ,
+    // skipped = those that could not be. The triple cannot say WHY a zero
+    // happened — "every citation holds" and "nothing could be reached" are
+    // both `changed: 0` — so the verdict rides in the meta, and the job's
+    // own log line carries the named failures.
+    const read = r.firstSeen + r.unchanged + r.changed + r.alreadyFlagged;
+    return makeResult(
+        'source-document-watch', startedAt, startMs,
+        r.watched, read, r.failures.length,
+        {
+            verdict: r.verdict,
+            firstSeen: r.firstSeen,
+            unchanged: r.unchanged,
+            changed: r.changed,
+            alreadyFlagged: r.alreadyFlagged,
+            flaggedTotal: r.flaggedTotal,
+            failures: r.failures,
+            unclassified: r.unclassified,
+        },
+    );
+});
+
 // ── channel-digest ──────────────────────────────────────────────────
 //
 // P9.7's opt-in 07:15 recap (#2941). Tenantless for the same reason as

@@ -247,6 +247,29 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        /*
+         * Daily at 04:55 UTC — #3146.
+         *
+         * Daily because agrent-ios#639 asks for a daily check and because the
+         * thing being detected is a REVISION, which has no schedule of its
+         * own: МЗХ re-publishes a guide when it re-publishes it. A day is
+         * therefore the detection latency, which is the right order for a
+         * signal whose consequence is "a published agronomic window may no
+         * longer be supported by the page it cites".
+         *
+         * 04:55 and not 05:40 so it does not share a minute with
+         * `mzh-prices-pull`: both hit `mzh.government.bg`, and the watch
+         * fetches thirteen documents sequentially while its neighbour wants
+         * a listing page and a PDF. Separating them keeps either job's
+         * failure readable as its own rather than as contention for one
+         * government CMS. Off the hour for the same reason its neighbour is.
+         */
+        name: 'source-document-watch',
+        pattern: '55 4 * * *',
+        description: 'Hash the agro calendar’s cited documents and flag a change (#3146)',
+        defaultPayload: {},
+    },
+    {
         name: 'channel-digest',
         pattern: '*/15 * * * *',
         description: 'Send the opt-in 07:15 channel digest (#2941)',
