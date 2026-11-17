@@ -244,7 +244,15 @@ describe('Infrastructure Regression Guards', () => {
             // `no-bulletin`, which is indistinguishable from a week with no
             // bulletin. Repetition is free because the point is keyed on the
             // table's own «към» date.
-            expect(SCHEDULED_JOBS).toHaveLength(41);
+            // 41 -> 42 by #3146: `source-document-watch`, 04:55 UTC daily.
+            // Daily because the thing detected is a REVISION, which has no
+            // schedule of its own — МЗХ re-publishes a guide when it does — so
+            // a day is the detection latency for "a published agronomic window
+            // may no longer be supported by the page it cites". 04:55 and not
+            // 05:40 so it does not share a minute with `mzh-prices-pull`: both
+            // hit mzh.government.bg, and separating them keeps either job's
+            // failure readable as its own rather than as contention.
+            expect(SCHEDULED_JOBS).toHaveLength(42);
         });
 
         test('scheduled job names match expected set', () => {
@@ -380,6 +388,11 @@ describe('Infrastructure Regression Guards', () => {
                 // Automation Epic 5 — every-5-min SLA breach sweep over
                 // RUNNING automation executions.
                 'sla-monitor',
+                // #3146 — daily, hashes the 13 documents the agro calendar
+                // CITES and flags one whose bytes changed. The baseline hash
+                // is never overwritten by a flag, so the record of what a
+                // published figure was checked against survives the revision.
+                'source-document-watch',
                 // P5.4b — every 10 minutes, delivers queued DSA Art 17
                 // statements of reasons in the RECIPIENT's language, resolved
                 // at send time because that is the only moment it is knowable.

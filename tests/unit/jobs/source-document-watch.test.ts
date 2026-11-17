@@ -143,7 +143,6 @@ describe('seriesForCitation', () => {
         const unclassified = all.filter((c) => seriesForCitation(c.key) === null);
 
         // [source-document-watch] cited=13 classified=12 unclassified=1
-        // eslint-disable-next-line no-console
         console.log(
             `[source-document-watch] cited=${all.length} classified=${all.length - unclassified.length} unclassified=${unclassified.map((c) => c.key).join(',') || 'none'}`,
         );
