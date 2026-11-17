@@ -170,6 +170,7 @@ const ParcelHistory = z
         parcel: z.object({
             id: z.string(),
             name: z.string(),
+            displayName: z.string().nullable().openapi({ description: 'The farmer\'s own nickname for the parcel (#3169), or null. Show it in place of `name` when set; the ДНЕВНИК never prints it — it keeps `name` (Поле №) and `cadastralId` (Имот №).' }),
             cropType: z.string().nullable(),
         }),
         cropSeasons: z.array(CropSeason),

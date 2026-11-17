@@ -131,6 +131,22 @@ describe('updateParcel', () => {
         expect(ParcelRepository.boundsForLocation).not.toHaveBeenCalled();
     });
 
+    it('a nickname alone is an update, sanitized, and blank clears it (#3169)', async () => {
+        expect(UpdateParcelSchema.safeParse({ displayName: 'Нивата до реката' }).success).toBe(true);
+        (ParcelRepository.getOne as jest.Mock).mockResolvedValue({ id: 'par-1', name: '20688.13', locationId: 'loc-1' });
+        (ParcelRepository.updateOne as jest.Mock).mockResolvedValue({ areaHa: 200 });
+        await updateParcel(editorCtx, 'par-1', { displayName: '  Нивата до реката  ' });
+        expect((ParcelRepository.updateOne as jest.Mock).mock.calls.at(-1)?.[3]).toMatchObject({
+            displayName: 'Нивата до реката',
+            // The field number the ДНЕВНИК prints is not touched.
+            name: undefined,
+        });
+        await updateParcel(editorCtx, 'par-1', { displayName: '   ' });
+        expect((ParcelRepository.updateOne as jest.Mock).mock.calls.at(-1)?.[3]).toMatchObject({ displayName: null });
+        await updateParcel(editorCtx, 'par-1', { displayName: null });
+        expect((ParcelRepository.updateOne as jest.Mock).mock.calls.at(-1)?.[3]).toMatchObject({ displayName: null });
+    });
+
     it('404s an unknown parcel', async () => {
         (ParcelRepository.getOne as jest.Mock).mockResolvedValue(null);
         await expect(updateParcel(editorCtx, 'nope', { name: 'X' })).rejects.toThrow(/not found/i);

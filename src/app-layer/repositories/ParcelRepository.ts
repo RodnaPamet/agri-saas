@@ -115,6 +115,8 @@ export interface ParcelSummaryGeo {
 export interface ParcelGeo {
     id: string;
     name: string;
+    /** The farmer's nickname (#3169); null when none. The ДНЕВНИК keeps `name`. */
+    displayName: string | null;
     cropType: string | null;
     areaHa: number | null;
     geometry: Geometry | null;
@@ -439,6 +441,7 @@ export class ParcelRepository {
         const rows = await db.$queryRaw<Array<{
             id: string;
             name: string;
+            displayName: string | null;
             cropType: string | null;
             areaHa: string | null;
             geojson: string | null;
@@ -452,7 +455,7 @@ export class ParcelRepository {
             hasActiveLease: boolean;
             absentFromImportAt: Date | null;
         }>>(
-            Prisma.sql`SELECT "id", "name", "cropType", "areaHa"::text AS "areaHa",
+            Prisma.sql`SELECT "id", "name", "displayName", "cropType", "areaHa"::text AS "areaHa",
                     ${geojsonSql} AS "geojson", "propertiesJson", "soilType", "soilJson",
                     "cadastralId", "ekatte", "absentFromImportAt",
                     "ss"."cachedSoilJson", "own"."ownersJson",
@@ -512,6 +515,7 @@ export class ParcelRepository {
             return {
                 id: r.id,
                 name: r.name,
+                displayName: r.displayName,
                 cropType: r.cropType,
                 areaHa: r.areaHa !== null ? Number(r.areaHa) : null,
                 geometry: parseGeometry(r.geojson),
@@ -740,13 +744,14 @@ export class ParcelRepository {
         const rows = await db.$queryRaw<Array<{
             id: string;
             name: string;
+            displayName: string | null;
             cropType: string;
             areaHa: string | null;
             locationId: string;
             locationName: string;
             geojson: string | null;
         }>>(
-            Prisma.sql`SELECT "Parcel"."id", "Parcel"."name", "Parcel"."cropType",
+            Prisma.sql`SELECT "Parcel"."id", "Parcel"."name", "Parcel"."displayName", "Parcel"."cropType",
                     "Parcel"."areaHa"::text AS "areaHa",
                     "Location"."id" AS "locationId", "Location"."name" AS "locationName",
                     ${geojsonSql} AS "geojson"
@@ -763,6 +768,7 @@ export class ParcelRepository {
         return rows.map((r) => ({
             id: r.id,
             name: r.name,
+            displayName: r.displayName,
             cropType: r.cropType,
             areaHa: r.areaHa == null ? null : Number(r.areaHa),
             locationId: r.locationId,
@@ -905,6 +911,7 @@ export class ParcelRepository {
         parcelId: string,
         input: {
             name?: string;
+            displayName?: string | null;
             cropType?: string | null;
             cadastralId?: string | null;
             ekatte?: string | null;
@@ -916,6 +923,7 @@ export class ParcelRepository {
     ): Promise<{ areaHa: number | null }> {
         const scalar: Prisma.ParcelUpdateInput = {};
         if (input.name !== undefined) scalar.name = input.name;
+        if (input.displayName !== undefined) scalar.displayName = input.displayName;
         if (input.cropType !== undefined) scalar.cropType = input.cropType;
         if (input.cadastralId !== undefined) scalar.cadastralId = input.cadastralId;
         if (input.ekatte !== undefined) scalar.ekatte = input.ekatte;
