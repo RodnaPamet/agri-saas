@@ -511,6 +511,7 @@ export const POST = withApiErrorHandling(
                                 ? { promotions: loop.promotions }
                                 : {}),
                             proposal: loop.proposal,
+                            document: loop.document,
                         });
                         // The halt comes AFTER the answer, because it says the
                         // answer above is incomplete — and only when the
