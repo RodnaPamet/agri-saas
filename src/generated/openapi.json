@@ -14504,6 +14504,13 @@
           "name": {
             "type": "string"
           },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The farmer's own nickname for the parcel (#3169), or null. Show it in place of `name` when set; the ДНЕВНИК never prints it — it keeps `name` (Поле №) and `cadastralId` (Имот №)."
+          },
           "cropType": {
             "type": "string"
           },
@@ -14550,6 +14557,7 @@
         "required": [
           "id",
           "name",
+          "displayName",
           "cropType",
           "areaHa",
           "locationId",
@@ -15004,6 +15012,13 @@
           "name": {
             "type": "string"
           },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The farmer's own nickname for the parcel (#3169), or null. Show it in place of `name` when set; the ДНЕВНИК never prints it — it keeps `name` (Поле №) and `cadastralId` (Имот №)."
+          },
           "cropType": {
             "type": [
               "string",
@@ -15114,6 +15129,7 @@
         "required": [
           "id",
           "name",
+          "displayName",
           "cropType",
           "areaHa",
           "geometry",
@@ -15139,6 +15155,13 @@
               "name": {
                 "type": "string"
               },
+              "displayName": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The farmer's own nickname for the parcel (#3169), or null. Show it in place of `name` when set; the ДНЕВНИК never prints it — it keeps `name` (Поле №) and `cadastralId` (Имот №)."
+              },
               "cropType": {
                 "type": [
                   "string",
@@ -15149,6 +15172,7 @@
             "required": [
               "id",
               "name",
+              "displayName",
               "cropType"
             ]
           },
@@ -15732,6 +15756,13 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
           },
           "cropType": {
             "type": [

@@ -126,6 +126,7 @@ export const ParcelGeo = z
     .object({
         id: z.string(),
         name: z.string(),
+        displayName: z.string().nullable().openapi({ description: 'The farmer\'s own nickname for the parcel (#3169), or null. Show it in place of `name` when set; the ДНЕВНИК never prints it — it keeps `name` (Поле №) and `cadastralId` (Имот №).' }),
         cropType: z.string().nullable(),
         areaHa: z.number().nullable().openapi({
             description: 'On-ellipsoid hectares, computed in PostGIS. A NUMBER here, unlike the STRING on an OperationParcel line.',
@@ -310,6 +311,7 @@ const ParcelByCrop = z
     .object({
         id: z.string(),
         name: z.string(),
+        displayName: z.string().nullable().openapi({ description: 'The farmer\'s own nickname for the parcel (#3169), or null. Show it in place of `name` when set; the ДНЕВНИК never prints it — it keeps `name` (Поле №) and `cadastralId` (Имот №).' }),
         cropType: z.string(),
         areaHa: z.number().nullable().openapi({
             description: 'Area in HECTARES as stored, or null when unmeasured.',

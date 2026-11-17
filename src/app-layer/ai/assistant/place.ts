@@ -70,8 +70,14 @@ function compact(word: string): string {
     return word.replace(/\s+/g, '').toLowerCase();
 }
 
+/**
+ * «Север · Нивата до реката (20688.13)» — the farmer's nickname first when
+ * there is one (#3169), with the field number beside it so the draft still
+ * names the record the ДНЕВНИК prints.
+ */
 function label(o: Option): string {
-    return `${o.locationName} · ${o.name}`;
+    const nick = o.displayName?.trim();
+    return nick ? `${o.locationName} · ${nick} (${o.name})` : `${o.locationName} · ${o.name}`;
 }
 
 function sameCrop(said: string, stored: string | null): boolean {
@@ -103,8 +109,15 @@ export function resolveAgainst(options: readonly Option[], words: PlaceWords): P
 
     for (const raw of words.parcels ?? []) {
         const said = fold(raw);
-        let hits = options.filter((o) => (o.cadastralId && compact(o.cadastralId) === compact(said)) || fold(o.name) === said);
-        if (hits.length === 0 && said !== '') hits = options.filter((o) => fold(o.name).includes(said));
+        // The nickname (#3169) answers as well as the field number and the
+        // cadastral number — it is the name the farmer actually uses.
+        const nick = (o: Option) => (o.displayName ? fold(o.displayName) : null);
+        let hits = options.filter(
+            (o) => (o.cadastralId && compact(o.cadastralId) === compact(said)) || fold(o.name) === said || nick(o) === said,
+        );
+        if (hits.length === 0 && said !== '') {
+            hits = options.filter((o) => fold(o.name).includes(said) || (nick(o)?.includes(said) ?? false));
+        }
         if (hits.length === 1) take(hits[0] as Option);
         else unresolved.push({ said: raw, candidates: hits.slice(0, 5).map(label) });
     }
