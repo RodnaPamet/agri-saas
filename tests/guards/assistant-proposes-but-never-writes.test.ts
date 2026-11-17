@@ -41,6 +41,10 @@ const SURFACE = [
     'src/app-layer/ai/assistant/propose.ts',
     'src/app-layer/ai/assistant/tools.ts',
     'src/app-layer/ai/assistant/tool-loop.ts',
+    // Both read usecases on the model's behalf: the field a treatment was done
+    // on (#3162) and the ДНЕВНИК a download names (#3158). Reads only.
+    'src/app-layer/ai/assistant/place.ts',
+    'src/app-layer/ai/assistant/documents.ts',
 ];
 
 const WRITE_VERBS = /^(create|update|delete|remove|archive|upsert|save|write|apply|submit|schedule|enqueue|send|publish|approve|reject|revoke)/i;

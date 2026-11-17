@@ -77,13 +77,15 @@ import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
+import { oneCropProblem, resolvePlace } from './place';
 import { buildDiaryOffer, DiaryDocumentOfferSchema, OfferDiaryDocumentArgs, type DiaryDocumentOffer } from './documents';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
 import {
     ACTIVITY_KIND_VALUES,
     proposeDraft,
     ProposeActivityArgs,
-    ProposeTreatmentArgs,
+    ProposeTreatmentToolArgs,
+    missingTreatmentItems,
     TREATMENT_KIND_VALUES,
     type AssistantProposal,
     type ProposalKind,
@@ -1664,10 +1666,14 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             name: 'propose_treatment',
             description:
                 'PREPARE a ДНЕВНИК treatment record — spraying, fertilising or sowing — for the '
-                + 'person to confirm. Writes NOTHING: it returns a draft the app prefills into the '
-                + 'real form, which the person submits themselves. Use it when asked to record a '
-                + 'treatment. Send only what was said; every field is optional. Do NOT include '
-                + 'parcels, products as ids, or a dose unit — the person picks those in the form.',
+                + 'person to confirm. Writes NOTHING: when the record is COMPLETE it returns a draft the '
+                + 'app opens in the real form, filled, which the person checks and saves; saving shows '
+                + 'its ДНЕВНИК PDF. Owner ruling 2026-11-17: ASK until nothing is missing. Send what '
+                + 'was said; while the result has `prepared: false` it lists `missing` items and any '
+                + '`unresolved` field words with candidates — ask the person for exactly those, in one '
+                + 'short question, then call again with everything. Name the field in WORDS: blockName '
+                + '(«Север»), parcelNumbers (parcel names or cadastral numbers) or crop («пшеница»). '
+                + 'Never send an id; never invent a value the person did not say.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -1688,17 +1694,53 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                         description: 'Quarantine in DAYS, 0-365 — a number, not text.',
                     },
                     applicationTechnique: { type: 'string', description: 'The rig used.' },
+                    blockName: { type: 'string', description: 'The block as the person named it, «Север».' },
+                    parcelNumbers: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Parcel names or cadastral numbers, as said.',
+                    },
+                    crop: { type: 'string', description: 'A crop, «пшеница»: every parcel growing it.' },
+                    doseUnit: { type: 'string', description: 'The dose unit as said, e.g. «л/дка», «кг/дка».' },
                 },
                 additionalProperties: false,
             },
         },
         module: 'JOURNAL',
-        args: ProposeTreatmentArgs,
-        run: async (_ctx, args) => {
-            // No ctx use and no write: this validates and echoes. The policy
-            // that matters is the one on the route the PERSON posts to, which
-            // is unchanged.
-            const outcome = proposeDraft('treatment', args);
+        args: ProposeTreatmentToolArgs,
+        run: async (ctx, args) => {
+            // A READ and no write: the words for the field resolve to parcels
+            // the person can read (`place.ts`), and the draft is proposed only
+            // when nothing a complete record needs is missing (#3162). The
+            // policy that matters is the one on the route the PERSON posts to.
+            // Typed by hand for `TreatmentDraftView`'s reason: the lifted
+            // production shape infers as `unknown` per key.
+            const { blockName, parcelNumbers, crop, doseUnit, ...fields } = ProposeTreatmentToolArgs.parse(args) as {
+                blockName?: string;
+                parcelNumbers?: string[];
+                crop?: string;
+                doseUnit?: string;
+            } & Record<string, unknown>;
+            const place = await resolvePlace(ctx, { block: blockName, parcels: parcelNumbers, crop });
+            const cropProblem = oneCropProblem(place.parcels);
+            const unresolved = cropProblem ? [...place.unresolved, cropProblem] : place.unresolved;
+            const draft = {
+                ...fields,
+                ...(place.parcels.length > 0 && !cropProblem
+                    ? { chosenParcels: place.parcels.map((p) => ({ id: p.id, label: p.label, crop: p.crop as string })) }
+                    : {}),
+                ...(doseUnit ? { doseUnitLabel: doseUnit } : {}),
+            };
+            const missing = missingTreatmentItems(draft);
+            if (missing.length > 0 || unresolved.length > 0) {
+                return {
+                    prepared: false,
+                    missing,
+                    unresolved,
+                    understood: { ...fields, fields: place.parcels.map((p) => p.label) },
+                };
+            }
+            const outcome = proposeDraft('treatment', draft);
             if (!outcome.ok) throw new Error(outcome.message);
             return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
         },
@@ -1844,8 +1886,13 @@ export async function runTool(
         // A propose tool's validated draft, lifted onto the outcome so the
         // loop can attach it to the answer. Re-validated rather than trusted
         // from `result`: one source of truth for what a draft may contain.
-        const proposal = tool.proposes
-            ? (proposeDraft(tool.proposes, check.data).proposal ?? null)
+        // Lifted from the RESULT's draft, not the args (#3162): a treatment
+        // draft carries parcels the server resolved, which the model never
+        // sent. Only a result that says `prepared: true` proposes anything —
+        // an incomplete one is a question for the model, not a form.
+        const prepared = result as { prepared?: unknown; draft?: unknown } | null;
+        const proposal = tool.proposes && prepared?.prepared === true
+            ? (proposeDraft(tool.proposes, prepared.draft).proposal ?? null)
             : null;
         // The download offer, re-validated against the event's own schema
         // rather than trusted from `result` — one definition of what an offer
