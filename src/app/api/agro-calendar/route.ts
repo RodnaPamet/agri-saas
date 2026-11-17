@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 
 import { getUserCtx } from '@/app-layer/context';
+import { loadLiveCalendarOverrides } from '@/app-layer/usecases/agro-calendar-overrides';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { badRequest } from '@/lib/errors/types';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
@@ -71,11 +72,18 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         throw badRequest('`crop` is not a crop this calendar covers');
     }
 
-    const crops = calendarFor({
-        region,
-        group: group as 'field' | 'vegetable' | 'perennial' | undefined,
-        crop,
-    });
+    // #3095 stage 2: the live overrides, merged by the loader. Read per
+    // request — a correction takes effect at once (owner, 2026-11-16) — and
+    // the ETag below follows the merged payload, so a 304 still happens
+    // whenever nothing changed.
+    const crops = calendarFor(
+        {
+            region,
+            group: group as 'field' | 'vegetable' | 'perennial' | undefined,
+            crop,
+        },
+        await loadLiveCalendarOverrides(),
+    );
 
     // ETagged and effectively immutable until the dataset changes — the
     // committed file IS the answer, so a phone re-opening the screen gets a

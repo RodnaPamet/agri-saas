@@ -88,6 +88,11 @@ const ADMIN_ONLY_ROUTES = [
     'admin/farm-claims/route.ts',
     'admin/farm-claims/[claimId]/verify/route.ts',
     'admin/farm-claims/[claimId]/dispute/route.ts',
+    // #3095 — the agro calendar's override console, session door. Same
+    // two-gate shape as farm-claims: the table is tenantless, so the handler
+    // adds assertPlatformSupport on top of admin.manage.
+    'admin/agro-calendar/overrides/route.ts',
+    'admin/agro-calendar/overrides/[windowId]/route.ts',
     // #2735 — the moderation console's session door. Listed here for the same
     // reason as the farm-claims trio above: the models are TENANTLESS, so
     // `admin.manage` alone would let an ADMIN of any one farm triage every

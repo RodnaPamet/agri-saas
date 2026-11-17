@@ -2088,6 +2088,145 @@ exports[`API contract — per-schema snapshots schema: AgroCalendarCitation 1`] 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AgroCalendarOverride 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "windowId": {
+      "type": "string"
+    },
+    "cropKey": {
+      "type": "string"
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "corrected",
+        "added"
+      ]
+    },
+    "window": {
+      "$ref": "#/components/schemas/AgroCalendarOverrideWindow"
+    },
+    "basis": {
+      "type": "object",
+      "properties": {
+        "bg": {
+          "type": "string"
+        },
+        "en": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bg"
+      ]
+    },
+    "authorRef": {
+      "type": "string",
+      "description": "\`user:<id>\` from this door; \`platform-key:<generation>\` from the keyed one."
+    },
+    "setAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "windowId",
+    "cropKey",
+    "origin",
+    "window",
+    "basis",
+    "authorRef",
+    "setAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AgroCalendarOverrideWindow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The window addressed: a cited window's id corrects it; a new id adds one."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "sowing",
+        "fieldwork",
+        "harvest"
+      ]
+    },
+    "band": {
+      "type": "string",
+      "enum": [
+        "early",
+        "optimal",
+        "late"
+      ],
+      "description": "REQUIRED for \`sowing\`."
+    },
+    "region": {
+      "type": "string",
+      "enum": [
+        "north",
+        "south",
+        "both"
+      ]
+    },
+    "from": {
+      "type": "string",
+      "example": "03-01",
+      "description": "\`MM-DD\`."
+    },
+    "to": {
+      "type": "string",
+      "example": "03-31",
+      "description": "\`MM-DD\`. Earlier than \`from\` means the window runs across the New Year."
+    },
+    "title": {
+      "type": "object",
+      "properties": {
+        "bg": {
+          "type": "string"
+        },
+        "en": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bg"
+      ]
+    },
+    "note": {
+      "type": "object",
+      "properties": {
+        "bg": {
+          "type": "string"
+        },
+        "en": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bg"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "region",
+    "from",
+    "to"
+  ],
+  "additionalProperties": {},
+  "description": "A calendar window WITHOUT a citation — an override never carries one; \`basis\` replaces it."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AgroProgress 1`] = `
 "{
   "type": "object",
