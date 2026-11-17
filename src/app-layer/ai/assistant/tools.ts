@@ -763,7 +763,6 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     (rows as Array<Record<string, unknown>>).map(
                         async (r): Promise<TaskRow> => ({
                             id: r.id,
-                            treatmentGroupId: r.treatmentGroupId,
                             title: r.title,
                             status: await enumLabel('taskStatus', r.status as string, locale),
                             priority: r.priority,
@@ -929,6 +928,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     (rows as Array<Record<string, unknown>>).map(
                         async (r): Promise<JournalRow> => ({
                             id: r.id,
+                            treatmentGroupId: r.treatmentGroupId,
                             title: r.title,
                             type: await enumLabel('logType', r.type as string, locale),
                             status: await enumLabel('logStatus', r.status as string, locale),
