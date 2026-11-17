@@ -165,7 +165,7 @@ describe('the WFS axis order (#2421)', () => {
             'VectorData:Dates_2021',
         );
         const blocks = new URL(buildOrthoBlocksUrl(BASE, 2021, BBOX, 42));
-        expect(blocks.searchParams.get('typeNames')).toBe('VectorData:Agricultural_Land_2021');
+        expect(blocks.searchParams.get('typeNames')).toBe('VectorData:Physical_Blocks_2021');
         expect(blocks.searchParams.get('count')).toBe('42');
     });
 });
