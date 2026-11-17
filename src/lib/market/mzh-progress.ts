@@ -131,9 +131,20 @@ function isoDate(d: string, m: string, y: string): string | null {
     return `${y}-${m}-${d}`;
 }
 
+/**
+ * «16,6%» → "16.6", as printed (a decimal comma becomes a point). Read from
+ * the match rather than by replacing characters, so the shape is the
+ * `PCT` shape and nothing else.
+ */
+function pctText(token: string): string {
+    const m = /^(-?\d+)(?:,(\d+))?%$/.exec(token);
+    if (!m) throw new Error(`not a printed percentage: ${token}`);
+    return m[2] === undefined ? m[1] : `${m[1]}.${m[2]}`;
+}
+
 /** «16,6%» → 16.6. */
 function pctValue(token: string): number {
-    return Number(token.replace('%', '').replace(',', '.'));
+    return Number(pctText(token));
 }
 
 /**
@@ -352,7 +363,7 @@ export function parseCampaignProgress(text: string): MzhCampaignProgress {
                     commodity: commodityOf(label, unmapped),
                     sownHa: b as number,
                     lastYearHa: a,
-                    changePct: printed === null ? null : last.replace('%', '').replace(',', '.'),
+                    changePct: printed === null ? null : pctText(last),
                 });
             }
         }
