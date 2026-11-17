@@ -325,6 +325,16 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // without — and a farm with blocks in both halves of the country
             // has no single region to inherit.
             'agro-calendar',
+            // National yields + support rates (agrent-ios#638) and pest and
+            // disease thresholds (agrent-ios#636) — the `agro-calendar`
+            // reasoning exactly: published МЗХ figures with a page each,
+            // identical for every farm, read from a committed dataset and
+            // from NO table at all. Authenticated (`getUserCtx`); ungated by
+            // owner ruling. A route that compared a farm's own observations
+            // against these thresholds would read the farm's data and belongs
+            // under /api/t/[tenantSlug] instead.
+            'agro-benchmarks',
+            'agro-thresholds',
             // P5.2a (#1593) — the person-scoped SOCIAL surface, starting with
             // `reports` (file a DSA Art 16 notice, read your own back).
             // AUTHENTICATED like `me`, and with no tenant for a stronger
