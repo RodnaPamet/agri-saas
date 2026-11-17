@@ -35,7 +35,7 @@ export function registerAgroReferencePaths(registry: OpenAPIRegistry): void {
         description:
             'Bulgarian national average yields per crop (МЗХ Agrostatistics) and coupled-support rates per eligible hectare (the minister\'s order and the ДФЗ notice). **Every figure carries a citation.**' +
             '\n\n**Person-scoped and farm-free**, like `GET /api/agro-calendar`: no `tenantSlug`, identical for every farm. Not behind a feature flag.' +
-            '\n\n**Figures are as printed and never converted.** Yields are kg/ha — divide by 10 for kg/дка, which is exact. Rates are integer minor units of the order\'s own `currency` (стотинки for BGN), untouched: `25474` is 254,74 лв/ha. Beside each, `perDaEurCents` is euro cents per DECARE at the fixed peg, derived server-side so no client holds the rate (owner ruling 2026-11-17, as the vine card\'s costs). Show the euro, marked as converted; the lev figure is the traceable one.' +
+            '\n\n**Figures are as printed and never converted.** Yields are kg/ha — divide by 10 for kg/дка, which is exact. Rates are integer minor units of the order\'s own `currency` (стотинки for BGN), untouched: `25474` is 254,74 лв/ha. Beside each, `perDaEurCents` is euro cents per DECARE, derived server-side: from an order in BGN at the fixed peg, so no client holds the rate (owner ruling 2026-11-17, as the vine card\'s costs), and from an order in EUR (Campaign 2025 on) by division alone. Show the euro; mark it as converted ONLY when `currency` is BGN.' +
             '\n\nAn unknown `commodity` is a **400, never an empty list** — an empty list would read as "covered, no figure".',
         tags: ['Agro'],
         query: z.object({
