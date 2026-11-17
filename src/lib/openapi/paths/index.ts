@@ -35,6 +35,7 @@ import { registerInventoryPaths } from './inventory.paths';
 import { registerAgroPaths } from './agro.paths';
 import { registerLunarPaths } from './lunar.paths';
 import { registerAgroCalendarPaths } from './agro-calendar.paths';
+import { registerAgroReferencePaths } from './agro-reference.paths';
 import { registerLeasePaths } from './leases.paths';
 import { registerCadastreAndReportPaths } from './cadastre-reports.paths';
 import { registerFarmProfilePaths } from './farm-profile.paths';
@@ -96,6 +97,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerAgroPaths(registry);
     registerLunarPaths(registry);
     registerAgroCalendarPaths(registry);
+    registerAgroReferencePaths(registry);
     registerLeasePaths(registry);
     registerCadastreAndReportPaths(registry);
     registerFarmProfilePaths(registry);

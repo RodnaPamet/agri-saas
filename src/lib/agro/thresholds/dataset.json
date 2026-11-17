@@ -1,0 +1,963 @@
+{
+  "schemaVersion": 1,
+  "compiledAt": "2026-11-17",
+  "conventions": [
+    "Thresholds (ПИВ) are as the guide states them, in plain Bulgarian; the figure and the stage are never changed.",
+    "Every entry cites the guide's page. An entry whose page gives no figure is left out."
+  ],
+  "sources": {
+    "mzh-ip-2024": {
+      "title": "Ръководство за интегрирано производство на зърнено-житни култури (пшеница, ечемик, ръж, овес, царевица) и слънчоглед",
+      "publisher": "МЗХ",
+      "url": "https://www.mzh.government.bg/media/filer_public/2024/12/20/rkovodstvo1.pdf",
+      "published": "2024-12"
+    }
+  },
+  "thresholds": [
+    {
+      "id": "powdery-mildew",
+      "kind": "disease",
+      "name": {
+        "bg": "Брашнеста мана"
+      },
+      "latin": "Blumeria graminis",
+      "crops": [
+        "wheat",
+        "barley",
+        "oats",
+        "rye"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 31–32 (първи – втори възел)"
+          },
+          "threshold": {
+            "bg": "10 % нападната листна маса"
+          }
+        },
+        {
+          "stage": {
+            "bg": "BBCH 51–61 (изкласяване – цъфтеж)"
+          },
+          "threshold": {
+            "bg": "10 % нападната листна маса под флаговия лист"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 30
+      }
+    },
+    {
+      "id": "stem-rust",
+      "kind": "disease",
+      "name": {
+        "bg": "Черна стъблена ръжда"
+      },
+      "latin": "Puccinia graminis",
+      "crops": [
+        "wheat",
+        "barley",
+        "oats",
+        "rye"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 51–73"
+          },
+          "threshold": {
+            "bg": "1 % нападнати растения със сори на патогена"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 32
+      }
+    },
+    {
+      "id": "brown-rust",
+      "kind": "disease",
+      "name": {
+        "bg": "Кафява ръжда"
+      },
+      "latin": "Puccinia recondita",
+      "crops": [
+        "wheat",
+        "rye"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 31–32"
+          },
+          "threshold": {
+            "bg": "сори по 5 % от листната маса"
+          }
+        },
+        {
+          "stage": {
+            "bg": "BBCH 51–61"
+          },
+          "threshold": {
+            "bg": "сори по 5 % от листната маса под флаговия лист"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 33
+      }
+    },
+    {
+      "id": "yellow-rust",
+      "kind": "disease",
+      "name": {
+        "bg": "Жълта ръжда"
+      },
+      "latin": "Puccinia striiformis",
+      "crops": [
+        "wheat",
+        "barley"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 31–32 (първи – втори възел)"
+          },
+          "threshold": {
+            "bg": "5 % нападната листна маса"
+          }
+        },
+        {
+          "stage": {
+            "bg": "BBCH 51–59 (изкласяване)"
+          },
+          "threshold": {
+            "bg": "5 % нападната листна маса под флаговия лист"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 34
+      }
+    },
+    {
+      "id": "barley-rust",
+      "kind": "disease",
+      "name": {
+        "bg": "Ръжда по ечемика"
+      },
+      "latin": "Puccinia hordei",
+      "crops": [
+        "barley"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 31–32"
+          },
+          "threshold": {
+            "bg": "сори по 5 % от листната маса"
+          }
+        },
+        {
+          "stage": {
+            "bg": "BBCH 51–61"
+          },
+          "threshold": {
+            "bg": "сори по 5 % от листната маса под флаговия лист"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 35
+      }
+    },
+    {
+      "id": "net-blotch",
+      "kind": "disease",
+      "name": {
+        "bg": "Мрежести петна"
+      },
+      "latin": "Drechslera teres",
+      "crops": [
+        "barley"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 31–32 (първи – втори възел)"
+          },
+          "threshold": {
+            "bg": "5 % нападната листна маса"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 42
+      }
+    },
+    {
+      "id": "septoria",
+      "kind": "disease",
+      "name": {
+        "bg": "Ран листен пригор"
+      },
+      "latin": "Septoria tritici",
+      "crops": [
+        "wheat"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "първи – втори възел"
+          },
+          "threshold": {
+            "bg": "пикнидии по 5 % от листната маса"
+          }
+        },
+        {
+          "stage": {
+            "bg": "флагов лист – изкласяване"
+          },
+          "threshold": {
+            "bg": "5 % нападната листна маса под флаговия лист"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 45
+      }
+    },
+    {
+      "id": "sunn-pest",
+      "kind": "pest",
+      "name": {
+        "bg": "Вредна житна дървеница"
+      },
+      "latin": "Eurygaster integriceps",
+      "crops": [
+        "wheat",
+        "barley"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "възрастни"
+          },
+          "threshold": {
+            "bg": "2 бр./м² в семепроизводни посеви, 4 бр./м² в производствени посеви"
+          }
+        },
+        {
+          "stage": {
+            "bg": "нимфи (млечна зрелост)"
+          },
+          "threshold": {
+            "bg": "2 бр./м², когато 30 % са в трета нимфна възраст"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 72
+      }
+    },
+    {
+      "id": "zabrus",
+      "kind": "pest",
+      "name": {
+        "bg": "Житни бегачи (обикновен и голям)"
+      },
+      "latin": "Zabrus tenebrioides, Z. spinipes",
+      "crops": [
+        "wheat",
+        "barley",
+        "rye",
+        "triticale"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "есен"
+          },
+          "threshold": {
+            "bg": "3 ларви или повредени растения на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "пролет"
+          },
+          "threshold": {
+            "bg": "5 ларви или повредени растения на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 77
+      }
+    },
+    {
+      "id": "hessian-fly",
+      "kind": "pest",
+      "name": {
+        "bg": "Хесенска муха"
+      },
+      "latin": "Mayetiola destructor",
+      "crops": [
+        "wheat",
+        "barley",
+        "rye"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване – братене"
+          },
+          "threshold": {
+            "bg": "3–4 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 80
+      }
+    },
+    {
+      "id": "cereal-flies",
+      "kind": "pest",
+      "name": {
+        "bg": "Житни мухи (тревна, черна пшеничена, черна пролетна пшеничена)"
+      },
+      "latin": "Opomyza florum, Phorbia fumigata, P. haberlandti",
+      "crops": [
+        "wheat",
+        "barley"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване – братене"
+          },
+          "threshold": {
+            "bg": "3 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 81
+      },
+      "note": {
+        "bg": "Една и съща стойност за трите вида, стр. 81–83."
+      }
+    },
+    {
+      "id": "frit-fly",
+      "kind": "pest",
+      "name": {
+        "bg": "Шведска муха"
+      },
+      "latin": "Oscinella frit",
+      "crops": [
+        "wheat",
+        "barley",
+        "oats"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване – братене"
+          },
+          "threshold": {
+            "bg": "3 възрастни на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "вретенене"
+          },
+          "threshold": {
+            "bg": "6 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 85
+      }
+    },
+    {
+      "id": "barley-frit-fly",
+      "kind": "pest",
+      "name": {
+        "bg": "Ечемичена шведска муха"
+      },
+      "latin": "Oscinella pusilla",
+      "crops": [
+        "barley",
+        "wheat"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване – братене"
+          },
+          "threshold": {
+            "bg": "3–4 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 83
+      }
+    },
+    {
+      "id": "cereal-aphids",
+      "kind": "pest",
+      "name": {
+        "bg": "Листни въшки по житните"
+      },
+      "latin": "Sitobion avenae, Schizaphis graminum, Rhopalosiphum padi",
+      "crops": [
+        "wheat",
+        "barley",
+        "rye",
+        "oats",
+        "triticale"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване – братене (есен)"
+          },
+          "threshold": {
+            "bg": "10 % нападнати растения или 10 въшки на растение"
+          }
+        },
+        {
+          "stage": {
+            "bg": "вретенене – изкласяване"
+          },
+          "threshold": {
+            "bg": "15 % нападнати растения или 10 въшки на клас"
+          }
+        },
+        {
+          "stage": {
+            "bg": "начало на млечна зрялост"
+          },
+          "threshold": {
+            "bg": "15 % нападнати растения или 30–40 въшки на клас"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 87
+      },
+      "note": {
+        "bg": "Една и съща стойност за трите вида, стр. 87–90."
+      }
+    },
+    {
+      "id": "wheat-thrips",
+      "kind": "pest",
+      "name": {
+        "bg": "Пшеничен трипс"
+      },
+      "latin": "Haplothrips tritici",
+      "crops": [
+        "wheat",
+        "barley"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "вретенене"
+          },
+          "threshold": {
+            "bg": "10 възрастни на стъбло при пшеницата, 15 при зимния ечемик"
+          }
+        },
+        {
+          "stage": {
+            "bg": "млечна зрялост"
+          },
+          "threshold": {
+            "bg": "20 ларви на клас при суха пролет, 30 при влажна"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 92
+      }
+    },
+    {
+      "id": "anisoplia",
+      "kind": "pest",
+      "name": {
+        "bg": "Житен бръмбар (житар)"
+      },
+      "latin": "Anisoplia austriaca",
+      "crops": [
+        "wheat",
+        "barley",
+        "rye"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "ларви в почвата"
+          },
+          "threshold": {
+            "bg": "10–15 ларви на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "цъфтеж – наливане на зърното"
+          },
+          "threshold": {
+            "bg": "3–5 възрастни на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "млечна и восъчна зрялост"
+          },
+          "threshold": {
+            "bg": "6–8 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 96
+      }
+    },
+    {
+      "id": "cereal-leaf-beetle",
+      "kind": "pest",
+      "name": {
+        "bg": "Житни пиявици"
+      },
+      "latin": "Oulema melanopus, O. gallaeciana",
+      "crops": [
+        "wheat",
+        "barley",
+        "oats"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "вретенене"
+          },
+          "threshold": {
+            "bg": "10–15 възрастни на м² при пролетния ечемик; 30 при редки посеви и суха пролет; 50 при гъсти посеви и хладна пролет"
+          }
+        },
+        {
+          "stage": {
+            "bg": "изкласяване – цъфтеж"
+          },
+          "threshold": {
+            "bg": "над 1 ларва на флагов лист или 20 % унищожена листна маса"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 98
+      }
+    },
+    {
+      "id": "corn-borer",
+      "kind": "pest",
+      "name": {
+        "bg": "Царевичен стъблопробивач"
+      },
+      "latin": "Ostrinia nubilalis",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "6–7 лист, яйчни купчинки"
+          },
+          "threshold": {
+            "bg": "10 на 100 растения за зърно, 3 на 100 за семепроизводство"
+          }
+        },
+        {
+          "stage": {
+            "bg": "след изметляване, гъсеници"
+          },
+          "threshold": {
+            "bg": "90 % нападнати растения с 3–4 повреди за зърно; 10 % с 1–2 повреди за семепроизводство"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 101
+      }
+    },
+    {
+      "id": "rootworm",
+      "kind": "pest",
+      "name": {
+        "bg": "Западен царевичен коренов червей (диабротика)"
+      },
+      "latin": "Diabrotica virgifera virgifera",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "корени, ларви III възраст"
+          },
+          "threshold": {
+            "bg": "1 на растение без поливане, 3 на растение при поливане"
+          }
+        },
+        {
+          "stage": {
+            "bg": "поява на свила, възрастни"
+          },
+          "threshold": {
+            "bg": "10–15 на уловка на ден (на 50 дка) или 3–5 на растение"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 103
+      }
+    },
+    {
+      "id": "wireworms-maize",
+      "kind": "pest",
+      "name": {
+        "bg": "Телени червеи (полски ковачи)"
+      },
+      "latin": "Elateridae",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "преди и при сеитба"
+          },
+          "threshold": {
+            "bg": "2 ларви на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "до 6–7 лист"
+          },
+          "threshold": {
+            "bg": "5–6 ларви на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 103
+      }
+    },
+    {
+      "id": "tanymecus-maize",
+      "kind": "pest",
+      "name": {
+        "bg": "Сив царевичен хоботник"
+      },
+      "latin": "Tanymecus dilaticollis",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "до 5–7 лист, възрастни"
+          },
+          "threshold": {
+            "bg": "над 2 на м² или 20–30 % повредена листна маса"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 104
+      }
+    },
+    {
+      "id": "cutworms-maize",
+      "kind": "pest",
+      "name": {
+        "bg": "Сиви червеи (подземни нощенки)"
+      },
+      "latin": "Agrotis segetum, Euxoa temera",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "май – юни, без поливане"
+          },
+          "threshold": {
+            "bg": "0,5 гъсеници IV–V възраст или 0,5 повредени растения на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "май – юни, при поливане"
+          },
+          "threshold": {
+            "bg": "0,7 повредени растения на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 104
+      }
+    },
+    {
+      "id": "bollworm-maize",
+      "kind": "pest",
+      "name": {
+        "bg": "Памукова нощенка"
+      },
+      "latin": "Helicoverpa armigera",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "свила – млечна зрялост"
+          },
+          "threshold": {
+            "bg": "50 яйца и ларви на 100 растения"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 105
+      }
+    },
+    {
+      "id": "aphids-maize",
+      "kind": "pest",
+      "name": {
+        "bg": "Листни въшки по царевицата"
+      },
+      "latin": "Rhopalosiphum padi, Sitobion avenae",
+      "crops": [
+        "maize"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "начало на вегетацията"
+          },
+          "threshold": {
+            "bg": "20 % заселени растения"
+          }
+        },
+        {
+          "stage": {
+            "bg": "по-късни фази"
+          },
+          "threshold": {
+            "bg": "30 % заселени растения"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 106
+      }
+    },
+    {
+      "id": "wireworms-sunflower",
+      "kind": "pest",
+      "name": {
+        "bg": "Телени червеи (полски ковачи)"
+      },
+      "latin": "Elateridae",
+      "crops": [
+        "sunflower"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "сеитба до 10 април"
+          },
+          "threshold": {
+            "bg": "5 ларви на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "сеитба след 10 април"
+          },
+          "threshold": {
+            "bg": "3 ларви на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 156
+      }
+    },
+    {
+      "id": "tanymecus-sunflower",
+      "kind": "pest",
+      "name": {
+        "bg": "Сив царевичен хоботник"
+      },
+      "latin": "Tanymecus dilaticollis",
+      "crops": [
+        "sunflower"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване"
+          },
+          "threshold": {
+            "bg": "2 възрастни на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "4–5 лист"
+          },
+          "threshold": {
+            "bg": "5–6 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 158
+      }
+    },
+    {
+      "id": "tanymecus-beet-sunflower",
+      "kind": "pest",
+      "name": {
+        "bg": "Сив цвеклов хоботник"
+      },
+      "latin": "Tanymecus palliatus",
+      "crops": [
+        "sunflower"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "поникване"
+          },
+          "threshold": {
+            "bg": "2 възрастни на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "4–5 лист"
+          },
+          "threshold": {
+            "bg": "5–6 възрастни на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 159
+      }
+    },
+    {
+      "id": "meadow-moth",
+      "kind": "pest",
+      "name": {
+        "bg": "Ливадна пеперуда"
+      },
+      "latin": "Loxostege sticticalis",
+      "crops": [
+        "sunflower"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 14–19 (поникване)"
+          },
+          "threshold": {
+            "bg": "8–10 гъсеници на м²"
+          }
+        },
+        {
+          "stage": {
+            "bg": "BBCH 51–56 (преди цъфтеж)"
+          },
+          "threshold": {
+            "bg": "15–20 гъсеници на м²"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 162
+      },
+      "note": {
+        "bg": "Няма разрешени ПРЗ за интегрирано производство на слънчоглед."
+      }
+    },
+    {
+      "id": "aphids-sunflower",
+      "kind": "pest",
+      "name": {
+        "bg": "Листни въшки (Brachycaudus helichrysi)"
+      },
+      "latin": "Brachycaudus helichrysi",
+      "crops": [
+        "sunflower"
+      ],
+      "levels": [
+        {
+          "stage": {
+            "bg": "BBCH 51–56"
+          },
+          "threshold": {
+            "bg": "20–25 % нападнати растения"
+          }
+        }
+      ],
+      "cite": {
+        "source": "mzh-ip-2024",
+        "page": 163
+      }
+    }
+  ]
+}
