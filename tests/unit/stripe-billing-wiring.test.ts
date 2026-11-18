@@ -48,6 +48,13 @@ jest.mock('@/lib/observability/logger', () => ({
     },
 }));
 
+// #3182: subscription events re-read the subscription from Stripe, because
+// events are not delivered in order. `current` is what Stripe holds NOW; by
+// default it mirrors the event, and a case overrides it to model staleness.
+let current: Record<string, unknown> | null = null;
+const retrieve = jest.fn(async () => current);
+jest.mock('stripe', () => jest.fn().mockImplementation(() => ({ subscriptions: { retrieve } })));
+
 import { handleWebhookEvent } from '@/lib/stripe';
 import type Stripe from 'stripe';
 
@@ -55,16 +62,22 @@ import type Stripe from 'stripe';
 const subEvent = (
     type: string,
     sub: Record<string, unknown>,
-): Stripe.Event =>
-    ({
+): Stripe.Event => {
+    const object = { customer: 'cus_1', id: 'sub_1', status: 'active', ...sub };
+    // Unless a case says otherwise, Stripe's current state is the event's.
+    current = object;
+    return {
         id: `evt_${Math.random().toString(36).slice(2)}`,
         type,
-        data: { object: { customer: 'cus_1', id: 'sub_1', status: 'active', ...sub } },
-    }) as unknown as Stripe.Event;
+        data: { object },
+    } as unknown as Stripe.Event;
+};
 
 beforeEach(() => {
     updates.length = 0;
     warnings.length = 0;
+    retrieve.mockClear();
+    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic'; // pragma: allowlist secret -- test double, never sent
     process.env.STRIPE_PRICE_ID_PRO = 'price_pro';
     process.env.STRIPE_PRICE_ID_ENTERPRISE = 'price_ent';
 });
@@ -129,6 +142,44 @@ describe('the plan is resolved, never guessed', () => {
             subEvent('customer.subscription.updated', { metadata: {}, items: { data: [] } }),
         );
         expect(updates[0]).not.toHaveProperty('plan');
+    });
+});
+
+describe('a subscription event grants only a plan in force (#3182)', () => {
+    it('re-reads the subscription, so a STALE event cannot re-grant a cancelled plan', async () => {
+        // Stripe does not order events: an `updated` saying "active, PRO" can
+        // arrive after the subscription was deleted.
+        const stale = subEvent('customer.subscription.updated', { metadata: { plan: 'PRO' } });
+        current = { customer: 'cus_1', id: 'sub_1', status: 'canceled', metadata: { plan: 'PRO' } };
+
+        await handleWebhookEvent(stale);
+
+        expect(retrieve).toHaveBeenCalledWith('sub_1');
+        expect(updates[0]).toMatchObject({ plan: 'FREE', status: 'CANCELED' });
+    });
+
+    it('an INCOMPLETE subscription does not upgrade the tenant', async () => {
+        // The first payment never went through; `metadata.plan` says PRO.
+        await handleWebhookEvent(
+            subEvent('customer.subscription.created', { status: 'incomplete', metadata: { plan: 'PRO' } }),
+        );
+        expect(updates[0]).not.toHaveProperty('plan');
+        // Known plan, not in force — not the "could not determine" case.
+        expect(warnings).toHaveLength(0);
+    });
+
+    it('a PAST_DUE subscription keeps its plan — the grace gate is separate', async () => {
+        await handleWebhookEvent(
+            subEvent('customer.subscription.updated', { status: 'past_due', metadata: { plan: 'PRO' } }),
+        );
+        expect(updates[0]).toMatchObject({ plan: 'PRO', status: 'PAST_DUE' });
+    });
+
+    it('a failed re-read is an error, so the route answers 500 and Stripe retries', async () => {
+        const event = subEvent('customer.subscription.updated', { metadata: { plan: 'PRO' } });
+        retrieve.mockRejectedValueOnce(new Error('stripe unreachable'));
+        await expect(handleWebhookEvent(event)).rejects.toThrow('stripe unreachable');
+        expect(updates).toHaveLength(0);
     });
 });
 
