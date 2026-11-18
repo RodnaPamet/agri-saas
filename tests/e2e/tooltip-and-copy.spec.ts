@@ -40,6 +40,7 @@ import {
     instrumentRowGestures,
     instrumentUrlChanges,
 } from './e2e-utils';
+import { enableFlags } from './feature-flag-fixtures';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 
@@ -130,37 +131,50 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
     // value, which is exactly the "copy what you can see" shape the
     // share-link banner had. Read-only — the endpoint arrives with the
     // page's `GET /admin/scim`, no token generation on the shared tenant.
-    test('SCIM endpoint — CopyButton writes to clipboard + shows toast', async ({ page }) => {
-        const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
-
-        await safeGoto(page, `/t/${tenantSlug}/admin/scim`, {
-            waitUntil: 'domcontentloaded',
+    test.describe('with SCIM turned back on', () => {
+        // SCIM is dormant in production (owner ruling 2026-11-18), and its
+        // token screen is the one surviving <CopyButton> call site, so this
+        // case turns `auth.scim` on for its own duration.
+        let restoreFlags: () => Promise<void> = async () => {};
+        test.beforeAll(async () => {
+            restoreFlags = await enableFlags('auth.scim');
+        });
+        test.afterAll(async () => {
+            await restoreFlags();
         });
 
-        // The <code> starts as a loading placeholder and fills in once
-        // `GET /admin/scim` resolves; wait for a real URL rather than a
-        // dash/placeholder so the clipboard comparison is meaningful.
-        const endpointEl = page.getByRole('main').locator('#scim-endpoint-url');
-        await expect(endpointEl).toBeVisible({ timeout: 30_000 });
-        await expect(endpointEl).toContainText(/https?:\/\/.+\/api\/scim\/v2/, {
-            timeout: 30_000,
+        test('SCIM endpoint — CopyButton writes to clipboard + shows toast', async ({ page }) => {
+            const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
+
+            await safeGoto(page, `/t/${tenantSlug}/admin/scim`, {
+                waitUntil: 'domcontentloaded',
+            });
+
+            // The <code> starts as a loading placeholder and fills in once
+            // `GET /admin/scim` resolves; wait for a real URL rather than a
+            // dash/placeholder so the clipboard comparison is meaningful.
+            const endpointEl = page.getByRole('main').locator('#scim-endpoint-url');
+            await expect(endpointEl).toBeVisible({ timeout: 30_000 });
+            await expect(endpointEl).toContainText(/https?:\/\/.+\/api\/scim\/v2/, {
+                timeout: 30_000,
+            });
+
+            const endpointUrl = (await endpointEl.textContent()) ?? '';
+            expect(endpointUrl.trim().length).toBeGreaterThan(0);
+
+            await page
+                .getByRole('button', { name: /Copy SCIM endpoint/i })
+                .click();
+
+            // Toast appears.
+            await expect(
+                page.getByText('SCIM endpoint copied', { exact: false }),
+            ).toBeVisible({ timeout: 5000 });
+
+            // Clipboard contains the exact URL rendered beside the button.
+            const clipboard = await readClipboard(page);
+            expect(clipboard).toBe(endpointUrl.trim());
         });
-
-        const endpointUrl = (await endpointEl.textContent()) ?? '';
-        expect(endpointUrl.trim().length).toBeGreaterThan(0);
-
-        await page
-            .getByRole('button', { name: /Copy SCIM endpoint/i })
-            .click();
-
-        // Toast appears.
-        await expect(
-            page.getByText('SCIM endpoint copied', { exact: false }),
-        ).toBeVisible({ timeout: 5000 });
-
-        // Clipboard contains the exact URL rendered beside the button.
-        const clipboard = await readClipboard(page);
-        expect(clipboard).toBe(endpointUrl.trim());
     });
 
     test('task detail header — task.key is copyable via CopyText', async ({

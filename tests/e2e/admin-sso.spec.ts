@@ -9,14 +9,65 @@
  *
  * Tests are ordered so simpler/lighter tests run first, warming up the
  * dev-server compilation cache before the heavier SSO page tests.
+ *
+ * ## Tenant SSO is turned OFF (owner ruling 2026-11-18)
+ *
+ * Dormant, not removed. The first describe asserts the production state —
+ * no hub tile, and the configuration screen answers not-found. The second
+ * turns `auth.tenant-sso` on for its own duration and runs the original
+ * checks, so turning SSO back on is not a step into untested UI.
  */
 import { test, expect } from '@playwright/test';
 import { expectSettledSingle, loginAndGetTenant, safeGoto } from './e2e-utils';
+import { enableFlags } from './feature-flag-fixtures';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 const READER_USER = { email: 'viewer@acme.com', password: 'password123' };
 
+test.describe('Admin SSO Configuration — turned off', () => {
+    test('the hub offers no SSO or SCIM tile, while Entra keeps its own', async ({ page }) => {
+        const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
+        await safeGoto(page, `/t/${tenantSlug}/admin`, { waitUntil: 'domcontentloaded' });
+        const main = page.getByRole('main');
+        // Positive control first: the hub rendered, so the absences below are
+        // about the tiles and not about a page that never loaded.
+        await expectSettledSingle(main.locator('#entra-pill-btn'), { timeout: 15000 });
+        await expect(main.locator('#sso-pill-btn')).toHaveCount(0);
+        await expect(main.locator('#scim-pill-btn')).toHaveCount(0);
+    });
+
+    test('the SSO and SCIM screens answer not-found to an admin', async ({ page }) => {
+        const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
+        for (const sub of ['/admin/sso', '/admin/scim']) {
+            await safeGoto(page, `/t/${tenantSlug}${sub}`, { waitUntil: 'domcontentloaded' });
+            // The rendered not-found page, not the HTTP status: the parent
+            // layouts have already streamed by the time the segment layout
+            // calls `notFound()`, so the response is a 200 carrying it.
+            await expect(
+                page.getByRole('heading', { name: 'Page not found' }),
+                `${sub} while turned off`,
+            ).toBeVisible({ timeout: 30_000 });
+            await expect(page.getByRole('button', { name: /Save Configuration/i })).toHaveCount(0);
+            await expect(page.locator('#scim-endpoint-url')).toHaveCount(0);
+        }
+    });
+
+    test('the configuration API answers 404', async ({ page }) => {
+        const tenantSlug = await loginAndGetTenant(page, ADMIN_USER);
+        const res = await page.request.get(`/api/t/${tenantSlug}/sso`);
+        expect(res.status()).toBe(404);
+    });
+});
+
 test.describe('Admin SSO Configuration', () => {
+    let restoreFlags: () => Promise<void> = async () => {};
+    test.beforeAll(async () => {
+        restoreFlags = await enableFlags('auth.tenant-sso');
+    });
+    test.afterAll(async () => {
+        await restoreFlags();
+    });
+
 
     // ── Warm-up test: hits /admin (already compiled) ──
     test('admin page shows SSO pill button', async ({ page }) => {

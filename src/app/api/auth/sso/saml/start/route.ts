@@ -22,6 +22,7 @@ import {
     configurationError,
     externalServiceError,
 } from '@/lib/errors/types';
+import { assertTenantSsoEnabled } from '@/lib/auth/tenant-sso-availability';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,9 @@ export const dynamic = 'force-dynamic';
  * Epic E — Standardized error contract via withApiErrorHandling.
  */
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
+    // Tenant SSO is turned off (owner ruling 2026-11-18); dormant, not
+    // removed. See @/lib/auth/tenant-sso-availability.
+    await assertTenantSsoEnabled();
     const requestId = generateSsoRequestId();
     const { searchParams } = req.nextUrl;
     const tenantSlug = searchParams.get('tenant');

@@ -10,11 +10,13 @@ import {
 import { UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { assertTenantSsoEnabled } from '@/lib/auth/tenant-sso-availability';
 
 /**
  * GET /api/sso — list all SSO providers for the tenant (ADMIN only)
  */
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
+    await assertTenantSsoEnabled();
     const ctx = await getLegacyCtx(req);
     const providers = await getTenantSsoConfig(ctx);
     // Strip secrets from configJson before sending to client
@@ -29,6 +31,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
  * POST /api/sso — create or update an SSO provider (ADMIN only)
  */
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
+    await assertTenantSsoEnabled();
     const ctx = await getLegacyCtx(req);
     const body = await req.json();
     const parsed = UpsertSsoConfigInput.parse(body);
@@ -41,6 +44,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
  * Body: { id: string, action: 'enable' | 'disable' | 'enforce' | 'unenforce' }
  */
 export const PATCH = withApiErrorHandling(async (req: NextRequest) => {
+    await assertTenantSsoEnabled();
     const ctx = await getLegacyCtx(req);
     const { id, action } = await req.json() as { id: string; action: string };
 
@@ -69,6 +73,7 @@ export const PATCH = withApiErrorHandling(async (req: NextRequest) => {
  * Body: { id: string }
  */
 export const DELETE = withApiErrorHandling(async (req: NextRequest) => {
+    await assertTenantSsoEnabled();
     const ctx = await getLegacyCtx(req);
     const { id } = await req.json() as { id: string };
     await deleteTenantSsoConfig(ctx, id);

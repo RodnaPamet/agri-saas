@@ -20,6 +20,7 @@ import {
     safeReturnTo,
 } from '@/lib/security/sso-flow-binding';
 import jwt from 'jsonwebtoken';
+import { isTenantSsoEnabled } from '@/lib/auth/tenant-sso-availability';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,12 @@ export const dynamic = 'force-dynamic';
  * 6. Redirects to app
  */
 export async function GET(req: NextRequest) {
+    // Tenant SSO is turned off (owner ruling 2026-11-18); dormant, not
+    // removed. Refused before the state cookie or the IdP response is
+    // read, so a callback replayed while off reaches nothing.
+    if (!(await isTenantSsoEnabled())) {
+        return new NextResponse('Not found', { status: 404 });
+    }
     const requestId = generateSsoRequestId();
     const { searchParams } = req.nextUrl;
     const code = searchParams.get('code');

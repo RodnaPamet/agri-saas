@@ -10,6 +10,7 @@ import {
 import { UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { assertTenantSsoEnabled } from '@/lib/auth/tenant-sso-availability';
 
 /**
  * Tenant-scoped SSO configuration routes.
@@ -24,6 +25,7 @@ import { jsonResponse } from '@/lib/api-response';
  */
 export const GET = withApiErrorHandling(
     requirePermission('admin.manage', async (_req: NextRequest, _routeArgs, ctx) => {
+    await assertTenantSsoEnabled();
         const providers = await getTenantSsoConfig(ctx);
         // Strip secrets from configJson before sending to client
         const safe = providers.map((p) => ({
@@ -39,6 +41,7 @@ export const GET = withApiErrorHandling(
  */
 export const POST = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
+    await assertTenantSsoEnabled();
         const body = await req.json();
         const parsed = UpsertSsoConfigInput.parse(body);
         const provider = await upsertTenantSsoConfig(ctx, parsed);
@@ -52,6 +55,7 @@ export const POST = withApiErrorHandling(
  */
 export const PATCH = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
+    await assertTenantSsoEnabled();
         const { id, action } = (await req.json()) as { id: string; action: string };
 
         let result;
@@ -81,6 +85,7 @@ export const PATCH = withApiErrorHandling(
  */
 export const DELETE = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
+    await assertTenantSsoEnabled();
         const { id } = (await req.json()) as { id: string };
         await deleteTenantSsoConfig(ctx, id);
         return jsonResponse({ ok: true });

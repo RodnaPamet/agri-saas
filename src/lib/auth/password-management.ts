@@ -37,7 +37,24 @@
  * `issuePasswordReset` returns `void` whether or not the email maps to
  * a credentials user — the caller always responds with the same 200.
  * Accounts that sign in only through OAuth have no `passwordHash`; a
- * reset is silently a no-op for them (there is no password to reset).
+ * reset is silently a no-op for them (there is no password to reset) —
+ * with ONE exception, below.
+ *
+ * ## Accounts stranded by the SSO turn-off
+ *
+ * Tenant SAML / OIDC SSO and SCIM were turned off (owner ruling
+ * 2026-11-18). A person created by either has no password and no OAuth
+ * account, so with those surfaces dormant they had no way in at all. While
+ * `auth.tenant-sso` is off, such an account — no `passwordHash` AND no
+ * linked `Account` row (Google, Apple, Entra) — is sent a reset link like
+ * any other, which is how it sets a first password. Proving control of the
+ * mailbox is the same bar a forgotten password clears.
+ *
+ * An account WITH a linked OAuth account stays a no-op: it already has a way
+ * in, and for an Entra account a password would bypass the farm's Entra
+ * group gate, which is checked only at an Entra sign-in. If tenant SSO is
+ * ever turned back on, the exception closes with it, because a password
+ * would then let an SSO-provisioned person go around their farm's IdP.
  *
  * ## What is NEVER logged
  * Plaintext passwords and raw reset tokens never touch the logger — see
@@ -53,6 +70,7 @@ import { logger } from '@/lib/observability/logger';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 import { hashPassword, verifyPassword } from './passwords';
+import { isTenantSsoEnabled } from './tenant-sso-availability';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { isLocale } from '@/lib/i18n/locales';
 import { escapeHtml } from '@/lib/security/escape-html';
@@ -95,6 +113,18 @@ export interface IssuePasswordResetOptions {
 }
 
 /**
+ * May a password-less account be sent a reset link to set its FIRST
+ * password? Only while tenant SSO is off, and only when the account has no
+ * linked OAuth `Account` row — i.e. it was created by SAML / OIDC SSO or by
+ * SCIM and the turn-off left it with no way in. See the module docblock.
+ */
+async function mayIssueFirstPassword(userId: string): Promise<boolean> {
+    if (await isTenantSsoEnabled()) return false;
+    const linked = await prisma.account.count({ where: { userId } });
+    return linked === 0;
+}
+
+/**
  * Issue a fresh password-reset token for the given address and send the
  * reset email. Always resolves — callers MUST return the same 200 shape
  * regardless of outcome so the response can't be used to enumerate
@@ -103,7 +133,8 @@ export interface IssuePasswordResetOptions {
  * No-ops (silently) when:
  *   - no user owns the email, OR
  *   - the user has no `passwordHash` (OAuth-only account — nothing to
- *     reset).
+ *     reset), unless {@link mayIssueFirstPassword} says the account has no
+ *     sign-in method left at all.
  *
  * Any prior outstanding tokens for the user are deleted so only the
  * newest link is live; an expired-token sweep is folded into the same
@@ -123,7 +154,8 @@ export async function issuePasswordReset(
 
     // Enumeration-safe no-op: unknown email, or an OAuth-only account
     // that never had a password. The caller still returns 200.
-    if (!user || !user.passwordHash) return;
+    if (!user) return;
+    if (!user.passwordHash && !(await mayIssueFirstPassword(user.id))) return;
 
     const raw = generateRawToken();
     const tokenHash = hashToken(raw);
