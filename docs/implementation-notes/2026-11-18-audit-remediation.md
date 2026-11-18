@@ -94,6 +94,9 @@ obvious from the diffs.
   right pin is whatever the VM runs today, which needs a measurement on the VM
   this session could not make. Pinning a guessed version would be a silent
   upgrade or downgrade riding a hardening change.
+  *Done later the same day:* measured on the VM over an IAP tunnel and pinned
+  to the running digests (pgbouncer `sha256:4c1ca296…`, watchtower
+  `sha256:6dd50763…`), so the pin changed no running bytes.
 - **The deploy helper keeps `./Caddyfile` out by construction** (only
   `./deploy/…` paths are inputs), which is the one exclusion that matters: the
   live file serves a co-tenant.

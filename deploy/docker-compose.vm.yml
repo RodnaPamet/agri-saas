@@ -81,7 +81,11 @@ services:
   # ── PgBouncer (transaction pooler) ──
   pgbouncer:
     logging: *logging
-    image: edoburu/pgbouncer:latest
+    # Pinned by digest (#3189), not `:latest`: a moved tag would change the
+    # pooler every app connection goes through on the next recreate, with no
+    # diff in this file. This is the digest the VM ran when it was pinned
+    # (2026-11-18). To upgrade, take the new digest deliberately and apply.
+    image: edoburu/pgbouncer@sha256:4c1ca296ef525f108f5d3552cc337c0c09587cf8dae7f0067fd93349e47dc1cd
     container_name: agrent-pgbouncer
     restart: always
     depends_on:
@@ -458,7 +462,12 @@ services:
   # migrations self-apply. --cleanup removes the superseded image after update.
   watchtower:
     logging: *logging
-    image: containrrr/watchtower:latest
+    # Pinned by digest (#3189), not `:latest`. Watchtower holds the Docker
+    # socket and deploys production unattended, so whoever controls this tag
+    # would control the host. This is the digest the VM ran when it was pinned
+    # (2026-11-18). Watchtower does not update itself (only labelled
+    # containers), so the pin holds until somebody changes it here.
+    image: containrrr/watchtower@sha256:6dd50763bbd632a83cb154d5451700530d1e44200b268a4e9488fefdfcf2b038
     container_name: agrent-watchtower
     restart: always
     # containrrr/watchtower defaults to Docker API client 1.25, which this

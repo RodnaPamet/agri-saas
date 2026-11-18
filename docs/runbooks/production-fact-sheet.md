@@ -120,14 +120,18 @@ latent one.
 |---|---|---|
 | `agrent-app`, `agrent-worker` | `ghcr.io/rodnapamet/agri-saas:latest` | floating — **intentional**, this is how Watchtower deploys |
 | `agrent-caddy` | `caddy:2-alpine` | **floating** — P11.1 |
-| `agrent-pgbouncer` | `edoburu/pgbouncer:latest` | **floating** |
+| `agrent-pgbouncer` | `edoburu/pgbouncer@sha256:4c1ca296…` | pinned by digest (#3189, 2026-11-18) |
 | `agrent-redis` | `redis:7-alpine` | floating within 7.x |
 | `agrent-db` | `agrent-db:local` | locally built |
-| `agrent-watchtower` | `containrrr/watchtower:latest` | **floating** |
+| `agrent-watchtower` | `containrrr/watchtower@sha256:6dd50763…` | pinned by digest (#3189, 2026-11-18) |
 
-`edoburu/pgbouncer:latest` is the one worth a second look: it sits on the path of
-every database query, and `latest` on a connection pooler is an unannounced change
-to the thing that holds the 25 server connections above.
+`edoburu/pgbouncer` was the one worth a second look while it floated: it sits on
+the path of every database query, and `latest` on a connection pooler is an
+unannounced change to the thing that holds the 25 server connections above. It
+and Watchtower (which holds the Docker socket) are pinned to the digests the VM
+was running on 2026-11-18, and `tests/guards/vm-compose-third-party-images-pinned.test.ts`
+keeps a third-party `:latest` from coming back. `playerz-pgbouncer` runs the same
+image and is not this repo's to pin.
 
 ## This VM is shared
 
