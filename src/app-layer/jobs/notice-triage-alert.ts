@@ -65,7 +65,7 @@ import { randomUUID } from 'node:crypto';
 
 import { env } from '@/env';
 import prisma from '@/lib/prisma';
-import { sendEmail } from '@/lib/mailer';
+import { sendEmailOrFail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
@@ -191,7 +191,7 @@ export async function runNoticeTriageAlert(
     ].join('\n');
 
     try {
-        await sendEmail({
+        await sendEmailOrFail({
             to,
             subject,
             text: body,

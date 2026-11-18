@@ -22,6 +22,8 @@
 const sendEmail = jest.fn();
 jest.mock('@/lib/mailer', () => ({
     sendEmail: (...a: unknown[]) => sendEmail(...a),
+    // The drain sends through `sendEmailOrFail` (#3181); same double.
+    sendEmailOrFail: (...a: unknown[]) => sendEmail(...a),
     getEmailProvider: jest.fn(),
     ConsoleEmailProvider: class {},
 }));

@@ -29,7 +29,12 @@ jest.mock('@/lib/prisma', () => ({
     prisma: mockPrisma,
     default: mockPrisma,
 }));
-jest.mock('@/lib/mailer', () => ({ sendEmail: jest.fn() }));
+// ONE fn behind both names: the drain sends through `sendEmailOrFail` (#3181)
+// and this suite asserts on the `sendEmail` import.
+jest.mock('@/lib/mailer', () => {
+    const send = jest.fn();
+    return { sendEmail: send, sendEmailOrFail: send };
+});
 jest.mock('@/app-layer/notifications/settings', () => ({
     getTenantNotificationSettings: jest.fn(),
 }));

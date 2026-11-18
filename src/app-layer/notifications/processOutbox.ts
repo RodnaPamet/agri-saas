@@ -9,7 +9,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { sendEmail } from '@/lib/mailer';
+import { sendEmailOrFail } from '@/lib/mailer';
 import { getTenantNotificationSettings } from './settings';
 import { isPlatformAudience } from './audience';
 import { logger } from '@/lib/observability/logger';
@@ -99,7 +99,7 @@ export async function processOutbox(
                 continue;
             }
 
-            await sendEmail({
+            await sendEmailOrFail({
                 to: row.toEmail,
                 subject: row.subject,
                 purpose: 'notification-outbox',
