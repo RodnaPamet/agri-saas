@@ -60,6 +60,10 @@ export const PLATFORM_AUDIT_SCOPES = [
     // statement) to this same scope, so the chain ends up carrying the whole
     // moderation history rather than two halves in two places.
     'moderation',
+    // #3095 — corrections to and additions of the agro calendar's windows. Its
+    // own chain: "who changed the published agronomy, and why" is one history,
+    // and it must not interleave with moderation or key rotation.
+    'agro-calendar',
 ] as const;
 export type PlatformAuditScope = (typeof PLATFORM_AUDIT_SCOPES)[number];
 

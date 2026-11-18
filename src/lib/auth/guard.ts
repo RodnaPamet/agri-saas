@@ -177,6 +177,10 @@ export const PUBLIC_PATH_PREFIXES = [
     // PUBLIC_PATH_EXACT below, so `startsWith('/api/admin/farm-claims')`
     // cannot also open a future `/api/admin/farm-claimsomething`.
     '/api/admin/farm-claims/',
+    // #3095 — the agro calendar's override console for SCRIPTS
+    // (`x-platform-admin-key`, verified in-handler). Children only; the
+    // collection's own path is EXACT below.
+    '/api/admin/agro-calendar/overrides/',
     // ── Moderation console (P5.4a, #1595) ──
     //
     // `/api/admin/moderation/notices` and `.../statements` verify
@@ -363,6 +367,9 @@ export const PUBLIC_PATH_EXACT = new Set([
     // `GET /api/admin/farm-claims` — the review queue (P3.9). EXACT, with its
     // children carried by the trailing-slash prefix above.
     '/api/admin/farm-claims',
+    // #3095 — the calendar override list and upsert, keyed. EXACT, children
+    // through the trailing-slash prefix above.
+    '/api/admin/agro-calendar/overrides',
     // The lookup-hash rehash sweep (#1237). EXACT and with NO children prefix,
     // because unlike the two above it has no child paths — adding a prefix
     // "for symmetry" would open paths that do not exist yet, which is how

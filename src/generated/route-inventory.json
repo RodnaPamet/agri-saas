@@ -100,6 +100,16 @@
       "documented": false
     },
     {
+      "path": "/api/admin/agro-calendar/overrides",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/admin/agro-calendar/overrides/{windowId}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/admin/diagnostics",
       "status": "live",
       "documented": false
@@ -817,6 +827,16 @@
     },
     {
       "path": "/api/t/{tenantSlug}/access-reviews/{reviewId}/evidence",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/agro-calendar/overrides",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/agro-calendar/overrides/{windowId}",
       "status": "live",
       "documented": true
     },

@@ -119,6 +119,11 @@ enum PlatformAuditAction {
   // `detailsJson.attempted`, so a second surface needs no migration — and the
   // chain reads "refused" uniformly, which is what an operator scans for.
   SUSPENDED_ACCOUNT_REFUSED
+  // #3095 — a calendar window corrected or added by a platform admin, and the
+  // override cleared. Paired, by the argument above: a history of corrections
+  // with no clears would show every corrected window as still corrected.
+  AGRO_CALENDAR_OVERRIDE_SET
+  AGRO_CALENDAR_OVERRIDE_CLEARED
 }
 
 model PlatformAuditLog {

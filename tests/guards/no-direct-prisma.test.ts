@@ -686,6 +686,12 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // newest snapshot with the global client; the route gates it on a
         // signed-in caller, like /api/agro-benchmarks.
         'campaign-progress.ts',
+        // #3095 — `AgroCalendarOverride` is GLOBAL (no tenantId / no RLS):
+        // a correction to the published calendar is the same agronomy for
+        // every farm. Its reads and writes use the global client because there
+        // is no tenant to bind; both write doors are platform-admin gated
+        // (the platform key, or admin.manage + assertPlatformSupport).
+        'agro-calendar-overrides.ts',
         // #2671 — `assistant-memory.ts` is the `trust-safety.ts` shape: the
         // READ and the WRITES use different clients ON PURPOSE.
         //
