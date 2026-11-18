@@ -453,4 +453,89 @@ describeFn('P9.6 — channel media (#2940)', () => {
             120_000,
         );
     });
+    describe('#3195 — a retried media post is published once', () => {
+        it('the same Idempotency-Key returns the first photo post, and writes no second row', async () => {
+            const key = `idem-photo-${TAG}`;
+            const first = await postChannelPhoto(ctxFor(MEMBER), channelId, {
+                bytes: await jpegWithExif(),
+                body: 'веднъж',
+                idempotencyKey: key,
+            });
+            const again = await postChannelPhoto(ctxFor(MEMBER), channelId, {
+                bytes: await jpegWithExif(),
+                body: 'веднъж',
+                idempotencyKey: key,
+            });
+            expect(again.postId).toBe(first.postId);
+            expect(
+                await prisma.channelPost.count({
+                    where: { channelId, authorUserId: MEMBER, idempotencyKey: key },
+                }),
+            ).toBe(1);
+        }, 60_000);
+
+        it('a voice note replays the same way', async () => {
+            const key = `idem-voice-${TAG}`;
+            const first = await postChannelVoiceNote(ctxFor(MEMBER), channelId, {
+                bytes: m4a(),
+                durationMs: 4_000,
+                idempotencyKey: key,
+            });
+            const again = await postChannelVoiceNote(ctxFor(MEMBER), channelId, {
+                bytes: m4a(),
+                durationMs: 4_000,
+                idempotencyKey: key,
+            });
+            expect(again.postId).toBe(first.postId);
+        }, 60_000);
+
+        it('a keyed retry inside slow mode returns the first post instead of a slow-mode refusal', async () => {
+            const slow = await prisma.channel.create({
+                data: { key: `crop:p96s-${TAG}`, nameBg: 'Бавен', nameEn: 'Slow', kind: 'CROP', slowModeSeconds: 600 },
+                select: { id: true },
+            });
+            try {
+                await joinChannel(ctxFor(MEMBER), slow.id);
+                const key = `idem-slow-${TAG}`;
+                const first = await postChannelPhoto(ctxFor(MEMBER), slow.id, { bytes: await jpegWithExif(), idempotencyKey: key });
+                const retry = await postChannelPhoto(ctxFor(MEMBER), slow.id, { bytes: await jpegWithExif(), idempotencyKey: key });
+                expect(retry.postId).toBe(first.postId);
+                // Control: a NEW post in the same window is still slowed, so the
+                // retry above was answered by the replay, not by an idle limiter.
+                await expect(
+                    postChannelPhoto(ctxFor(MEMBER), slow.id, { bytes: await jpegWithExif(), idempotencyKey: `${key}-new` }),
+                ).rejects.toMatchObject({ code: 'CHANNEL_SLOW_MODE' });
+            } finally {
+                const rows = await prisma.channelPost.findMany({ where: { channelId: slow.id }, select: { attachmentKey: true } });
+                for (const r of rows) if (r.attachmentKey) await getStorageProvider().delete(r.attachmentKey).catch(() => undefined);
+                await prisma.channelPost.deleteMany({ where: { channelId: slow.id } });
+                await prisma.channelMembership.deleteMany({ where: { channelId: slow.id } });
+                await prisma.channel.delete({ where: { id: slow.id } }).catch(() => undefined);
+            }
+        }, 60_000);
+
+        it('control: two posts with NO key are two posts', async () => {
+            const a = await postChannelPhoto(ctxFor(MEMBER), channelId, { bytes: await jpegWithExif() });
+            const b = await postChannelPhoto(ctxFor(MEMBER), channelId, { bytes: await jpegWithExif() });
+            expect(a.postId).not.toBe(b.postId);
+        }, 60_000);
+
+        it('a key already used for a text post in ANOTHER thread is refused, not answered with that post', async () => {
+            const key = `idem-reused-${TAG}`;
+            await postChannelPhoto(ctxFor(MEMBER), channelId, { bytes: await jpegWithExif(), idempotencyKey: key });
+            const other = await prisma.channel.create({
+                data: { key: `crop:p96b-${TAG}`, nameBg: 'Друг', nameEn: 'Other', kind: 'CROP' },
+                select: { id: true },
+            });
+            try {
+                await joinChannel(ctxFor(MEMBER), other.id);
+                await expect(
+                    postChannelPhoto(ctxFor(MEMBER), other.id, { bytes: await jpegWithExif(), idempotencyKey: key }),
+                ).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+            } finally {
+                await prisma.channelMembership.deleteMany({ where: { channelId: other.id } });
+                await prisma.channel.delete({ where: { id: other.id } }).catch(() => undefined);
+            }
+        }, 60_000);
+    });
 });

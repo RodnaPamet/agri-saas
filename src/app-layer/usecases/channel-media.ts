@@ -71,7 +71,7 @@ import { sniffMimeType } from '@/lib/storage/mime-sniff';
 import { scanOrRefuse } from '@/lib/upload/ingest';
 
 import type { UserContext } from '../types';
-import { assertMayPost, cleanCaption } from './channels';
+import { assertMayPost, cleanCaption, replayOf, withReplayOnRace } from './channels';
 
 /**
  * A photograph takes the SAME ceiling as an avatar and a DM photo.
@@ -234,8 +234,15 @@ function checkBytes(bytes: Buffer, max: number, accepted: Set<string>, what: str
 export async function postChannelPhoto(
     ctx: UserContext,
     channelId: string,
-    input: { bytes: Buffer; body?: string | null },
+    input: { bytes: Buffer; body?: string | null; idempotencyKey?: string },
 ): Promise<PostedMedia> {
+    // A retry whose first answer was lost returns the first post (#3195) —
+    // checked FIRST, before slow mode, which would otherwise refuse the retry
+    // of a post that already exists, and before the bytes are scanned and
+    // stored a second time.
+    const replay = await replayOf(ctx.userId, input.idempotencyKey, mediaTarget(channelId));
+    if (replay) return { postId: replay.id, createdAt: replay.createdAt };
+
     const sniffed = checkBytes(input.bytes, CHANNEL_PHOTO_MAX_BYTES, PHOTO_ACCEPTED, 'photograph');
     // The caption is refused or cleaned BEFORE any work, like the bytes (#3209).
     const caption = cleanCaption(input.body);
@@ -268,6 +275,7 @@ export async function postChannelPhoto(
         mime: sniffed,
         body: caption,
         durationMs: null,
+        idempotencyKey: input.idempotencyKey,
     });
 }
 
@@ -277,8 +285,12 @@ export async function postChannelPhoto(
 export async function postChannelVoiceNote(
     ctx: UserContext,
     channelId: string,
-    input: { bytes: Buffer; durationMs: number; body?: string | null },
+    input: { bytes: Buffer; durationMs: number; body?: string | null; idempotencyKey?: string },
 ): Promise<PostedMedia> {
+    // As for a photograph: a keyed retry returns the first post (#3195).
+    const replay = await replayOf(ctx.userId, input.idempotencyKey, mediaTarget(channelId));
+    if (replay) return { postId: replay.id, createdAt: replay.createdAt };
+
     const sniffed = checkBytes(input.bytes, VOICE_NOTE_MAX_BYTES, AUDIO_ACCEPTED, 'recording');
     const caption = cleanCaption(input.body);
 
@@ -321,6 +333,7 @@ export async function postChannelVoiceNote(
         mime: sniffed,
         body: caption,
         durationMs: input.durationMs,
+        idempotencyKey: input.idempotencyKey,
     });
 }
 
@@ -360,7 +373,13 @@ async function assertPostable(ctx: UserContext, channelId: string): Promise<void
 async function writePost(
     ctx: UserContext,
     channelId: string,
-    media: { bytes: Buffer; mime: string; body: string | null; durationMs: number | null },
+    media: {
+        bytes: Buffer;
+        mime: string;
+        body: string | null;
+        durationMs: number | null;
+        idempotencyKey?: string;
+    },
 ): Promise<PostedMedia> {
     const id = randomUUID();
     const key = mediaKey(channelId, id, media.mime);
@@ -376,22 +395,37 @@ async function writePost(
     // Already cleaned by `cleanCaption` at the entry points.
     const body = media.body;
 
-    return runInUserContext(ctx, async (tx) => {
-        const post = await tx.channelPost.create({
-            data: {
-                channelId,
-                authorUserId: ctx.userId,
-                body,
-                attachmentKey: key,
-                attachmentMime: media.mime,
-                attachmentBytes: written.sizeBytes,
-                attachmentSha256: written.sha256,
-                ...(media.durationMs !== null ? { attachmentDurationMs: media.durationMs } : {}),
-            },
-            select: { id: true, createdAt: true },
-        });
-        return { postId: post.id, createdAt: post.createdAt };
-    });
+    // Two sends with the same key that race past the replay check: the
+    // loser's unique violation is answered with the winner's post. Its stored
+    // object is then an orphan — the failure this function already accepts.
+    return withReplayOnRace(
+        ctx.userId,
+        media.idempotencyKey,
+        mediaTarget(channelId),
+        () => runInUserContext(ctx, async (tx) => {
+            const post = await tx.channelPost.create({
+                data: {
+                    channelId,
+                    authorUserId: ctx.userId,
+                    body,
+                    attachmentKey: key,
+                    attachmentMime: media.mime,
+                    attachmentBytes: written.sizeBytes,
+                    attachmentSha256: written.sha256,
+                    ...(media.durationMs !== null ? { attachmentDurationMs: media.durationMs } : {}),
+                    ...(media.idempotencyKey ? { idempotencyKey: media.idempotencyKey } : {}),
+                },
+                select: { id: true, createdAt: true },
+            });
+            return { postId: post.id, createdAt: post.createdAt };
+        }),
+        (r) => ({ postId: r.id, createdAt: r.createdAt }),
+    );
+}
+
+/** A media post is always top-level in its channel. */
+function mediaTarget(channelId: string): { channelId: string; parentPostId: null } {
+    return { channelId, parentPostId: null };
 }
 
 /**

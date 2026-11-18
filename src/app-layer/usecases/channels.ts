@@ -132,8 +132,11 @@ function cleanBody(raw: string): string {
  * privileged client: `ChannelPost` is public anyway, and the lookup is bounded
  * by (author, key). A key reused for a DIFFERENT channel or parent is a client
  * bug, refused rather than answered with an unrelated post.
+ *
+ * Exported for the photo and voice routes in `channel-media.ts`, which write
+ * `ChannelPost` rows of their own and must replay the same way (#3195).
  */
-async function replayOf(
+export async function replayOf(
     authorUserId: string,
     idempotencyKey: string | undefined,
     target: { channelId: string; parentPostId: string | null },
@@ -154,7 +157,7 @@ async function replayOf(
  * Run a keyed write; when two sends with the same key race, the loser's unique
  * violation is answered with the winner's post rather than a 500 (#3195).
  */
-async function withReplayOnRace<T>(
+export async function withReplayOnRace<T>(
     authorUserId: string,
     idempotencyKey: string | undefined,
     target: { channelId: string; parentPostId: string | null },
