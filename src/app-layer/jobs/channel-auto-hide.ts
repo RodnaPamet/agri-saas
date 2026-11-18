@@ -106,18 +106,51 @@ export async function runChannelAutoHide(
     // rather than inferred — see the note at the queue call.
     let statementsUnqueued = 0;
 
-    // Candidates: posts with an OPEN notice that are not already hidden by
-    // anybody. `status: 'RECEIVED'` rather than every notice ever filed — a
-    // post whose notices were all triaged has been decided on, and counting
-    // them again would re-hide something a moderator left up.
-    const open = await prisma.contentReport.findMany({
-        // Signed-in notices only (#3184). An anonymous notice can never count
-        // toward the threshold, and the window is oldest-first with nothing
-        // draining it, so 150 anonymous notices — fifteen minutes from one
-        // IP — filled it permanently and the rule never saw a newer notice.
-        where: { subjectKind: 'CHANNEL_POST', status: 'RECEIVED', reporterUserId: { not: null } },
+    // CANDIDATES ARE CHOSEN IN THE DATABASE, as posts that already qualify
+    // (#3184). The window used to be the oldest `take * 3` open notices, read
+    // and grouped in memory, and nothing drained the notices that can never
+    // contribute: anonymous ones, ones about a post already hidden or deleted,
+    // ones from reporters in no verified farm. Once those filled the window,
+    // newer notices were never read and the rule could not fire for any post.
+    //
+    // So the query returns only posts that are still visible and whose open,
+    // signed-in notices come from enough distinct verified farms — the same
+    // `min(distinct verified farms, distinct people)` rule as
+    // `distinctVerifiedFarms`, expressed in SQL. Every row it returns is
+    // hidden below and so leaves the set, which makes `LIMIT` a batch size
+    // rather than a window that can fill. Raw because Prisma cannot express a
+    // grouped HAVING across these joins; the rows it returns are ids only, and
+    // the decision is re-checked in memory against the same rule.
+    const candidateRows = await prisma.$queryRaw<Array<{ postId: string }>>`
+        SELECT cr."subjectId" AS "postId"
+          FROM "ContentReport" cr
+          JOIN "ChannelPost" p ON p."id" = cr."subjectId"
+          JOIN "TenantMembership" m ON m."userId" = cr."reporterUserId" AND m."status" = 'ACTIVE'
+          JOIN "FarmIdentityClaim" c ON c."tenantId" = m."tenantId" AND c."status" = 'VERIFIED'
+         WHERE cr."subjectKind" = 'CHANNEL_POST'
+           AND cr."status" = 'RECEIVED'
+           AND cr."reporterUserId" IS NOT NULL
+           AND p."autoHiddenAt" IS NULL
+           AND p."removedByModerationAt" IS NULL
+           AND p."deletedAt" IS NULL
+         GROUP BY cr."subjectId"
+        HAVING LEAST(COUNT(DISTINCT m."tenantId"), COUNT(DISTINCT cr."reporterUserId")) >= ${AUTO_HIDE_THRESHOLD}
+         ORDER BY MIN(cr."createdAt") ASC
+         LIMIT ${take}`;
+    const candidateIds = candidateRows.map((r) => r.postId);
+
+    // The candidates' open notices, for the action's `reportId` and the
+    // in-memory confirmation below. Bounded: at most `take` posts, and a cap
+    // per batch so one post drowned in notices cannot make this unbounded.
+    const open = candidateIds.length === 0 ? [] : await prisma.contentReport.findMany({
+        where: {
+            subjectKind: 'CHANNEL_POST',
+            status: 'RECEIVED',
+            reporterUserId: { not: null },
+            subjectId: { in: candidateIds },
+        },
         select: { id: true, subjectId: true, reporterUserId: true },
-        take: take * AUTO_HIDE_THRESHOLD,
+        take: take * 200,
         orderBy: { createdAt: 'asc' },
     });
 
@@ -137,7 +170,17 @@ export async function runChannelAutoHide(
 
     const allReporters = [...new Set(open.flatMap((r) => (r.reporterUserId ? [r.reporterUserId] : [])))];
     const farmsByMember = await verifiedFarmsByMember(allReporters);
-    verifiedReporters = farmsByMember.size;
+    // The dormancy reading is about ALL open channel notices, not only the
+    // qualifying posts above: `dormant` says no verified reporter has filed
+    // anything open, which a count over candidates (each already at the
+    // threshold) cannot tell from "verified reporters exist, below it".
+    const [{ n: verifiedReporterCount }] = await prisma.$queryRaw<Array<{ n: bigint }>>`
+        SELECT COUNT(DISTINCT cr."reporterUserId") AS n
+          FROM "ContentReport" cr
+          JOIN "TenantMembership" m ON m."userId" = cr."reporterUserId" AND m."status" = 'ACTIVE'
+          JOIN "FarmIdentityClaim" c ON c."tenantId" = m."tenantId" AND c."status" = 'VERIFIED'
+         WHERE cr."subjectKind" = 'CHANNEL_POST' AND cr."status" = 'RECEIVED'`;
+    verifiedReporters = Number(verifiedReporterCount);
 
     // WHICH POSTS QUALIFY is decided with no query at all — the threshold is
     // pure set arithmetic over rows already read. Splitting the decision from
