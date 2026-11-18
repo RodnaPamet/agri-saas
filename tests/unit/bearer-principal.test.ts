@@ -89,6 +89,14 @@ jest.mock('@/auth', () => ({
     },
 }));
 
+// #3199: the per-farm verdict is resolved per request. Mocked here so the
+// failure handling is observable; the database behaviour is executed by
+// tests/integration/bearer-per-farm-mfa.test.ts.
+const resolveMfaRequirementsForTenants = jest.fn();
+jest.mock('@/lib/auth/mfa-requirement', () => ({
+    resolveMfaRequirementsForTenants: (...a: unknown[]) => resolveMfaRequirementsForTenants(...a),
+}));
+
 import { resolveBearerSession } from '@/lib/auth/native/bearer-principal';
 
 const GOOD_TOKEN = { userId: 'u-1', sub: 'u-1', userSessionId: 'sess-1' };
@@ -97,6 +105,9 @@ beforeEach(() => {
     mockHeaders.clear();
     getToken.mockReset().mockResolvedValue(GOOD_TOKEN);
     verifyAndTouchSession.mockReset().mockResolvedValue({ revoked: false });
+    resolveMfaRequirementsForTenants
+        .mockReset()
+        .mockResolvedValue({ pendingTenantIds: [], failClosed: false, dependencyFailure: false });
     sessionCallback.mockClear();
     warn.mockReset();
 });
@@ -247,5 +258,82 @@ describe('resolveBearerSession — shaping', () => {
         const mod = await import('@/lib/auth/native/bearer-principal');
         await expect(mod.resolveBearerSession()).resolves.not.toBeNull();
         jest.dontMock('@/auth');
+    });
+});
+
+describe('resolveBearerSession — the per-farm second factor (#3199)', () => {
+    // An earlier case resets the module registry and stubs `@/auth` with no
+    // session callback; restore the shaper so these cases do not depend on
+    // where they sit in the file.
+    beforeAll(() => {
+        jest.resetModules();
+        jest.doMock('@/auth', () => ({
+            authOptions: { callbacks: { session: (arg: SessionCbArg) => sessionCallback(arg) } },
+        }));
+    });
+
+    const MEMBER = {
+        ...GOOD_TOKEN,
+        memberships: [
+            { slug: 'open', role: 'OWNER', tenantId: 't-open' },
+            { slug: 'strict', role: 'EDITOR', tenantId: 't-strict' },
+        ],
+    };
+    const signedIn = new Date('2026-11-18T10:00:00Z');
+
+    it('anchors the check on the SESSION sign-in, less the Apple ticket window', async () => {
+        withBearer();
+        getToken.mockResolvedValue(structuredClone(MEMBER));
+        verifyAndTouchSession.mockResolvedValue({ revoked: false, rowId: 'r', createdAt: signedIn });
+        resolveMfaRequirementsForTenants.mockResolvedValue({
+            pendingTenantIds: ['t-strict'], failClosed: false, dependencyFailure: false,
+        });
+
+        await resolveBearerSession();
+
+        expect(resolveMfaRequirementsForTenants).toHaveBeenCalledWith({
+            userId: 'u-1',
+            tenantIds: ['t-open', 't-strict'],
+            tokenIssuedAt: Math.floor(signedIn.getTime() / 1000) - 5 * 60,
+        });
+        // The list reaches the shared shaper, which is what getTenantCtx reads.
+        expect(sessionCallback.mock.calls[0]![0].token.mfaPendingTenantIds).toEqual(['t-strict']);
+    });
+
+    it('with no session row to anchor on, treats nothing as satisfied (holds)', async () => {
+        withBearer();
+        getToken.mockResolvedValue(structuredClone(MEMBER));
+        verifyAndTouchSession.mockResolvedValue({ revoked: false, rowId: null });
+        await resolveBearerSession();
+        expect(resolveMfaRequirementsForTenants).toHaveBeenCalledWith(
+            expect.objectContaining({ tokenIssuedAt: undefined }),
+        );
+    });
+
+    it('refuses the session when the check failed and the farm asked to fail CLOSED', async () => {
+        withBearer();
+        getToken.mockResolvedValue({ ...structuredClone(MEMBER), mfaFailClosed: true });
+        resolveMfaRequirementsForTenants.mockResolvedValue({
+            pendingTenantIds: [], failClosed: false, dependencyFailure: true,
+        });
+        await expect(resolveBearerSession()).resolves.toBeNull();
+    });
+
+    it('keeps the claim as minted when the check failed and nothing asked to fail closed', async () => {
+        // Refusing here would sign every phone out whenever the settings read
+        // hiccups — the same direction the cookie path takes.
+        withBearer();
+        getToken.mockResolvedValue({ ...structuredClone(MEMBER), mfaPendingTenantIds: ['t-strict'] });
+        resolveMfaRequirementsForTenants.mockResolvedValue({
+            pendingTenantIds: [], failClosed: false, dependencyFailure: true,
+        });
+        await resolveBearerSession();
+        expect(sessionCallback.mock.calls[0]![0].token.mfaPendingTenantIds).toEqual(['t-strict']);
+    });
+
+    it('a bearer with no memberships needs no lookup', async () => {
+        withBearer();
+        await resolveBearerSession();
+        expect(resolveMfaRequirementsForTenants).not.toHaveBeenCalled();
     });
 });

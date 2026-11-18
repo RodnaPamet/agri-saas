@@ -30,6 +30,14 @@
  *
  * So the native flow is gated where the cookie is still authoritative: at
  * auth-code issuance. See `api/auth/native/complete`.
+ *
+ * That gate decides the session's sign-in, once. The PER-FARM answer for a
+ * bearer is resolved again on every request by `resolveBearerSession`
+ * (#3199), with `resolveMfaRequirementsForTenants` below, anchored on the
+ * `UserSession` row's `createdAt` rather than the access token's `iat`: the
+ * row is kept across refreshes, so it plays the role the cookie's sign-in
+ * `iat` plays, and a farm that turns MFA on — or that the Apple path never
+ * challenged — is held without re-challenging every 15 minutes.
  */
 import { prisma } from '@/lib/prisma';
 

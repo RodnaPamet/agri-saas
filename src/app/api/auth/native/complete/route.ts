@@ -25,7 +25,7 @@
  * hanging off nothing, i.e. an unrevocable credential.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getToken, type JWT } from 'next-auth/jwt';
 import { env } from '@/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
@@ -131,7 +131,12 @@ async function handleComplete(req: NextRequest): Promise<NextResponse> {
         //
         // The user is in the sign-in browser sheet, so a page is the right
         // answer here and the phone needs no new screen.
-        const slug = typeof token.tenantSlug === 'string' ? token.tenantSlug : null;
+        // The farm that OWES the factor, not merely the primary one (#3199).
+        // `mfaPending` is set when ANY farm is pending, and the challenge
+        // clears per farm, so sending a member whose primary farm has no
+        // policy to that farm's challenge page asked for a code that could
+        // never clear the farm actually holding them — a loop back to here.
+        const slug = owedFarmSlug(token);
         if (slug) {
             const next = req.nextUrl.pathname;
             const mfa = new URL(`/t/${slug}/auth/mfa`, req.nextUrl.origin);
@@ -176,3 +181,17 @@ async function handleComplete(req: NextRequest): Promise<NextResponse> {
 export const GET = withApiErrorHandling(handleComplete, {
     rateLimit: { config: LOGIN_LIMIT, scope: 'native-auth-complete' },
 });
+
+/**
+ * The slug whose challenge clears this session: the first farm on the
+ * per-farm pending list, else the primary farm (a session held by the
+ * single-tenant check alone carries no list).
+ */
+function owedFarmSlug(token: JWT): string | null {
+    const pending = token.mfaPendingTenantIds ?? [];
+    for (const tenantId of pending) {
+        const membership = (token.memberships ?? []).find((m) => m.tenantId === tenantId);
+        if (membership?.slug) return membership.slug;
+    }
+    return typeof token.tenantSlug === 'string' ? token.tenantSlug : null;
+}
