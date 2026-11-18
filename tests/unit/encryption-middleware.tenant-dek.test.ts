@@ -229,21 +229,33 @@ describe('write path — v2 when DEK present, v1 fallback otherwise', () => {
         }
     });
 
-    it('is idempotent — a value that is already v2 is not double-encrypted', () => {
+    it('is idempotent — walking the SAME object twice encrypts once under v2', () => {
         const dek = generateDek();
-        const already = encryptWithKey(dek, 'already encrypted');
-        const data = { description: already };
+        const data = { description: 'already handled' };
         walkWriteArgument(data, 'Task', dek);
-        expect(data.description).toBe(already);
+        const once = data.description;
+        walkWriteArgument(data, 'Task', dek);
+        expect(data.description).toBe(once);
+        expect(decryptWithKey(dek, data.description)).toBe('already handled');
     });
 
-    it('is idempotent — a value that is already v1 is not double-encrypted with v2', () => {
+    it('#3204: a foreign v2 envelope (another row, same tenant) is encrypted, not trusted', () => {
         const dek = generateDek();
-        const alreadyV1 = encryptField('v1 legacy value');
-        const data = { description: alreadyV1 };
+        const otherRows = encryptWithKey(dek, 'another row’s text');
+        const data = { description: otherRows };
         walkWriteArgument(data, 'Task', dek);
-        // Still v1 — mixed-state tolerance.
-        expect(data.description).toBe(alreadyV1);
+        expect(data.description).not.toBe(otherRows);
+        expect(getCiphertextVersion(data.description)).toBe('v2');
+        expect(decryptWithKey(dek, data.description)).toBe(otherRows);
+    });
+
+    it('#3204: a foreign v1 envelope (global KEK, any tenant) is encrypted, not trusted', () => {
+        const dek = generateDek();
+        const globalKek = encryptField('a global-KEK secret');
+        const data = { description: globalKek };
+        walkWriteArgument(data, 'Task', dek);
+        expect(data.description).not.toBe(globalKek);
+        expect(decryptWithKey(dek, data.description)).toBe(globalKek);
     });
 });
 

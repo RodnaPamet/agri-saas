@@ -44,12 +44,28 @@
  * but we also skip DEK resolution entirely when `params.model ===
  * 'Tenant'` to avoid any risk of infinite recursion.
  *
- * ## Idempotency
+ * ## Idempotency, and why the prefix is NOT trusted (#3204)
  *
- * Every ciphertext carries a `v1:` or `v2:` prefix. Writes skip
- * values that already match either prefix (`isEncryptedValue()`),
- * so nested-write fan-out, test doubles, and concurrent writes
- * never produce double ciphertext.
+ * Every ciphertext carries a `v1:` or `v2:` prefix. Writes used to skip
+ * ANY value matching either prefix (`isEncryptedValue()`). The prefix is
+ * a property of the text, not of who produced it, so a person who
+ * obtained somebody else's envelope — from a log line, a snapshot, one
+ * of the ciphertext-egress paths this repo has had — could submit it as
+ * their own task description or comment, have it stored verbatim, and
+ * read it back DECRYPTED. `v1:` (global KEK) works across tenants;
+ * `v2:` across rows and fields within one.
+ *
+ * So a write now skips a value only when THIS extension encrypted that
+ * exact value into that exact object (`ENCRYPTED_HERE`, keyed by the
+ * data object). That still covers the idempotency the skip existed for —
+ * the same args object walked twice (a retried call, one object shared
+ * by an upsert's `create` and `update`) — and nothing else: an envelope
+ * arriving from outside is encrypted like any other text, and reads back
+ * as the literal string that was submitted. Measured before the change
+ * (instrumenting the skip across all 1,411 unit + integration suites):
+ * the only writes that hit it were the two unit tests asserting it.
+ * Rotation jobs rewrite ciphertext with raw SQL and never pass through
+ * here.
  *
  * ## Null / empty
  *
@@ -327,6 +343,27 @@ async function resolveTenantDekPair(
  * checks (null/empty/already-encrypted) are the caller's
  * responsibility.
  */
+/**
+ * The ciphertexts this extension wrote into each data object, by field
+ * (#3204). Weakly keyed, so it lives exactly as long as the args object
+ * and costs nothing once the call is done. A value is passed through on a
+ * second walk only if it is identical to what this extension put there.
+ */
+const ENCRYPTED_HERE = new WeakMap<object, Map<string, string>>();
+
+function encryptedHereBefore(data: object, field: string, value: string): boolean {
+    return ENCRYPTED_HERE.get(data)?.get(field) === value;
+}
+
+function rememberEncrypted(data: object, field: string, ciphertext: string): void {
+    let fields = ENCRYPTED_HERE.get(data);
+    if (!fields) {
+        fields = new Map();
+        ENCRYPTED_HERE.set(data, fields);
+    }
+    fields.set(field, ciphertext);
+}
+
 function encryptValue(plaintext: string, dek: Buffer | null): string {
     if (dek) return encryptWithKey(dek, plaintext);
     return encryptField(plaintext);
@@ -348,8 +385,10 @@ function encryptDataNode(
         if (value === null || value === undefined) continue;
         if (typeof value !== 'string') continue;
         if (value.length === 0) continue;
-        if (isEncryptedValue(value)) continue;
-        data[field] = encryptValue(value, dek);
+        if (encryptedHereBefore(data, field, value)) continue;
+        const ciphertext = encryptValue(value, dek);
+        data[field] = ciphertext;
+        rememberEncrypted(data, field, ciphertext);
     }
 }
 
@@ -370,8 +409,10 @@ function encryptDataNodeAllModels(
         if (value === null || value === undefined) continue;
         if (typeof value !== 'string') continue;
         if (value.length === 0) continue;
-        if (isEncryptedValue(value)) continue;
-        data[key] = encryptValue(value, dek);
+        if (encryptedHereBefore(data, key, value)) continue;
+        const ciphertext = encryptValue(value, dek);
+        data[key] = ciphertext;
+        rememberEncrypted(data, key, ciphertext);
     }
 }
 

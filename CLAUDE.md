@@ -901,6 +901,13 @@ client extension (`src/lib/prisma.ts`). The manifest is
   error and no log. Measure first with `npm run preflight:fanout`, which counts
   `v1:` AND `v2:` per affected pair (both envelopes deliberately: a `v1:`-only
   row once hid from a "misplaced v2" check).
+- **The WRITE path does not trust the `v1:`/`v2:` prefix (#3204).** It used to
+  skip any value that looked encrypted, so somebody else's envelope pasted in as
+  a task description was stored verbatim and read back DECRYPTED. A write now
+  skips only a ciphertext the extension itself put into that same args object
+  (`ENCRYPTED_HERE`, a `WeakMap` keyed by the data object), so a retried call or
+  an object shared by `create`/`update` still encrypts once. Anything that must
+  store existing ciphertext as-is goes through raw SQL, as the rotation jobs do.
 - **`Tenant.encryptedDek` is master-KEK ciphertext in NEITHER manifest** — a
   second encryption the field manifests cannot see.
 - **Do NOT use "zero `v1:` rows" as a rotation stop condition.** The count

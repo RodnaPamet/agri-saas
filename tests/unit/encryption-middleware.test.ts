@@ -23,6 +23,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import {
     encryptField,
+    decryptField,
     isEncryptedValue,
 } from '@/lib/security/encryption';
 import {
@@ -137,11 +138,39 @@ describe('encryptDataNode', () => {
         expect(data.tenantId).toBe('tenant-1');
     });
 
-    it('is idempotent — re-encrypting a ciphertext is a no-op', () => {
-        const alreadyEncrypted = encryptField('existing ciphertext');
-        const data = { description: alreadyEncrypted };
+    it('is idempotent — walking the SAME object twice encrypts once', () => {
+        // A retried call, or one object shared by an upsert's `create` and
+        // `update`, is walked twice; the second walk must not double-encrypt.
+        const data = { description: 'field note' };
         encryptDataNode(data, 'Task', null);
-        expect(data.description).toBe(alreadyEncrypted);
+        const once = data.description;
+        encryptDataNode(data, 'Task', null);
+        expect(data.description).toBe(once);
+        expect(decryptField(data.description)).toBe('field note');
+    });
+
+    it('#3204: an envelope submitted from outside is ENCRYPTED, never stored as given', () => {
+        // Somebody else's ciphertext, pasted in as a task description. Before
+        // #3204 the prefix alone made the write skip it, and the read path then
+        // decrypted it — handing back the victim's plaintext.
+        const victims = encryptField('somebody else’s secret');
+        const data = { description: victims };
+        encryptDataNode(data, 'Task', null);
+        expect(data.description).not.toBe(victims);
+        expect(isEncryptedValue(data.description)).toBe(true);
+        // One decrypt yields the literal string that was submitted, not the
+        // victim's plaintext.
+        expect(decryptField(data.description)).toBe(victims);
+    });
+
+    it('#3204: a different object carrying our own ciphertext is not trusted either', () => {
+        // Trust is per object, not per value: copying a ciphertext into a fresh
+        // payload is exactly what an attacker would do.
+        const first = { description: 'note' };
+        encryptDataNode(first, 'Task', null);
+        const copy = { description: first.description };
+        encryptDataNode(copy, 'Task', null);
+        expect(copy.description).not.toBe(first.description);
     });
 
     it('passes null / undefined / empty string through unchanged', () => {
