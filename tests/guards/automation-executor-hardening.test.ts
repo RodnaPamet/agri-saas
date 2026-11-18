@@ -33,9 +33,16 @@ describe('executor hardening', () => {
         expect(EXEC).toMatch(/checkWebhookUrl/);
         expect(EXEC).toMatch(/assertPublicAddress\(/);
         expect(EXEC).not.toMatch(/isPrivateAddress\(address\)/); // not re-inlined
-        // both halves precede the fetch call
-        expect(EXEC.indexOf('checkWebhookUrl')).toBeLessThan(EXEC.indexOf('fetch('));
-        expect(EXEC.indexOf('assertPublicAddress(')).toBeLessThan(EXEC.indexOf('fetch('));
+        // Both halves precede the request — which goes through `fetchPublicUrl`,
+        // so the same policy is re-applied at every redirect hop (#3203). A bare
+        // `fetch` follows redirects by default, which let the responder choose
+        // where the request landed.
+        const send = EXEC.indexOf('fetchPublicUrl(cfg.url');
+        expect(send).toBeGreaterThan(-1);
+        expect(EXEC.indexOf('checkWebhookUrl(')).toBeLessThan(send);
+        expect(EXEC.indexOf('assertPublicAddress(')).toBeLessThan(send);
+        expect(EXEC).not.toMatch(/(?<![\w.])fetch\(/);
+        expect(EXEC).toMatch(/maxRedirects:\s*0/);
     });
 
     it('CREATE_TASK dedupes before creating', () => {
