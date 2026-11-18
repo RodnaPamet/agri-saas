@@ -52,6 +52,7 @@ import { scanOrRefuse } from '@/lib/upload/ingest';
 import { runInUserContext } from '@/lib/db-context';
 import { publishPersonEvent } from '@/lib/notifications/notification-bus';
 import type { UserContext } from '@/app-layer/types';
+import { assertMayWriteToConversation } from './direct-messages';
 
 /**
  * Cap on what a caller may upload, mirroring `AVATAR_UPLOAD_MAX_BYTES`.
@@ -141,6 +142,12 @@ export async function sendDirectPhoto(
         // hold back.
         throw codedBadRequest('DM_PHOTO_NEEDS_ACCEPTED', 'Not accepted yet.');
     }
+
+    // The person block, which `sendDirectMessage` checks and this path did not
+    // (#3202): a blocked person could still deliver photos, with captions, to
+    // the person who blocked them. Before the scan and the storage write, so a
+    // refused photo costs neither.
+    await assertMayWriteToConversation(ctx, input.conversationId, notThere);
 
     // SCAN FIRST, on the ORIGINAL bytes — the order is the whole safety
     // argument and I had it backwards in the first draft.

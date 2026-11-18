@@ -837,4 +837,62 @@ describeFn('P8.2 — direct messages (#2796)', () => {
                 .toHaveLength(0);
         }, 60_000);
     });
+
+    describe('#3202 — a block stops EVERY direct-message write, not only sending', () => {
+        let ownerMessageId: string;
+        let visitorMessageId: string;
+        const blockId = `ub-3202-${randomUUID()}`;
+
+        beforeAll(async () => {
+            const opened = await openConversationFromHandle(ctxFor(VISITOR), HANDLE);
+            if ((await globalPrisma.conversation.findUniqueOrThrow({
+                where: { id: opened.conversationId }, select: { state: true },
+            })).state === 'REQUEST') {
+                await respondToConversation(ctxFor(OWNER), opened.conversationId, 'ACCEPT');
+            }
+            visitorMessageId = (await sendDirectMessage(ctxFor(VISITOR), {
+                conversationId: opened.conversationId, body: 'преди блокирането',
+            })).messageId;
+            ownerMessageId = (await sendDirectMessage(ctxFor(OWNER), {
+                conversationId: opened.conversationId, body: 'отговор',
+            })).messageId;
+            await globalPrisma.$executeRawUnsafe(
+                `INSERT INTO "UserBlock"("id","blockerUserId","blockedUserId") VALUES ($1,$2,$3)`,
+                blockId, OWNER, VISITOR,
+            );
+        });
+
+        afterAll(async () => {
+            await globalPrisma.$executeRawUnsafe(`DELETE FROM "UserBlock" WHERE "id" = $1`, blockId);
+        });
+
+        it('the blocked author cannot rewrite a message the blocker can still read — same answer as a missing one', async () => {
+            const blocked = await refusalOf(() => editDirectMessage(ctxFor(VISITOR), visitorMessageId, 'пренаписано'));
+            const missing = await refusalOf(() => editDirectMessage(ctxFor(VISITOR), `dm-nope-${randomUUID()}`, 'x'));
+
+            expect(blocked).toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+            expect(blocked).toEqual(missing);
+            const row = await globalPrisma.directMessage.findUniqueOrThrow({
+                where: { id: visitorMessageId }, select: { body: true, editedAt: true },
+            });
+            expect(row.body).toBe('преди блокирането');
+            expect(row.editedAt).toBeNull();
+        });
+
+        it('the blocked party cannot react — same answer as a missing message', async () => {
+            const blocked = await refusalOf(() => addReaction(ctxFor(VISITOR), ownerMessageId, 'ок'));
+            const missing = await refusalOf(() => addReaction(ctxFor(VISITOR), `dm-nope-${randomUUID()}`, 'ок'));
+
+            expect(blocked).toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+            expect(blocked).toEqual(missing);
+            expect(await globalPrisma.messageReaction.count({
+                where: { messageId: ownerMessageId, userId: VISITOR },
+            })).toBe(0);
+        });
+
+        it('and the BLOCKER cannot write into the silenced conversation either — a block is mutual', async () => {
+            const blocked = await refusalOf(() => addReaction(ctxFor(OWNER), visitorMessageId, 'ок'));
+            expect(blocked).toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+        });
+    });
 });

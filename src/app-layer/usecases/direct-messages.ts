@@ -238,6 +238,69 @@ function messageNotThere(): never {
 }
 
 /**
+ * True when a person block stands between `userId` and any of `others`, in
+ * either direction.
+ *
+ * Both predicates, because they answer different questions (P5.2b):
+ * `amIBlockedByAnyOf` is visibility (the blocked party loses sight) and
+ * `personBlockExists` is contact (a block is mutual silence). A direct message
+ * write needs both.
+ */
+async function blockStandsBetween(db: PrismaTx, userId: string, others: string[]): Promise<boolean> {
+    if (others.length === 0) return false;
+    if (await amIBlockedByAnyOf(db, userId, others)) return true;
+    for (const other of others) {
+        if (await personBlockExists(db, { aUserId: userId, bUserId: other })) return true;
+    }
+    return false;
+}
+
+/**
+ * Refuse, with `onRefused`, a direct-message write by `ctx.userId` into
+ * `conversationId` unless they are a participant and no person block stands
+ * between them and the other party (#3202).
+ *
+ * WHY THIS IS IN THE USECASE. The SQL policies carry no block clause and
+ * cannot: `conversation_participant_select` admits the caller's own row only
+ * (a policy may not query its own table — P8.1), so SQL cannot name the
+ * counterparty. Every block is therefore a usecase check, and until this
+ * helper only `sendDirectMessage` made it — a blocked person could still send
+ * photos with captions (delivered live), rewrite earlier messages the blocker
+ * still reads, and post short text as reactions.
+ *
+ * Read on the PRIVILEGED client, before any user-context transaction opens:
+ * the participant list is exactly what user context cannot see, and reading it
+ * outside the caller's transaction keeps this off a second pool connection
+ * (#1191). `onRefused` lets each caller answer with the SAME not-found a
+ * missing subject gets, which is what keeps a block silent.
+ */
+export async function assertMayWriteToConversation(
+    ctx: UserContext,
+    conversationId: string,
+    onRefused: () => never,
+): Promise<void> {
+    const participants = await prisma.conversationParticipant.findMany({
+        where: { conversationId },
+        select: { userId: true },
+        take: 10,
+    });
+    const members = participants.map((p) => p.userId);
+    if (!members.includes(ctx.userId)) onRefused();
+    const others = members.filter((m) => m !== ctx.userId);
+    if (await blockStandsBetween(prisma as unknown as PrismaTx, ctx.userId, others)) onRefused();
+}
+
+/** The conversation a message belongs to, or `onMissing()`. Privileged read. */
+async function conversationOfMessage(messageId: string, onMissing: () => never): Promise<string> {
+    const row = await prisma.directMessage.findUnique({
+        where: { id: messageId },
+        select: { conversationId: true },
+    });
+    if (!row) onMissing();
+    return row.conversationId;
+}
+
+/**
  * The body a message may carry.
  *
  * `sanitizePlainText` TRIMS since #1825, so a whitespace-only message is
@@ -474,12 +537,7 @@ export async function sendDirectMessage(
         if (!members.includes(ctx.userId)) notThere();
 
         const others = members.filter((m) => m !== ctx.userId);
-        if (await amIBlockedByAnyOf(tx as PrismaTx, ctx.userId, others)) notThere();
-        for (const other of others) {
-            if (await personBlockExists(tx as PrismaTx, { aUserId: ctx.userId, bUserId: other })) {
-                notThere();
-            }
-        }
+        if (await blockStandsBetween(tx as PrismaTx, ctx.userId, others)) notThere();
 
         // THE REQUEST RULE's usecase half. The database half is
         // `direct_message_insert`'s WITH CHECK, which reads the same column.
@@ -983,6 +1041,10 @@ export async function editDirectMessage(
     rawBody: string,
 ): Promise<void> {
     const body = cleanBody(rawBody);
+    // A blocked author must not rewrite what the blocker can still read (#3202).
+    await assertMayWriteToConversation(
+        ctx, await conversationOfMessage(messageId, messageNotThere), messageNotThere,
+    );
     const count = await runInUserContext(ctx, async (db) => {
         const { count: n } = await db.directMessage.updateMany({
             // `deletedAt: null` so editing a deleted message is a not-found
@@ -1116,6 +1178,10 @@ export async function addReaction(
     if (value.length > DM_MAX_EMOJI_LENGTH) {
         throw codedBadRequest('DM_REACTION_TOO_LONG', 'That is not a reaction.');
     }
+    // A reaction is up to 16 characters of text the other party sees (#3202).
+    await assertMayWriteToConversation(
+        ctx, await conversationOfMessage(messageId, messageNotThere), messageNotThere,
+    );
 
     await runInUserContext(ctx, async (db) => {
         try {
