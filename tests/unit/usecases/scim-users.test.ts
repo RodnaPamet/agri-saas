@@ -58,6 +58,14 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
+// #3183: provisioning checks the plan's seat limit. Pass-through by
+// default; one test makes it refuse.
+const mockAssertWithinLimit = jest.fn();
+jest.mock('@/lib/billing/entitlements', () => ({
+    ...jest.requireActual('@/lib/billing/entitlements'),
+    assertWithinLimit: (...args: unknown[]) => mockAssertWithinLimit(...args),
+}));
+
 jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: jest.fn().mockResolvedValue(undefined),
 }));
@@ -90,6 +98,8 @@ const scimCtx = (tenantId = 'tenant-1') => ({
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockAssertWithinLimit.mockReset();
+    mockAssertWithinLimit.mockResolvedValue(undefined);
 });
 
 describe('resolveScimRole — ADMIN block + allow-list', () => {
@@ -243,6 +253,20 @@ describe('scimCreateUser — idempotency + reactivation', () => {
             },
         });
         expect(observedRole).toBe('READER');
+    });
+
+    it('#3183: an ACTIVE provisioned user is counted against the seat limit; a refusal writes nothing', async () => {
+        mockAssertWithinLimit.mockRejectedValueOnce(new Error('plan_limit_exceeded: user'));
+        mockUserFindUnique.mockResolvedValueOnce(null);
+        const userCreate = jest.fn();
+        const tx = { user: { create: userCreate }, tenantMembership: { create: jest.fn() } };
+        mockTransaction.mockImplementationOnce(async (fn: any) => fn(tx));
+
+        await expect(
+            scimCreateUser(scimCtx(), { userName: 'a@b.com' }, 'https://x'),
+        ).rejects.toThrow(/plan_limit_exceeded/);
+        expect(mockAssertWithinLimit).toHaveBeenCalledWith({ tenantId: scimCtx().tenantId }, 'user', tx);
+        expect(userCreate).not.toHaveBeenCalled();
     });
 
     it('creates user inactive when input.active === false', async () => {

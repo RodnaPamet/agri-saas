@@ -7,6 +7,7 @@ import { forbidden, notFound } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { reachesBeyondTenant } from '@/lib/auth/tenant-reach';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 /**
@@ -432,6 +433,8 @@ export async function linkExternalIdentity(
     const safeRole = jitConfig.jitDefaultRole === 'EDITOR' ? 'EDITOR' : 'READER';
 
     const newUser = await prisma.$transaction(async (tx) => {
+        // JIT provisioning counts against the seat limit too (#3183).
+        await assertWithinLimit({ tenantId }, 'user', tx);
         // Create user
         const created = await tx.user.create({
             data: {

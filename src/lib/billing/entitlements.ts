@@ -76,11 +76,28 @@ import {
  * `runInTenantContext` from inside a transaction would cause.
  */
 function runIn<T>(
-    ctx: RequestContext,
+    ctx: Pick<RequestContext, 'tenantId'>,
     tx: PrismaTx | undefined,
     cb: (db: PrismaTx) => Promise<T>,
 ): Promise<T> {
-    return tx ? cb(tx) : runInTenantContext(ctx, cb);
+    if (tx) return cb(tx);
+    // A bare `{ tenantId }` is accepted only alongside an open transaction —
+    // the overloads on the exported functions say so at compile time; this is
+    // the runtime half. Provisioning paths (invite redemption, SCIM, SSO JIT,
+    // #3183) have no request principal to bind a fresh tenant context to.
+    if (!isFullContext(ctx)) {
+        throw new Error('entitlements: a tenant-only scope needs an open transaction');
+    }
+    return runInTenantContext(ctx, cb);
+}
+
+function requireTx(tx: PrismaTx | undefined): PrismaTx {
+    if (!tx) throw new Error('entitlements: a tenant-only scope needs an open transaction');
+    return tx;
+}
+
+function isFullContext(ctx: Pick<RequestContext, 'tenantId'>): ctx is RequestContext {
+    return 'userId' in ctx && 'role' in ctx;
 }
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -183,8 +200,10 @@ export function getBillingMode(): BillingMode {
  * the exchange, and somebody would have to decide what happens to the 4th user
  * who already exists.
  */
+export async function getEffectivePlan(ctx: RequestContext, tx?: PrismaTx): Promise<Plan>;
+export async function getEffectivePlan(ctx: Pick<RequestContext, 'tenantId'>, tx: PrismaTx): Promise<Plan>;
 export async function getEffectivePlan(
-    ctx: RequestContext,
+    ctx: Pick<RequestContext, 'tenantId'>,
     /** Reuse an OPEN transaction instead of opening a second one — see
      *  {@link assertWithinLimit}. */
     tx?: PrismaTx,
@@ -438,7 +457,7 @@ export async function getAiTokensUsedThisMonth(ctx: RequestContext): Promise<num
  * deleted some locations can immediately create new ones again.
  */
 async function getCurrentCount(
-    ctx: RequestContext,
+    ctx: Pick<RequestContext, 'tenantId'>,
     resource: GatedResource,
     tx?: PrismaTx,
 ): Promise<number> {
@@ -526,8 +545,22 @@ export async function assertWithinLimit(
     ctx: RequestContext,
     resource: GatedResource,
     tx?: PrismaTx,
+): Promise<void>;
+/** A tenant-only scope, for provisioning paths with no request principal
+ *  (#3183). Requires the caller's open transaction. */
+export async function assertWithinLimit(
+    ctx: Pick<RequestContext, 'tenantId'>,
+    resource: GatedResource,
+    tx: PrismaTx,
+): Promise<void>;
+export async function assertWithinLimit(
+    ctx: Pick<RequestContext, 'tenantId'>,
+    resource: GatedResource,
+    tx?: PrismaTx,
 ): Promise<void> {
-    const plan = await getEffectivePlan(ctx, tx);
+    const plan = isFullContext(ctx)
+        ? await getEffectivePlan(ctx, tx)
+        : await getEffectivePlan(ctx, requireTx(tx));
     const limit = getLimit(plan, resource);
     if (limit === null) return; // unlimited
 

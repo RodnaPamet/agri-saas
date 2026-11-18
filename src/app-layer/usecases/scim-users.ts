@@ -42,6 +42,7 @@
  */
 import { ScimAuthError } from '@/lib/scim/auth';
 import { reachesBeyondTenant } from '@/lib/auth/tenant-reach';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
@@ -323,6 +324,11 @@ export async function scimCreateUser(
 
     // Create new user + membership in transaction
     const result = await prisma.$transaction(async (tx) => {
+        // SCIM provisioning counts against the seat limit too (#3183); it
+        // created ACTIVE memberships with no check at all.
+        if (input.active !== false) {
+            await assertWithinLimit({ tenantId: ctx.tenantId }, 'user', tx);
+        }
         const newUser = await tx.user.create({
             data: { email, emailHash: hashForLookup(email), name: displayName },
         });
