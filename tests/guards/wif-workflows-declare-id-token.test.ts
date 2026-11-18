@@ -36,7 +36,8 @@ import * as yaml from 'js-yaml';
 
 import { collectTrackedFiles } from '../helpers/collect-files';
 
-const AUTH_ACTION = /google-github-actions\/auth@v[0-9]/;
+// A tag, or (#3189) a commit SHA pin with its version in a trailing comment.
+const AUTH_ACTION = /google-github-actions\/auth@(?:v[0-9]|[0-9a-f]{40})/;
 
 interface Wf {
     file: string;

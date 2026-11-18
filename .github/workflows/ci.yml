@@ -199,7 +199,7 @@ jobs:
       # for paths-filter to diff, and this job is a REQUIRED check — letting the
       # action guess a base risks blocking every queued merge on an error that
       # has nothing to do with the change.
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         if: github.event_name != 'merge_group'
         id: filter
         with:
@@ -2379,7 +2379,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup k6
-        uses: grafana/setup-k6-action@v1
+        uses: grafana/setup-k6-action@c47136d33d365efbeb9ae7266908b5dcf98cdece # v1
 
       # ── Create roles required by RLS migrations ──
       - name: Create PostgreSQL roles for RLS
@@ -2938,7 +2938,7 @@ jobs:
       - name: Set up Docker Buildx
         # measured max 11s (#748)
         timeout-minutes: 3
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Build Docker image (no push)
         # ── #748, second job type ──
@@ -2984,7 +2984,7 @@ jobs:
         # is the one that times out. Verify that before building it rather
         # than inheriting this comment.
         timeout-minutes: 40
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           push: false
@@ -3090,7 +3090,7 @@ jobs:
         # measured max 107s. It pulls a vulnerability DB, so it is the
         # other step here with a real network dependency (#748)
         timeout-minutes: 6
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "inflect-compliance:ci-${{ github.sha }}"
           format: "table"
@@ -3105,7 +3105,7 @@ jobs:
         # measured max 60s (#748)
         timeout-minutes: 5
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "inflect-compliance:ci-${{ github.sha }}"
           format: "sarif"
