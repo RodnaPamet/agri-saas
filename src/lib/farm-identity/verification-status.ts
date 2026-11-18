@@ -112,6 +112,66 @@ export async function isPersonFromVerifiedFarm(userId: string): Promise<boolean>
  * job asks about every reporter on a post, and a loop of `isPersonFromVerifiedFarm`
  * is the N+1 the D1 guardrail refuses.
  */
+/**
+ * For each person, the VERIFIED farms they are an ACTIVE member of (#3210).
+ *
+ * `verifiedFarmMembers` answers "is this person in some verified farm", which
+ * cannot tell three people from three FARMS: one verified farm's owner and two
+ * invited throwaway accounts are three verified reporters. A caller counting
+ * farms needs to know which farm each person speaks for.
+ */
+export async function verifiedFarmsByMember(
+    userIds: readonly string[],
+): Promise<Map<string, Set<string>>> {
+    const out = new Map<string, Set<string>>();
+    if (userIds.length === 0) return out;
+    const memberships = await prisma.tenantMembership.findMany({
+        where: { userId: { in: [...userIds] }, status: 'ACTIVE' },
+        select: { userId: true, tenantId: true },
+    });
+    if (memberships.length === 0) return out;
+    const verified = new Set(
+        (
+            await prisma.farmIdentityClaim.findMany({
+                where: {
+                    status: 'VERIFIED',
+                    tenantId: { in: [...new Set(memberships.map((m) => m.tenantId))] },
+                },
+                select: { tenantId: true },
+            })
+        ).map((c) => c.tenantId),
+    );
+    for (const m of memberships) {
+        if (!verified.has(m.tenantId)) continue;
+        const farms = out.get(m.userId) ?? new Set<string>();
+        farms.add(m.tenantId);
+        out.set(m.userId, farms);
+    }
+    return out;
+}
+
+/**
+ * The number of DISTINCT verified farms a set of people can speak for (#3210).
+ *
+ * The union of their verified farms, but never more than the number of people
+ * who belong to one: a single person in two verified farms is one voice, not
+ * two.
+ */
+export function distinctVerifiedFarms(
+    reporters: Iterable<string>,
+    farmsByMember: ReadonlyMap<string, ReadonlySet<string>>,
+): number {
+    const farms = new Set<string>();
+    let voices = 0;
+    for (const id of reporters) {
+        const mine = farmsByMember.get(id);
+        if (!mine || mine.size === 0) continue;
+        voices += 1;
+        for (const f of mine) farms.add(f);
+    }
+    return Math.min(farms.size, voices);
+}
+
 export async function verifiedFarmMembers(
     userIds: readonly string[],
 ): Promise<Set<string>> {
