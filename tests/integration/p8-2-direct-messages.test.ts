@@ -440,6 +440,20 @@ describeFn('P8.2 — direct messages (#2796)', () => {
             expect(row.lastReadAt?.getTime()).toBe(later.getTime());
         });
 
+        it('#3194 — a cursor from a clock running AHEAD is clamped to the server’s now', async () => {
+            const opened = await openConversationFromHandle(ctxFor(VISITOR), HANDLE);
+            const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+            await markConversationRead(ctxFor(VISITOR), opened.conversationId, future);
+
+            const row = await globalPrisma.conversationParticipant.findFirstOrThrow({
+                where: { conversationId: opened.conversationId, userId: VISITOR },
+                select: { lastReadAt: true },
+            });
+            expect(row.lastReadAt).not.toBeNull();
+            expect(row.lastReadAt!.getTime()).toBeLessThanOrEqual(Date.now());
+        });
+
         it('moves only the CALLER’s cursor', async () => {
             const opened = await openConversationFromHandle(ctxFor(VISITOR), HANDLE);
             await markConversationRead(ctxFor(VISITOR), opened.conversationId, new Date());

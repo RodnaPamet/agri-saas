@@ -1154,8 +1154,16 @@ export async function deleteDirectMessage(ctx: UserContext, messageId: string): 
 export async function markConversationRead(
     ctx: UserContext,
     conversationId: string,
-    at: Date,
+    requestedAt: Date,
 ): Promise<void> {
+    // Never a cursor in the FUTURE (#3194). The instant is the client's, and
+    // the cursor is forward-only and compared with each message's server
+    // timestamp — so a phone whose clock ran ahead stored a cursor nothing
+    // could ever move back, and every later message read as already read, on
+    // every device. Clamped to the server's now, which is also the latest
+    // instant at which anything can truthfully have been read.
+    const now = new Date();
+    const at = requestedAt.getTime() > now.getTime() ? now : requestedAt;
     const count = await runInUserContext(ctx, async (db) => {
         const { count: n } = await db.conversationParticipant.updateMany({
             where: {
