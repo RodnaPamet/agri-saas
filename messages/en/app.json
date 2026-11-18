@@ -7259,6 +7259,7 @@
         "GRAIN_BIN_NOT_FOUND": "That grain bin was not found.",
         "HARVEST_NOT_RECORDED": "The activity produced no journal entry, so its quantity could not be recorded. Check that it completed.",
         "HARVEST_TOTAL_NOT_APPLICABLE": "Only a harvest records a quantity. Record the yield against the harvest instead of this activity.",
+        "IDEMPOTENCY_KEY_REUSED": "That key has already been used for a different post.",
         "IDEMPOTENCY_KEY_INVALID": "That request key is not valid.",
         "IDENTIFIERS_REQUIRED": "Provide at least one identifier.",
         "IF_MATCH_EMPTY": "If-Match was sent empty. Omit the header for no precondition, or send the version.",

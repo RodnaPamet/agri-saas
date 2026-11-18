@@ -83,7 +83,12 @@ export const POST = withApiErrorHandling(
             throw codedBadRequest('INVALID_BODY', 'body is required.');
         }
 
-        const reply = await replyToPost(ctx, postId, parsed.data);
+        // A retried send returns the first reply (#3195).
+        const headerKey = req.headers.get('Idempotency-Key')?.trim();
+        const reply = await replyToPost(ctx, postId, {
+            ...parsed.data,
+            ...(headerKey && headerKey.length <= 128 ? { idempotencyKey: headerKey } : {}),
+        });
         return jsonResponse(reply, { status: 201 });
     },
 );

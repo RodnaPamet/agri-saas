@@ -67,7 +67,7 @@ import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { ExchangeRepository } from '@/app-layer/repositories/exchange';
 import type { PrismaTx } from '@/lib/db-context';
 import { afterCommit } from '@/lib/db/after-commit';
-import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedConflict, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { publishChannelActivityEvent } from '@/lib/notifications/notification-bus';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
@@ -122,6 +122,53 @@ function cleanBody(raw: string): string {
         throw codedBadRequest('CHANNEL_POST_TOO_LONG', 'That post is too long.');
     }
     return body;
+}
+
+/**
+ * The post this author already wrote under `idempotencyKey`, or null (#3195).
+ *
+ * A send whose answer was lost and is tapped again carries the same key; the
+ * first post is returned instead of a second one being written. Read on the
+ * privileged client: `ChannelPost` is public anyway, and the lookup is bounded
+ * by (author, key). A key reused for a DIFFERENT channel or parent is a client
+ * bug, refused rather than answered with an unrelated post.
+ */
+async function replayOf(
+    authorUserId: string,
+    idempotencyKey: string | undefined,
+    target: { channelId: string; parentPostId: string | null },
+): Promise<{ id: string; createdAt: Date } | null> {
+    if (!idempotencyKey) return null;
+    const prior = await prisma.channelPost.findUnique({
+        where: { authorUserId_idempotencyKey: { authorUserId, idempotencyKey } },
+        select: { id: true, createdAt: true, channelId: true, parentPostId: true },
+    });
+    if (!prior) return null;
+    if (prior.channelId !== target.channelId || prior.parentPostId !== target.parentPostId) {
+        throw codedConflict('IDEMPOTENCY_KEY_REUSED', 'That key was already used for a different post.');
+    }
+    return { id: prior.id, createdAt: prior.createdAt };
+}
+
+/**
+ * Run a keyed write; when two sends with the same key race, the loser's unique
+ * violation is answered with the winner's post rather than a 500 (#3195).
+ */
+async function withReplayOnRace<T>(
+    authorUserId: string,
+    idempotencyKey: string | undefined,
+    target: { channelId: string; parentPostId: string | null },
+    write: () => Promise<T>,
+    fromReplay: (r: { id: string; createdAt: Date }) => T,
+): Promise<T> {
+    try {
+        return await write();
+    } catch (err) {
+        if (!idempotencyKey || (err as { code?: string } | null)?.code !== 'P2002') throw err;
+        const replay = await replayOf(authorUserId, idempotencyKey, target);
+        if (!replay) throw err;
+        return fromReplay(replay);
+    }
 }
 
 export interface ChannelListItem {
@@ -1626,9 +1673,14 @@ export async function postToChannel(
          * off the path, and why a missing one is never guessed.
          */
         tenantSlug?: string;
+        /** The client's key for this post — a retry returns the first (#3195). */
+        idempotencyKey?: string;
     },
 ): Promise<{ postId: string; createdAt: Date; mentionsRecorded: number }> {
     const body = cleanBody(input.body);
+    const target = { channelId, parentPostId: null };
+    const replay = await replayOf(ctx.userId, input.idempotencyKey, target);
+    if (replay) return { postId: replay.id, createdAt: replay.createdAt, mentionsRecorded: 0 };
     // OUTSIDE the transaction — see `resolveMentionable`. Inside it the
     // membership policy hides everybody but the caller.
     const recordable = await resolveMentionable(
@@ -1636,7 +1688,7 @@ export async function postToChannel(
     );
     const authorTenantId = await resolveAuthorTenantId(ctx.userId, input.tenantSlug);
 
-    return runInUserContext(ctx, async (tx) => {
+    return withReplayOnRace(ctx.userId, input.idempotencyKey, target, () => runInUserContext(ctx, async (tx) => {
         const channel = await tx.channel.findUnique({
             where: { id: channelId },
             select: { id: true, archivedAt: true, slowModeSeconds: true },
@@ -1676,6 +1728,7 @@ export async function postToChannel(
                 // second definition of it in the app layer — the same reason
                 // `kind` is spread directly above.
                 ...(authorTenantId ? { authorTenantId } : {}),
+                ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
             },
             select: { id: true, createdAt: true },
         });
@@ -1699,7 +1752,7 @@ export async function postToChannel(
             parentAuthorUserId: null,
         });
         return { postId: post.id, createdAt: post.createdAt, mentionsRecorded };
-    });
+    }), (r) => ({ postId: r.id, createdAt: r.createdAt, mentionsRecorded: 0 }));
 }
 
 /**
@@ -1741,6 +1794,8 @@ export async function replyToPost(
         mentionUserIds?: readonly string[];
         /** The farm to reply AS, by slug — #2989. See `postToChannel`. */
         tenantSlug?: string;
+        /** The client's key for this reply — a retry returns the first (#3195). */
+        idempotencyKey?: string;
     },
 ): Promise<{
     postId: string;
@@ -1749,6 +1804,9 @@ export async function replyToPost(
     mentionsRecorded: number;
 }> {
     const body = cleanBody(input.body);
+    // The channel copy of an earlier send is not looked up: a replay answers
+    // with the reply, and «Също изпрати в канала» is not repeated.
+    const replayTarget = async (channelId: string) => ({ channelId, parentPostId });
 
     // The channel is derived from the parent, and the mention resolution has to
     // happen OUTSIDE the transaction (see `resolveMentionable`) — so the
@@ -1771,7 +1829,13 @@ export async function replyToPost(
     // calls would be two chances to disagree.
     const authorTenantId = await resolveAuthorTenantId(ctx.userId, input.tenantSlug);
 
-    return runInUserContext(ctx, async (tx) => {
+    const target = await replayTarget(parentChannel.channelId);
+    const replay = await replayOf(ctx.userId, input.idempotencyKey, target);
+    if (replay) {
+        return { postId: replay.id, channelCopyPostId: null, createdAt: replay.createdAt, mentionsRecorded: 0 };
+    }
+
+    return withReplayOnRace(ctx.userId, input.idempotencyKey, target, () => runInUserContext(ctx, async (tx) => {
         const parent = await tx.channelPost.findUnique({
             where: { id: parentPostId },
             select: {
@@ -1837,6 +1901,7 @@ export async function replyToPost(
                 body,
                 parentPostId: parent.id,
                 ...(authorTenantId ? { authorTenantId } : {}),
+                ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
             },
             select: { id: true, createdAt: true },
         });
@@ -1877,7 +1942,7 @@ export async function replyToPost(
             createdAt: reply.createdAt,
             mentionsRecorded,
         };
-    });
+    }), (r) => ({ postId: r.id, channelCopyPostId: null, createdAt: r.createdAt, mentionsRecorded: 0 }));
 }
 
 /**

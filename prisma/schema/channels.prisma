@@ -385,6 +385,13 @@ model ChannelPost {
   /// the P5.5b pattern (`NoticeScore.reportId`).
   cardDay         DateTime?        @db.Date
 
+  /// The client's key for this post, so a retried send whose answer was lost
+  /// is ONE post (#3195). Scoped to the author by the unique index below, the
+  /// `DirectMessage.idempotencyKey` shape. NULL for posts sent without one and
+  /// for machine-written cards. Not a secret: the post row is public, and the
+  /// key is a random value the client minted for this one message.
+  idempotencyKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -397,6 +404,7 @@ model ChannelPost {
   /// in a unique index, so every POST and QUESTION row — which carry NULL in
   /// both columns — is unconstrained by this and needs no exemption.
   @@unique([channelId, cardKind, cardDay])
+  @@unique([authorUserId, idempotencyKey])
   @@index([channelId, createdAt])
   /// A thread's replies.
   @@index([parentPostId])

@@ -156,6 +156,29 @@ describeFn('#2961 — a thread is readable, and resolved state is visible', () =
         expect(new Set(seen).size).toBe(5);
     }, 60_000);
 
+    it('#3195 — a retried post or reply under the same Idempotency-Key is ONE row', async () => {
+        const key = `k-${randomUUID()}`;
+        const first = await postToChannel(ctxFor(MEMBER), channelId, { body: 'веднъж', idempotencyKey: key });
+        const again = await postToChannel(ctxFor(MEMBER), channelId, { body: 'веднъж', idempotencyKey: key });
+        expect(again.postId).toBe(first.postId);
+        expect(await prisma.channelPost.count({ where: { idempotencyKey: key } })).toBe(1);
+
+        const replyKey = `r-${randomUUID()}`;
+        const r1 = await replyToPost(ctxFor(MEMBER), first.postId, { body: 'отговор', idempotencyKey: replyKey });
+        const r2 = await replyToPost(ctxFor(MEMBER), first.postId, { body: 'отговор', idempotencyKey: replyKey });
+        expect(r2.postId).toBe(r1.postId);
+        expect(await prisma.channelPost.count({ where: { parentPostId: first.postId } })).toBe(1);
+
+        // A key reused for a DIFFERENT target is a client bug, refused.
+        await expect(replyToPost(ctxFor(MEMBER), first.postId, { body: 'x', idempotencyKey: key }))
+            .rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+
+        // Control: without a key, two sends are two posts.
+        await postToChannel(ctxFor(MEMBER), channelId, { body: 'без ключ' });
+        await postToChannel(ctxFor(MEMBER), channelId, { body: 'без ключ' });
+        expect(await prisma.channelPost.count({ where: { channelId, body: 'без ключ' } })).toBe(2);
+    }, 60_000);
+
     it('a NON-MEMBER reads the thread, exactly as they read the feed', async () => {
         // Not a weaker rule and not a stronger one: `channel_post_select`
         // admits any authenticated caller, so the database already allows this

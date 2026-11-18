@@ -43,7 +43,16 @@ export const POST = withApiErrorHandling(
             // `undefined` with a green typecheck.
             kind: parsed.data.kind,
             tenantSlug: parsed.data.tenantSlug,
+            // A retried send returns the first post (#3195). Bounded so a key
+            // is a key and not a payload; anything longer is ignored.
+            idempotencyKey: boundedKey(req.headers.get('Idempotency-Key')),
         });
         return jsonResponse(post, { status: 201 });
     },
 );
+
+/** The `Idempotency-Key` header, or undefined when absent or not a sane key. */
+function boundedKey(raw: string | null): string | undefined {
+    const key = raw?.trim();
+    return key && key.length <= 128 ? key : undefined;
+}
