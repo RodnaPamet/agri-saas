@@ -63,3 +63,26 @@ describe('getLegacyCtx — the second factor (#3198)', () => {
         await expect(getLegacyCtx(req())).resolves.toMatchObject({ tenantId: 'tnt_primary' });
     });
 });
+
+describe('getLegacyCtx — the machine-operator lockdown (#3207)', () => {
+    const OPERATOR = { tenant: { id: 'tnt_primary', slug: 'farm-a' }, role: 'MECHANISATOR', permissions: {}, appPermissions: {} };
+
+    beforeEach(() => {
+        getSessionOrThrow.mockResolvedValue({ userId: 'u1', tenantId: 'tnt_primary', mfaPendingTenantIds: [] });
+    });
+
+    it('REFUSES a MECHANISATOR on a slug-less route (evidence, audit log, SSO)', async () => {
+        resolveTenantContext.mockResolvedValue(OPERATOR);
+        await expect(getLegacyCtx(req())).rejects.toMatchObject({ code: 'OPERATOR_SCOPE' });
+    });
+
+    it('admits the operator on their own surfaces (the bell, the streams)', async () => {
+        resolveTenantContext.mockResolvedValue(OPERATOR);
+        await expect(getLegacyCtx(req(), { allowOperator: true })).resolves.toMatchObject({ role: 'MECHANISATOR' });
+    });
+
+    it('control: other roles are unaffected', async () => {
+        resolveTenantContext.mockResolvedValue({ ...OPERATOR, role: 'READER' });
+        await expect(getLegacyCtx(req())).resolves.toMatchObject({ role: 'READER' });
+    });
+});

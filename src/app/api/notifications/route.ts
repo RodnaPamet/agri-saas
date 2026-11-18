@@ -5,7 +5,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
-    const ctx = await getLegacyCtx(req);
+    const ctx = await getLegacyCtx(req, { allowOperator: true }); // the operator's own surface (#3207)
     const notifications = await listMyNotifications(ctx);
     return jsonResponse(notifications);
 });

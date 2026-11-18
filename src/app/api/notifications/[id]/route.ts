@@ -6,7 +6,7 @@ import { jsonResponse } from '@/lib/api-response';
 
 export const PATCH = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ id: string }> }) => {
     const params = await paramsPromise;
-    const ctx = await getLegacyCtx(req);
+    const ctx = await getLegacyCtx(req, { allowOperator: true }); // the operator's own surface (#3207)
     const notification = await markNotificationRead(ctx, params.id);
     return jsonResponse(notification);
 });

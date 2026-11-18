@@ -320,7 +320,17 @@ async function isOperatorOnly(userId: string): Promise<boolean> {
  *
  * This also performs a membership check that legacy routes previously skipped.
  */
-export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
+export async function getLegacyCtx(
+    req?: NextRequest,
+    opts: {
+        /**
+         * The machine operator may use this route (#3207). Their OWN surfaces
+         * only — the notification bell and the live streams — and every other
+         * slug-less route refuses them.
+         */
+        allowOperator?: boolean;
+    } = {},
+): Promise<RequestContext> {
     // NO API-key auth here, deliberately. A legacy route has no `tenantSlug`
     // in its params, so there is nothing to compare the key's tenant against —
     // and an unchecked key context would silently REPLACE the session's tenant
@@ -341,6 +351,16 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
     // stolen password and no TOTP could register an identity provider on a
     // farm whose policy is REQUIRED.
     assertSecondFactorPresented(session, ctx.tenant.id);
+
+    // The MECHANISATOR lockdown (#3207). It lives at the Edge and only inside
+    // `isTenantPath`, keyed on the slug in the URL — and these routes have no
+    // slug, so the persona whose "real confinement is the middleware lockdown"
+    // could `GET /api/evidence` and read the farm's whole evidence register,
+    // the audit log and the SSO configuration. Refused here unless the route
+    // is one of the operator's own.
+    if (ctx.role === 'MECHANISATOR' && !opts.allowOperator) {
+        throw codedForbidden('OPERATOR_SCOPE', 'This screen is not available to a machine operator.');
+    }
 
     // Enrich the observability context with tenant and user info
     mergeRequestContext({
