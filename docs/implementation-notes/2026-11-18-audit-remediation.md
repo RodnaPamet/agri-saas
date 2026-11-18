@@ -62,3 +62,38 @@ obvious from the diffs.
   of account is spared by default.
 - **CSV numbers are not neutralised**: the shared escaper would turn a negative
   `outstanding` (an overpayment) into text, and a number cannot carry a formula.
+
+## Second batch
+
+| Finding | Fix |
+|---|---|
+| #3183 seat limit | `assertWithinLimit(…, 'user', tx)` runs where a seat is TAKEN — invite redemption, SCIM create, SSO JIT — inside the transaction that writes the membership. Redemption skips it for an already-ACTIVE member. |
+| #3178 slow mode for OAuth users | An IdP sign-in (OAuth, SSO link, SSO JIT) stamps `User.emailVerified` when NULL; a migration backfills accounts holding an `Account` row or SSO link. |
+| #3189 action pins | Third-party actions pinned by SHA (guard derives the population); `load-test.yml` gets `contents: read`. |
+| #3191 deploy inputs | `deploy/lib/compose-repo-inputs.sh` derives the build-context files and `./deploy/…` mounts both scripts ship and hash. |
+| #3192 verify-chain Q2 | Probe written beside the `:ro` mount; an unwritable probe is a failure. |
+
+### Decisions
+
+- **The tenant-only entitlement scope requires a transaction.** Provisioning
+  paths have no request principal to bind `runInTenantContext` to, so
+  `assertWithinLimit` / `getEffectivePlan` gained an overload taking
+  `{ tenantId }` plus a REQUIRED `tx`, enforced at compile time by the
+  overloads and at runtime by `runIn`. A second pool connection inside the
+  provisioning transaction would also be #1191's deadlock shape.
+- **A returning REMOVED member counts as a new seat**; only an ACTIVE row is
+  "already holding one".
+- **SSO counts as IdP verification.** The tenant's IdP asserts the address,
+  constrained by the reach rule from the first batch; the column only drives
+  slow mode and register/start's "already registered" mail, so the cost of
+  trusting it is low and the cost of not trusting it is a permanent 15/min.
+- **The backfill stamps `NOW()`, not `createdAt`** — the first confirmation was
+  never recorded and the migration does not invent one; slow mode's age half
+  reads `createdAt`, so no verdict depends on the choice.
+- **VM image pins (`watchtower:latest`, `pgbouncer:latest`) are deferred**: the
+  right pin is whatever the VM runs today, which needs a measurement on the VM
+  this session could not make. Pinning a guessed version would be a silent
+  upgrade or downgrade riding a hardening change.
+- **The deploy helper keeps `./Caddyfile` out by construction** (only
+  `./deploy/…` paths are inputs), which is the one exclusion that matters: the
+  live file serves a co-tenant.
