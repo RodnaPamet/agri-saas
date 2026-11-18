@@ -140,6 +140,8 @@ export async function createEvidence(
     }
 
     const created = await runInTenantContext(ctx, async (db) => {
+        // A person named in the body must belong to this farm (#3208).
+        await assertActiveMembers(db, ctx, data.ownerUserId);
         const evidence = await EvidenceRepository.create(db, ctx, {
 
             type: data.type as EvidenceType,
@@ -187,6 +189,7 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
     assertCanWrite(ctx);
 
     const updated = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, data.ownerUserId);
         const evidence = await EvidenceRepository.update(db, ctx, id, {
             title: sanitizeOptional(data.title),
             content: sanitizeOptional(data.content),
@@ -517,6 +520,7 @@ import { stripImageMetadata } from '@/lib/images/strip-metadata';
 import { stripPdfMetadata } from '@/lib/files/strip-pdf-metadata';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { translateFor } from '@/lib/i18n/server-messages';
+import { assertActiveMembers } from '../policies/member.policies';
 
 /**
  * Upload a file and create an Evidence record of type FILE in one flow.
@@ -697,7 +701,9 @@ export async function uploadEvidenceFile(
             fileRecordId = fileRecord.id;
         }
 
-        // Create Evidence linked to FileRecord
+        // Create Evidence linked to FileRecord. The owner, like every person
+        // named in a body, must belong to this farm (#3208).
+        await assertActiveMembers(db, ctx, metadata.ownerUserId);
         const evidence = await EvidenceRepository.create(db, ctx, {
             type: 'FILE' as EvidenceType,
             // Title defaults to the uploaded filename, which is user-supplied
