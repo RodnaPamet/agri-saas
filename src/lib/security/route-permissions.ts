@@ -284,6 +284,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'in-handler via assertPlatformSupport; admin.manage is the audited role ' +
             'floor, not the isolation practice.',
     },
+    // #3095 — the agro calendar's override console, the phone's SESSION door.
+    // The calendar is the same for every farm (no tenant), so `admin.manage`
+    // alone would let any farm's ADMIN rewrite every farm's agronomy; the
+    // handler adds `assertPlatformSupport`. The keyed sibling is for scripts.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agro-calendar\\/overrides(\\/.*)?$`),
+        permission: 'admin.manage',
+        note:
+            'Agro calendar overrides — a correction here changes the published agronomy ' +
+            'for every farm, and the table is tenantless. Platform-tenant gated in-handler ' +
+            'via assertPlatformSupport; admin.manage is the audited role floor.',
+    },
     // The moderation console's SECOND DOOR — #2735. Same two-gate shape and
     // same reason as farm-claims above: `ContentReport`, `ModerationAction` and
     // `StatementOfReasons` are TENANTLESS and deny `app_user` outright, so

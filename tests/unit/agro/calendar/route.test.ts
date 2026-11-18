@@ -10,6 +10,14 @@ jest.mock('@/app-layer/context', () => ({
     getUserCtx: (...a: unknown[]) => getUserCtxMock(...a),
 }));
 
+// #3095 stage 2: the route reads live overrides from the database. This
+// suite is about the published dataset, so there are none; the merge itself
+// is covered in calendar-overrides-write.test.ts.
+const loadLiveMock = jest.fn(async () => []);
+jest.mock('@/app-layer/usecases/agro-calendar-overrides', () => ({
+    loadLiveCalendarOverrides: () => loadLiveMock(),
+}));
+
 const assertFeatureEnabledMock = jest.fn();
 jest.mock('@/lib/feature-flags', () => ({
     ...(jest.requireActual('@/lib/feature-flags') as object),
