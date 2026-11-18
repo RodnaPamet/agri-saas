@@ -203,6 +203,45 @@ describeFn('the WRITE half: no tenant bound falls back to the GLOBAL KEK', () =>
     });
 });
 
+describeFn('a pasted envelope is text, not a key to somebody else\'s plaintext (#3204)', () => {
+    it('§4b another row\'s ciphertext submitted as a description reads back as the literal string', async () => {
+        const base = {
+            tenantId: FARM_A,
+            type: 'IMPROVEMENT' as const,
+            createdByUserId: ownerA,
+        };
+        // The victim's row, encrypted under FARM_A's DEK as usual.
+        const victim = await withTenantDb(FARM_A, (db) =>
+            db.task.create({ data: { ...base, title: 'victim', description: 'VICTIM-SECRET' }, select: { id: true } }),
+        );
+        const [{ description: victimsEnvelope }] = await raw.$queryRawUnsafe<Array<{ description: string }>>(
+            'SELECT description FROM "Task" WHERE id = $1',
+            victim.id,
+        );
+        // Control: what we are about to paste really is an envelope.
+        expect(victimsEnvelope.startsWith('v2:')).toBe(true);
+
+        // The attacker, a member of the same farm, files it as their own text.
+        const pasted = await withTenantDb(FARM_A, (db) =>
+            db.task.create({ data: { ...base, title: 'pasted', description: victimsEnvelope }, select: { id: true } }),
+        );
+
+        const readBack = await withTenantDb(FARM_A, (db) =>
+            db.task.findUnique({ where: { id: pasted.id }, select: { description: true } }),
+        );
+        // Before #3204 this read returned 'VICTIM-SECRET'.
+        expect(readBack?.description).toBe(victimsEnvelope);
+        expect(readBack?.description).not.toBe('VICTIM-SECRET');
+
+        // And the stored bytes are a NEW envelope, not the victim's.
+        const [{ description: storedPasted }] = await raw.$queryRawUnsafe<Array<{ description: string }>>(
+            'SELECT description FROM "Task" WHERE id = $1',
+            pasted.id,
+        );
+        expect(storedPasted).not.toBe(victimsEnvelope);
+    });
+});
+
 describeFn('the lease-expiry sweep names the lessor, not an envelope (#2728)', () => {
     it('§5 the notification a farmer reads carries the plaintext name', async () => {
         await makeLease(FARM_A, 'Георги Димитров', 10);
