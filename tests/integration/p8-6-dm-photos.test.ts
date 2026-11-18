@@ -169,6 +169,22 @@ describeFn('P8.6 — conversation photographs (#2800)', () => {
             expect(row.attachmentKey).not.toBeNull();
         }, 60_000);
 
+        it('#3209 — the caption is sanitised like a message body, and an over-long one is refused', async () => {
+            const sent = await sendDirectPhoto(ctxFor(ALICE), {
+                conversationId: CONV,
+                bytes: await jpegWithExif(),
+                body: '<img src=x onerror=alert(1)>Снимка от нивата',
+            });
+            const row = await prisma.directMessage.findUniqueOrThrow({ where: { id: sent.messageId }, select: { body: true } });
+            expect(row.body).toBe('Снимка от нивата');
+
+            await expect(sendDirectPhoto(ctxFor(ALICE), {
+                conversationId: CONV,
+                bytes: await jpegWithExif(),
+                body: 'а'.repeat(4001),
+            })).rejects.toMatchObject({ code: 'DM_BODY_TOO_LONG' });
+        }, 60_000);
+
         it('refuses a non-image on the MAGIC NUMBER, not the declared type', async () => {
             await expect(
                 sendDirectPhoto(ctxFor(ALICE), {

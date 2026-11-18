@@ -94,6 +94,25 @@ export const CHANNEL_MENTION_MAX = 5;
 export const CHANNEL_FEED_PAGE_SIZE = 50;
 export const CHANNEL_FEED_MAX_PAGE_SIZE = 100;
 
+/**
+ * A media post's caption: the same sanitising and length cap as a post body,
+ * but optional — a photo or a voice note alone is a complete post (#3209).
+ *
+ * The media routes read the multipart `body` field as a raw string, and
+ * `channel-media.ts` stored it after a `.trim()` only, so a caption skipped
+ * both controls `cleanBody` applies to every other post — into a column that
+ * is public and searchable.
+ */
+export function cleanCaption(raw: string | null | undefined): string | null {
+    if (raw == null) return null;
+    const caption = sanitizePlainText(raw);
+    if (!caption) return null;
+    if (caption.length > CHANNEL_POST_MAX_LENGTH) {
+        throw codedBadRequest('CHANNEL_POST_TOO_LONG', 'That post is too long.');
+    }
+    return caption;
+}
+
 function cleanBody(raw: string): string {
     const body = sanitizePlainText(raw);
     if (!body) {

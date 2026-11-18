@@ -310,6 +310,21 @@ async function conversationOfMessage(messageId: string, onMissing: () => never):
  * reports it, and by the Art 15 export: three readers, which is the C.5
  * argument in full.
  */
+/**
+ * A photograph's caption: `cleanBody`'s sanitising and length cap, but optional
+ * — a photo alone is a complete message (#3209). `sendDirectPhoto` stored the
+ * multipart field after a `.trim()` only.
+ */
+export function cleanCaption(raw: string | null | undefined): string | null {
+    if (raw == null) return null;
+    const caption = sanitizePlainText(raw);
+    if (!caption) return null;
+    if (caption.length > DM_MAX_BODY_LENGTH) {
+        throw codedBadRequest('DM_BODY_TOO_LONG', 'That message is too long.');
+    }
+    return caption;
+}
+
 function cleanBody(raw: string): string {
     const body = sanitizePlainText(raw);
     if (!body) throw codedBadRequest('DM_BODY_REQUIRED', 'A message cannot be empty.');
