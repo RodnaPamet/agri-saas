@@ -152,6 +152,25 @@ jobs:
         timeout-minutes: 40
 
         steps:
+            # ── Only main publishes (#3188) ──
+            #
+            # `workflow_dispatch` accepts any ref, and the forward-only gate
+            # below only asks whether the commit `:latest` serves is an
+            # ANCESTOR of this one — true for any branch cut from it. So a
+            # dispatch on a feature branch moved production `:latest`,
+            # Watchtower deployed it and `entrypoint.sh` ran that branch's
+            # migrations; afterwards `main` no longer descended from the served
+            # commit and could not move the tag. Refused before anything is
+            # built. Through `env`, never an expression inside the script.
+            - name: Refuse a ref other than main
+              env:
+                  REF: ${{ github.ref }}
+              run: |
+                  if [ "$REF" != "refs/heads/main" ]; then
+                      echo "::error::ghcr-publish moves production :latest and only runs for refs/heads/main (got $REF)."
+                      exit 1
+                  fi
+
             - name: Checkout
               uses: actions/checkout@v7
               with:
@@ -349,13 +368,29 @@ jobs:
             # which is exactly the shape #801 nearly shipped, when a recursive
             # grep inside a container returned empty because it had TIMED OUT.
             - name: "Prove: the registry serves the gated digest"
+              env:
+                  SKIPPED_LATEST: ${{ steps.push.outputs.skipped_latest }}
+                  PUSHED_TAGS: ${{ steps.meta.outputs.tags }}
               run: |
                   set -euo pipefail
                   EXPECTED="${{ steps.push.outputs.digest }}"
                   REF="${REGISTRY}/${IMAGE_NAME,,}"
 
-                  SERVED="$(docker buildx imagetools inspect "${REF}:latest" \
+                  # Which tag to prove (#3190). When the forward-only gate
+                  # correctly declined to move `:latest`, this run pushed only
+                  # the `sha-` tag; asserting `:latest` equals this digest then
+                  # failed a run that behaved exactly as designed, opened a
+                  # failure issue, and never verified the tag it DID push.
+                  if [ "$SKIPPED_LATEST" = "1" ]; then
+                      PROVE="$(printf '%s\n' "$PUSHED_TAGS" | grep -m1 ':sha-' || true)"
+                      test -n "$PROVE" || { echo "::error:::latest was skipped and no sha- tag was pushed: nothing to prove, which is NOT a pass"; exit 1; }
+                  else
+                      PROVE="${REF}:latest"
+                  fi
+
+                  SERVED="$(docker buildx imagetools inspect "$PROVE" \
                       --format '{{println .Manifest.Digest}}' | head -1 | tr -d '[:space:]')"
+                  echo "proving  : $PROVE"
                   echo "expected : $EXPECTED"
                   echo "served   : $SERVED"
 
@@ -380,4 +415,4 @@ jobs:
                     -v "$PWD/scripts/verify-image-artefacts.mjs:/verify-artefacts.mjs:ro" \
                     "${REF}@${SERVED}" /verify-artefacts.mjs /app
 
-                  echo "✓ ${REF}:latest serves ${SERVED}, gated and verified after pull"
+                  echo "✓ ${PROVE} serves ${SERVED}, gated and verified after pull"
