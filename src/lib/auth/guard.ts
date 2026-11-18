@@ -652,7 +652,13 @@ export function isPublicPath(pathname: string): boolean {
     if (PUBLIC_PATH_PREFIXES.some((prefix) => matchesPublicPrefix(path, prefix))) return true;
 
     // Static file extensions
-    if (STATIC_EXTENSIONS.test(path)) return true;
+    // A static ASSET, never an API path (#3217). The regex is anchored on the
+    // extension only, so `/api/t/farm/anything.json` matched it too, skipping
+    // the Edge authentication and the Edge-only gates (operator lockdown, MFA,
+    // terms) for any route whose last segment could carry an extension —
+    // leaving the handler's own checks as the only control. No API route is
+    // public BY extension; the ones that must be reachable are on the lists.
+    if (!path.startsWith('/api/') && STATIC_EXTENSIONS.test(path)) return true;
 
     return false;
 }
