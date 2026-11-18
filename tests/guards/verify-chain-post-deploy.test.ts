@@ -50,9 +50,13 @@ interface Scenario {
     workerReads?: boolean;
     /** make a container unanswerable, to exercise the "could not look" path */
     silent?: 'app' | 'zarnoborsa' | 'worker';
+    /** mount the bundle read-only, as the canonical compose file does (#3192) */
+    mountReadOnly?: boolean;
+    /** override where Q2 writes its probe, to make it unwritable (#3192) */
+    probeParent?: string;
 }
 
-function build(s: Scenario): { root: string; env: Record<string, string> } {
+function build(s: Scenario): { root: string; env: Record<string, string>; fetchMount: string } {
     const root = mkdtempSync(join(tmpdir(), 'chain-'));
     const appDist = join(root, 'app-dist');
     const share = join(root, 'share');
@@ -93,6 +97,7 @@ function build(s: Scenario): { root: string; env: Record<string, string> } {
     }
 
     if (s.workerReads === false) rmSync(handoff, { recursive: true, force: true });
+    if (s.mountReadOnly) chmodSync(fetchMount, 0o555);
 
     // The stub: `… exec -T <service> sh -c <script>` runs <script> locally.
     // A `silent` service produces nothing, which is the could-not-look case.
@@ -118,7 +123,9 @@ bash -c "$script"
             CHAIN_FETCH_MOUNT: fetchMount,
             CHAIN_FETCH_PKG_ROOT: pkgRoot,
             CHAIN_HANDOFF_DIR: handoff,
+            ...(s.probeParent ? { CHAIN_PROBE_PARENT: s.probeParent } : {}),
         },
+        fetchMount,
     };
 }
 
@@ -141,7 +148,11 @@ describe('deploy/verify-chain.sh — the post-deploy half (#3099)', () => {
         return b.env;
     };
     afterAll(() => {
-        for (const r of roots) rmSync(r, { recursive: true, force: true });
+        for (const r of roots) {
+            // A read-only mount fixture must be made writable again to delete.
+            try { chmodSync(join(r, 'pkg', 'dist'), 0o755); } catch { /* absent */ }
+            rmSync(r, { recursive: true, force: true });
+        }
     });
 
     it('EXIT 0 on a healthy chain — the control for every failure below', async () => {
@@ -171,6 +182,43 @@ describe('deploy/verify-chain.sh — the post-deploy half (#3099)', () => {
         expect(r.code).toBe(2);
         expect(r.err).toContain('does NOT resolve from its mount');
         expect(r.err).toContain('ignores the cwd');
+    });
+
+    it('Q2 — needs no write inside the bundle mount, and still RESOLVES (#3192)', async () => {
+        // The canonical compose file mounts the bundle `:ro`. The probe used to
+        // be written INSIDE the mount, so in production it could never be
+        // created and Q2 skipped on every run; the fixture mount was writable,
+        // which is why that never showed here. A DIRECTORY at the old probe
+        // path makes that write fail for every user, root included (chmod
+        // cannot stop root), so this case reproduces the read-only mount
+        // wherever it runs.
+        const b = build({});
+        roots.push(b.root);
+        mkdirSync(join(b.fetchMount, '.chain-probe.mjs'));
+        const r = await run(b.env);
+        expect(r.code).toBe(0);
+        expect(r.out).toContain('Q2 OK');
+    });
+
+    // chmod cannot stop root, so this case runs where tests run unprivileged
+    // (CI); the unwritable-probe case below covers the failure direction for
+    // every user.
+    (process.getuid?.() === 0 ? it.skip : it)(
+        'Q2 — OK with a READ-ONLY mount, as production mounts it (#3192)',
+        async () => {
+            const r = await run(scenario({ mountReadOnly: true }));
+            expect(r.code).toBe(0);
+            expect(r.out).toContain('Q2 OK');
+        },
+    );
+
+    it('Q2 — an unwritable probe is a FAILURE, never a skip (#3192)', async () => {
+        // `/dev/null/…` cannot be created by any user, root included.
+        const r = await run(scenario({ probeParent: '/dev/null/no-such-dir' }));
+        expect(r.code).toBe(2);
+        expect(r.err).toContain('could not write the resolution probe');
+        expect(r.err).toContain('not a pass');
+        expect(r.out).not.toContain('Q2 SKIP');
     });
 
     it('Q2 — SKIPS rather than passing when there is no bare import', async () => {

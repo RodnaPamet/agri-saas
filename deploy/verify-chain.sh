@@ -100,6 +100,11 @@ APP_SHARE="${CHAIN_APP_SHARE:-/opt/share/dist}"
 FETCH_MOUNT="${CHAIN_FETCH_MOUNT:-/opt/zarnoborsa/dist}"
 FETCH_PKG_ROOT="${CHAIN_FETCH_PKG_ROOT:-/opt/zarnoborsa}"
 HANDOFF_DIR="${CHAIN_HANDOFF_DIR:-/var/lib/agrent/zarnoborsa}"
+# Where Q2 writes its probe: a SIBLING of the mount, i.e. the same directory
+# depth under the package root (#3192). Not inside the mount — the canonical
+# compose file mounts it `:ro`, so a probe written there could never be
+# created and Q2 skipped on every run.
+PROBE_PARENT="${CHAIN_PROBE_PARENT:-$(dirname "$FETCH_MOUNT")}"
 
 log "pair: zarnoborsa fetch bundle"
 
@@ -130,18 +135,22 @@ else
     log "  Q1 OK   published ${PUB_B} bytes, matching the image"
 fi
 
-# Q2 — can the consumer RESOLVE the bundle's imports? A FILE in the mount, at
-# the depth the real bundle sits, because `-e` resolves from the cwd and would
-# print RESOLVED in the container where the real run fails (#3117).
+# Q2 — can the consumer RESOLVE the bundle's imports? A FILE, because `-e`
+# resolves from the cwd and would print RESOLVED in the container where the
+# real run fails (#3117). The file sits in a fresh directory BESIDE the mount
+# rather than inside it (#3192): resolution of a bare specifier walks
+# `<dir>/node_modules` and then the parents, so a sibling of the mount walks
+# exactly the parents the bundle does — `<pkg root>/node_modules` included —
+# without needing the read-only mount to be writable.
 CHECKS=$((CHECKS + 1))
 Q2="$(run_remote "$DC exec -T zarnoborsa sh -c '
-  P=${FETCH_MOUNT}/.chain-probe.mjs
+  D=${PROBE_PARENT}/.chain-probe-\$\$
+  P=\$D/probe.mjs
   SPEC=\$(sed -n \"s/.*from \\\"\\([a-z@][a-z0-9@/-]*\\)\\\".*/\\1/p\" ${FETCH_MOUNT}/${BUNDLE} 2>/dev/null | grep -v \"^node:\" | head -1)
   [ -z \"\$SPEC\" ] && { echo probe=no-bare-import; exit 0; }
-  mkdir -p \$(dirname \$P) 2>/dev/null
-  printf \"import x from \\\"%s\\\";\nconsole.log(\\\"RESOLVED\\\");\n\" \"\$SPEC\" > \$P 2>/dev/null || { echo probe=unwritable spec=\$SPEC; exit 0; }
+  mkdir -p \$D 2>/dev/null && printf \"import x from \\\"%s\\\";\nconsole.log(\\\"RESOLVED\\\");\n\" \"\$SPEC\" > \$P 2>/dev/null || { echo probe=unwritable spec=\$SPEC dir=\$D; exit 0; }
   OUT=\$(cd ${FETCH_PKG_ROOT} && node \$P 2>&1 | tail -1)
-  rm -f \$P
+  rm -rf \$D
   case \"\$OUT\" in *RESOLVED*) echo probe=ok spec=\$SPEC ;; *) echo probe=failed spec=\$SPEC detail=\"\$OUT\" ;; esac
 '" | grep -E '^probe=' | head -1)"
 if [ -z "$Q2" ]; then
@@ -159,7 +168,12 @@ case "$Q2" in
         log "  Q2 SKIP the bundle declares no bare import — nothing to resolve"
         ;;
     probe=unwritable*)
-        log "  Q2 SKIP the mount is read-only, so the probe cannot be written there"
+        # A FAILURE, not a skip (#3192). Skipping here is how this check came to
+        # report nothing on every run: the probe used to go inside the `:ro`
+        # mount, so it was never written and the import was never resolved.
+        err "  Q2 FAIL — could not write the resolution probe (${Q2#probe=unwritable })."
+        err "         The import was NOT checked; this is not a pass."
+        DEGRADED=1
         ;;
     *)
         err "  Q2 FAIL — the bundle's import does NOT resolve from its mount: ${Q2}"
