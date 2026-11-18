@@ -81,3 +81,17 @@ describe('isOperatorAllowedPath — blocked surfaces', () => {
         expect(isOperatorAllowedPath('/t/acme/diagnostics/tenant-data', slug)).toBe(false);
     });
 });
+
+describe('isOperatorAllowedPath — landowner data under /locations (#3213)', () => {
+    const slug = 'acme';
+    it('blocks a parcel’s leases, though they sit under the allowed /locations prefix', () => {
+        expect(isOperatorAllowedPath('/api/t/acme/locations/loc-1/parcels/p1/leases', slug)).toBe(false);
+        expect(isOperatorAllowedPath('/api/t/acme/locations/loc-1/parcels/p1/leases/lease-9', slug)).toBe(false);
+        expect(isOperatorAllowedPath('/api/t/acme/locations/loc-1/parcels/p1/leases?x=1', slug)).toBe(false);
+    });
+
+    it('control: the rest of a parcel stays reachable', () => {
+        expect(isOperatorAllowedPath('/api/t/acme/locations/loc-1/parcels/p1', slug)).toBe(true);
+        expect(isOperatorAllowedPath('/api/t/acme/locations/loc-1/parcels/p1/leasesummary-not-a-lease-route', slug)).toBe(true);
+    });
+});

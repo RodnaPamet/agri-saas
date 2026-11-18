@@ -1079,6 +1079,13 @@ export function isOperatorAllowedPath(pathname: string, slug: string): boolean {
         //   detail, parcels, basemap tiles all live under /locations/*).
         // agro — vegetation-index tile overlays (NDVI/NDMI/…) rendered on
         //   that map. All read-only; write attempts still hit the canWrite gate.
+        // NOT a parcel's leases, though they sit under `/locations/` (#3213).
+        // The prefix allowance let the operator read `lessorName` / `lessorEik`
+        // — landowners' names and national ids, third-party personal data —
+        // which the top-level `/leases` and `/reports/rent-roll` routes already
+        // keep from this persona. Nothing the operator does on the job needs
+        // who owns the land.
+        if (/^\/api\/t\/[^/]+\/locations\/[^/]+\/parcels\/[^/]+\/leases(\/|$|\?)/.test(pathname)) return false;
         return /^\/api\/t\/[^/]+\/(farm-tasks|field-operations|tasks|locations|agro)(\/|$|\?)/.test(pathname);
     }
     return (
