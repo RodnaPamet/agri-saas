@@ -265,6 +265,14 @@ export interface VerifyResult {
     revoked: boolean;
     /** Non-null when we actually found the row. */
     rowId: string | null;
+    /**
+     * When the session was SIGNED IN, i.e. when the row was minted. Present
+     * only when the row was found and is live. A native bearer anchors its
+     * per-farm second-factor check on it (#3199): every refresh keeps the same
+     * row, so this is the bearer's equivalent of a cookie token's sign-in
+     * `iat`, which a freshly minted access token does not carry.
+     */
+    createdAt?: Date;
 }
 
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -289,6 +297,7 @@ export async function verifyAndTouchSession(
                 revokedAt: true,
                 lastActiveAt: true,
                 expiresAt: true,
+                createdAt: true,
             },
         });
         if (!row) return { revoked: false, rowId: null };
@@ -322,7 +331,7 @@ export async function verifyAndTouchSession(
                 data: { lastActiveAt: new Date(now) },
             });
         }
-        return { revoked: false, rowId: row.id };
+        return { revoked: false, rowId: row.id, createdAt: row.createdAt };
     } catch (err) {
         logger.warn('session-tracker: verify/touch failed', {
             component: 'session-tracker',
