@@ -1086,6 +1086,15 @@ export function isOperatorAllowedPath(pathname: string, slug: string): boolean {
         // keep from this persona. Nothing the operator does on the job needs
         // who owns the land.
         if (/^\/api\/t\/[^/]+\/locations\/[^/]+\/parcels\/[^/]+\/leases(\/|$|\?)/.test(pathname)) return false;
+        // Nor the other subtrees under `/locations/` that no field job needs
+        // (#3214): the cadastre and spatial imports (cadastre extracts carry
+        // owners' names; an import is a back-office task), the farm-record
+        // exports (the farm's dossier, which includes its leases), and the
+        // bulk delete. Excluded by name rather than by enumerating what IS
+        // allowed, so the map, parcel and tile reads the operator's screens
+        // already use are untouched.
+        if (/^\/api\/t\/[^/]+\/locations\/[^/]+\/(cadastre-import|spatial-import|farm-record|farm-records)(\/|$|\?)/.test(pathname)) return false;
+        if (/^\/api\/t\/[^/]+\/locations\/bulk(\/|$|\?)/.test(pathname)) return false;
         return /^\/api\/t\/[^/]+\/(farm-tasks|field-operations|tasks|locations|agro)(\/|$|\?)/.test(pathname);
     }
     return (

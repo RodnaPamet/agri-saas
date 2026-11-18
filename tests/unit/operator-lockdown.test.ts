@@ -95,3 +95,35 @@ describe('isOperatorAllowedPath — landowner data under /locations (#3213)', ()
         expect(isOperatorAllowedPath('/api/t/acme/locations/loc-1/parcels/p1/leasesummary-not-a-lease-route', slug)).toBe(true);
     });
 });
+
+describe('isOperatorAllowedPath — back-office subtrees under /locations (#3214)', () => {
+    const slug = 'acme';
+    it.each([
+        '/api/t/acme/locations/loc-1/cadastre-import',
+        '/api/t/acme/locations/loc-1/cadastre-import/job-1',
+        '/api/t/acme/locations/loc-1/spatial-import',
+        '/api/t/acme/locations/loc-1/spatial-import/job-1',
+        '/api/t/acme/locations/loc-1/farm-record',
+        '/api/t/acme/locations/loc-1/farm-record/drive',
+        '/api/t/acme/locations/loc-1/farm-records',
+        '/api/t/acme/locations/loc-1/farm-records?limit=5',
+        '/api/t/acme/locations/bulk/delete',
+    ])('blocks %s', (path) => {
+        expect(isOperatorAllowedPath(path, slug)).toBe(false);
+    });
+
+    it.each([
+        '/api/t/acme/locations',
+        '/api/t/acme/locations/loc-1',
+        '/api/t/acme/locations/loc-1/parcels',
+        '/api/t/acme/locations/loc-1/parcel-clusters',
+        '/api/t/acme/locations/loc-1/basemap/12/2290/1500',
+        '/api/t/acme/locations/loc-1/tiles/12/2290/1500',
+        '/api/t/acme/locations/loc-1/operations',
+        '/api/t/acme/locations/loc-1/smart-defaults',
+        // A location whose id merely starts with a blocked word is still a location.
+        '/api/t/acme/locations/bulky-field',
+    ])('control: keeps the field-map read %s', (path) => {
+        expect(isOperatorAllowedPath(path, slug)).toBe(true);
+    });
+});

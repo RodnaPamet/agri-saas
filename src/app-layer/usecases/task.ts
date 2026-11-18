@@ -9,6 +9,7 @@ import { assertCanDeleteTask, assertCanDeleteTasks,
     canDeleteTask,
 } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
+import { assertActiveMembers } from '../policies/member.policies';
 import { emitAutomationEvent } from '../automation';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -180,28 +181,6 @@ export async function getTask(ctx: RequestContext, taskId: string) {
 
 // ─── Create ───
 
-/**
- * Refuse a person id that is not an ACTIVE member of this farm (#3208).
- *
- * `assigneeUserId` and `reviewerUserId` arrive from the request as bare
- * strings. They were stored as given, the assign response included the
- * referenced person's `name` and `email`, and the assignee was e-mailed — so
- * an editor could take a user id the social surfaces expose on purpose (a
- * channel author, an exchange counterparty), assign a task to it, read that
- * person's address off the response and send them mail from a farm they have
- * no relation to. Read through the caller's tenant transaction, so RLS scopes
- * it too. `null` (unassign) is always allowed.
- */
-async function assertActiveMembers(db: PrismaTx, ctx: RequestContext, ...userIds: Array<string | null | undefined>) {
-    const ids = [...new Set(userIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
-    if (ids.length === 0) return;
-    const found = await db.tenantMembership.count({
-        where: { tenantId: ctx.tenantId, userId: { in: ids }, status: 'ACTIVE' },
-    });
-    if (found !== ids.length) {
-        throw codedNotFound('TARGET_USER_NOT_IN_TENANT', 'That person is not a member of this farm.');
-    }
-}
 
 /**
  * `suppressAssignmentNotification` (#1740): skip the "you have been assigned"

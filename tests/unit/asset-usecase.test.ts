@@ -34,6 +34,11 @@ const mockDb = {
     // B7 — listAssets now folds in WorkItemRepository.countLinkedToEntities
     // (TaskLink count). Default to no links → taskTotal/taskDone = 0.
     taskLink: { findMany: jest.fn().mockResolvedValue([]) },
+    // #3208 — a person named in the body must be an ACTIVE member. By default
+    // every named person is one; a case below makes them an outsider.
+    tenantMembership: {
+        count: jest.fn(async (args: any) => args.where.userId.in.length),
+    },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -390,5 +395,21 @@ describe('unlinkAssetEvidence', () => {
 
     it('rejects READER', async () => {
         await expect(unlinkAssetEvidence(readerCtx, 'a-1', 'e-1')).rejects.toBeDefined();
+    });
+});
+
+describe('a named owner must belong to this farm (#3208)', () => {
+    it('refuses an owner who is not an ACTIVE member, before anything is written', async () => {
+        (mockDb.tenantMembership.count as jest.Mock).mockResolvedValueOnce(0);
+        await expect(updateAsset(editorCtx, 'a-1', { ownerUserId: 'u-elsewhere' }))
+            .rejects.toMatchObject({ code: 'TARGET_USER_NOT_IN_TENANT' });
+        expect(createAssignmentNotification).not.toHaveBeenCalled();
+    });
+
+    it('checks the named person against THIS farm, ACTIVE only', async () => {
+        await updateAsset(editorCtx, 'a-1', { ownerUserId: 'u-new' });
+        expect(mockDb.tenantMembership.count).toHaveBeenCalledWith({
+            where: { tenantId: editorCtx.tenantId, userId: { in: ['u-new'] }, status: 'ACTIVE' },
+        });
     });
 });

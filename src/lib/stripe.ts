@@ -217,6 +217,48 @@ function resolvePlan(sub: Record<string, unknown>): BillingPlan | null {
     return null;
 }
 
+/**
+ * The plan a subscription in this STATUS entitles its tenant to (#3182).
+ *
+ * `resolvePlan` answers which plan a subscription is FOR; it said nothing
+ * about whether the subscription is in force, and `getEffectivePlan()` reads
+ * the `plan` column alone. So a subscription Stripe reported as `incomplete`
+ * (the first payment never went through) or `canceled` was still written as
+ * PRO. Now:
+ *
+ *   * ACTIVE, TRIALING, PAST_DUE — the resolved plan. PAST_DUE keeps it on
+ *     purpose: a failed payment is the separate 14-day grace gate
+ *     (`pastDueStatusPatch` / `assertNotPastDueRestricted`), never a plan.
+ *   * CANCELED — FREE, the same answer `customer.subscription.deleted` gives.
+ *   * INCOMPLETE — `null`, leave the stored plan alone: a NEW subscription's
+ *     tenant is on FREE already, and an incomplete one must not upgrade it.
+ */
+function planInForce(plan: BillingPlan | null, status: BillingStatus): BillingPlan | null {
+    switch (status) {
+        case 'ACTIVE':
+        case 'TRIALING':
+        case 'PAST_DUE':
+            return plan;
+        case 'CANCELED':
+            return 'FREE';
+        default:
+            return null;
+    }
+}
+
+/**
+ * The subscription as Stripe holds it NOW, not as the event described it
+ * (#3182). Stripe does not deliver events in order, so an older
+ * `customer.subscription.updated` arriving after `deleted` re-granted the paid
+ * plan from its stale payload. Re-reading the object makes every subscription
+ * event apply the current state, whatever order they arrive in. A failed read
+ * throws, and the webhook route answers 500 so Stripe retries.
+ */
+async function currentSubscription(subscriptionId: string): Promise<Record<string, unknown>> {
+    const fresh = await getStripe().subscriptions.retrieve(subscriptionId);
+    return fresh as unknown as Record<string, unknown>;
+}
+
 // ─── Subscription period helpers ───
 // Stripe v20 moved current_period_end to subscription items.
 // We extract it from items or fall back to a safe default.
@@ -272,8 +314,9 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
             const subResponse = await stripe.subscriptions.retrieve(subscriptionId);
             const sub = subResponse as unknown as Record<string, unknown>;
 
-            const checkoutPlan = resolvePlan(sub);
-            if (!checkoutPlan) {
+            const checkoutResolved = resolvePlan(sub);
+            const checkoutPlan = planInForce(checkoutResolved, mapStripeStatus(sub.status as string));
+            if (!checkoutResolved) {
                 logger.warn('Could not determine plan from subscription; leaving the stored plan unchanged', {
                     component: 'billing', subscriptionId, stripeCustomerId: customerId,
                 });
@@ -309,16 +352,20 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
 
         case 'customer.subscription.created':
         case 'customer.subscription.updated': {
-            const sub = event.data.object as unknown as Record<string, unknown>;
-            const customerId = sub.customer as string;
+            const described = event.data.object as unknown as Record<string, unknown>;
+            const customerId = described.customer as string;
 
             const billingAccount = await db.billingAccount.findUnique({
                 where: { stripeCustomerId: customerId },
             });
             if (!billingAccount) break;
 
-            const subPlan = resolvePlan(sub);
-            if (!subPlan) {
+            // The CURRENT subscription, not the event's snapshot — events are
+            // not ordered (#3182). See `currentSubscription`.
+            const sub = await currentSubscription(described.id as string);
+            const resolvedPlan = resolvePlan(sub);
+            const subPlan = planInForce(resolvedPlan, mapStripeStatus(sub.status as string));
+            if (!resolvedPlan) {
                 logger.warn('Could not determine plan from subscription; leaving the stored plan unchanged', {
                     component: 'billing', subscriptionId: sub.id as string, stripeCustomerId: customerId,
                 });
