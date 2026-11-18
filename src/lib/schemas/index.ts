@@ -836,6 +836,19 @@ export const BulkDeleteLocationsSchema = z
  * deliberately does not buy stricter validation, and tightening any field here
  * silently changes a response code a client routes on.
  */
+/**
+ * `POST /api/auth/register/verify` (#3206). `password` is what the person who
+ * holds the mailbox chose; when sent, it REPLACES whatever an earlier
+ * `register/start` for the same unverified address stored. Optional so a
+ * client that predates it keeps working, with the old (pre-hijackable)
+ * behaviour.
+ */
+export const AuthRegisterVerifySchema = z.object({
+    email: z.string().min(1).max(320),
+    code: z.string(),
+    password: z.string().min(1).optional(),
+});
+
 export const AuthRegisterStartSchema = z
     .object({
         email: z.string().min(1).max(320).openapi({ example: 'ivan@example.bg' }),

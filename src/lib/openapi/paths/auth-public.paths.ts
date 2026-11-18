@@ -105,6 +105,10 @@ export function registerAuthPublicPaths(registry: OpenAPIRegistry): void {
                     'Exactly 6 digits, as a STRING. It must stay a string end to end: `012345` is a valid code, and a JSON number silently makes it `12345`, which then fails for one user in ten with nothing to show why.',
                 example: '048212',
             }),
+            password: z.string().optional().openapi({
+                description:
+                    'The password chosen at step 1, sent again (#3206). When present it REPLACES any password an earlier `register/start` stored for this unverified address, so the person who proves the mailbox owns the credential. Checked against the password policy and Have I Been Pwned exactly as at step 1. Optional for older clients.',
+            }),
         }),
         success: {
             status: 200,
