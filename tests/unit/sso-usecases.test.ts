@@ -14,7 +14,8 @@ jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         tenant: { findUnique: jest.fn() },
-        tenantMembership: { findUnique: jest.fn(), findMany: jest.fn() },
+        tenantMembership: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+        orgMembership: { count: jest.fn() },
         user: (() => {
             // #1237: the email lookup is `findFirst` over the candidate list
             // (an `in` predicate is not valid on `findUnique`). ONE fn behind
@@ -58,7 +59,8 @@ import {
 
 const mockPrisma = prisma as unknown as {
     tenant: { findUnique: jest.Mock };
-    tenantMembership: { findUnique: jest.Mock; findMany: jest.Mock };
+    tenantMembership: { findUnique: jest.Mock; findMany: jest.Mock; count: jest.Mock };
+    orgMembership: { count: jest.Mock };
     user: { findUnique: jest.Mock; findFirst: jest.Mock };
     tenantIdentityProvider: { findMany: jest.Mock; findFirst: jest.Mock };
     userIdentityLink: {
@@ -71,7 +73,11 @@ const mockPrisma = prisma as unknown as {
 };
 
 beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    // Default reach: the person belongs to no other farm and no org. Tests
+    // about reach override these (#3196).
+    mockPrisma.tenantMembership.count.mockResolvedValue(0);
+    mockPrisma.orgMembership.count.mockResolvedValue(0);
 });
 
 describe('linkExternalIdentity', () => {
@@ -92,6 +98,8 @@ describe('linkExternalIdentity', () => {
             providerId: PROVIDER_ID,
             externalSubject: SUBJECT,
         });
+
+        mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({ status: 'ACTIVE' });
 
         // updateLastLogin mock
         mockPrisma.userIdentityLink.update.mockResolvedValueOnce({});
@@ -133,6 +141,7 @@ describe('linkExternalIdentity', () => {
             tenantId: TENANT_ID,
             userId: 'user-1',
             role: 'EDITOR',
+            status: 'ACTIVE',
         });
 
         // Create link
@@ -189,6 +198,7 @@ describe('linkExternalIdentity', () => {
         mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({
             tenantId: TENANT_ID,
             userId: 'user-1',
+            status: 'ACTIVE',
         });
 
         const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, EMAIL);
@@ -205,6 +215,96 @@ describe('linkExternalIdentity', () => {
         // Try with wrong domain
         const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, 'user@evil.com');
         expect(result).toEqual({ status: 'rejected', reason: 'domain_mismatch' });
+    });
+});
+
+describe('linkExternalIdentity — a tenant IdP may only sign in people wholly inside that tenant (#3196)', () => {
+    const TENANT_ID = 'tenant-1';
+    const PROVIDER_ID = 'provider-1';
+    const SUBJECT = 'external-sub-123';
+    const EMAIL = 'victim@example.bg';
+
+    function providerAllowingAnyDomain() {
+        mockPrisma.tenantIdentityProvider.findFirst.mockResolvedValueOnce({
+            id: PROVIDER_ID, tenantId: TENANT_ID, emailDomains: [], configJson: {},
+        });
+    }
+
+    it.each(['DEACTIVATED', 'REMOVED', 'INVITED'])(
+        'refuses a %s membership — existence of a row is not a membership',
+        async (status) => {
+            providerAllowingAnyDomain();
+            mockPrisma.userIdentityLink.findUnique.mockResolvedValueOnce(null);
+            mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1' });
+            mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({ status });
+
+            const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, EMAIL);
+
+            expect(result).toEqual({ status: 'rejected', reason: 'no_membership' });
+            expect(mockPrisma.userIdentityLink.create).not.toHaveBeenCalled();
+        },
+    );
+
+    it('refuses to link a person who is ACTIVE in another farm — the session would carry that farm', async () => {
+        providerAllowingAnyDomain();
+        mockPrisma.userIdentityLink.findUnique.mockResolvedValueOnce(null);
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1' });
+        mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({ status: 'ACTIVE' });
+        mockPrisma.tenantMembership.count.mockResolvedValueOnce(1);
+
+        const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, EMAIL);
+
+        expect(result).toEqual({ status: 'rejected', reason: 'multi_tenant_account' });
+        expect(mockPrisma.userIdentityLink.create).not.toHaveBeenCalled();
+        // The count must exclude THIS tenant and count only ACTIVE rows, or the
+        // rule refuses everybody (or nobody).
+        expect(mockPrisma.tenantMembership.count).toHaveBeenCalledWith({
+            where: { userId: 'user-1', status: 'ACTIVE', tenantId: { not: TENANT_ID } },
+        });
+    });
+
+    it('refuses to link a person who holds an org membership', async () => {
+        providerAllowingAnyDomain();
+        mockPrisma.userIdentityLink.findUnique.mockResolvedValueOnce(null);
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1' });
+        mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({ status: 'ACTIVE' });
+        mockPrisma.orgMembership.count.mockResolvedValueOnce(1);
+
+        const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, EMAIL);
+
+        expect(result).toEqual({ status: 'rejected', reason: 'multi_tenant_account' });
+    });
+
+    it('re-checks on every sign-in: an EXISTING link stops working once the person joins another farm', async () => {
+        // The JIT back door: an IdP that created the account must not keep a
+        // way into farms the person joins later.
+        providerAllowingAnyDomain();
+        mockPrisma.userIdentityLink.findUnique.mockResolvedValueOnce({
+            id: 'link-1', userId: 'user-1', tenantId: TENANT_ID,
+            providerId: PROVIDER_ID, externalSubject: SUBJECT,
+        });
+        mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({ status: 'ACTIVE' });
+        mockPrisma.tenantMembership.count.mockResolvedValueOnce(2);
+
+        const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, EMAIL);
+
+        expect(result).toEqual({ status: 'rejected', reason: 'multi_tenant_account' });
+        expect(mockPrisma.userIdentityLink.update).not.toHaveBeenCalled();
+    });
+
+    it('control: a person wholly inside the tenant is still linked', async () => {
+        // Without this, "refuse everybody" would satisfy every case above.
+        providerAllowingAnyDomain();
+        mockPrisma.userIdentityLink.findUnique
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(null);
+        mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'user-1' });
+        mockPrisma.tenantMembership.findUnique.mockResolvedValueOnce({ status: 'ACTIVE' });
+        mockPrisma.userIdentityLink.create.mockResolvedValueOnce({ id: 'link-new' });
+
+        const result = await linkExternalIdentity(TENANT_ID, PROVIDER_ID, SUBJECT, EMAIL);
+
+        expect(result).toEqual({ status: 'linked', userId: 'user-1', isNewLink: true });
     });
 });
 

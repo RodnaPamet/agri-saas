@@ -129,6 +129,7 @@ export async function POST(req: NextRequest) {
             subject_conflict: 'Identity conflict detected. Contact your administrator.',
             jit_disabled: 'No matching account found. Contact your administrator.',
             no_email: 'Identity provider did not return an email',
+            multi_tenant_account: 'This account belongs to more than one farm. Sign in with your usual method.',
         };
         ssoLog('warn', 'SAML identity linking rejected', {
             requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
@@ -154,7 +155,9 @@ export async function POST(req: NextRequest) {
         },
     });
 
-    if (!membership) {
+    // ACTIVE only (#3196): a DEACTIVATED or REMOVED row is a person this farm
+    // let go, not one its IdP may sign in.
+    if (!membership || membership.status !== 'ACTIVE') {
         return redirectToLogin(req, 'no_membership');
     }
 
