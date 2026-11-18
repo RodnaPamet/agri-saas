@@ -56,7 +56,11 @@ export async function revokeUserSessions(
             },
         });
 
-        if (!membership) {
+        // ACTIVE only (#3214). `sessionVersion` is platform-wide, so this signs
+        // the person out of EVERY farm they belong to. A REMOVED or deactivated
+        // row is somebody this farm let go, and repeating the revoke against
+        // them signed an ex-member out of their own farms over and over.
+        if (!membership || membership.status !== 'ACTIVE') {
             throw codedNotFound('TARGET_USER_NOT_IN_TENANT', 'That person is not a member of this farm.');
         }
     }
@@ -110,8 +114,10 @@ export async function revokeAllTenantSessions(
     }
 
     // Get all user IDs in this tenant
+    // ACTIVE members only (#3214): the version bump is platform-wide, so a
+    // former member's other farms must not be signed out by this one.
     const memberships = await prisma.tenantMembership.findMany({
-        where: { tenantId: ctx.tenantId },
+        where: { tenantId: ctx.tenantId, status: 'ACTIVE' },
         select: { userId: true },
     });
 
