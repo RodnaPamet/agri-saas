@@ -32,7 +32,11 @@ jest.mock('@/lib/db-context', () => {
             // the concurrent outbox drains that were writing two
             // TASK_STATUS_CHANGED rows for one operator action. The double has
             // to carry every db method the code actually calls.
-            return callback({ $executeRaw: async () => 1 } as unknown);
+            return callback({
+                $executeRaw: async () => 1,
+                // The assignee check (#3208): every id asked about is a member.
+                tenantMembership: { count: async (a: { where: { userId: { in: string[] } } }) => a.where.userId.in.length },
+            } as unknown);
         }),
     };
 });
