@@ -321,6 +321,14 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
     // Resolve tenant context from session's tenantId (verifies membership)
     const ctx = await resolveTenantContext({ tenantId: session.tenantId }, session.userId);
 
+    // The second factor, exactly as `getTenantCtx` asks for it (#3198). This
+    // resolver backs `/api/sso`, `/api/evidence*`, `/api/audit-log` and
+    // `/api/notifications*`, none of which the Edge MFA gate covers (it ranges
+    // over tenant and person paths only), so without this a session holding a
+    // stolen password and no TOTP could register an identity provider on a
+    // farm whose policy is REQUIRED.
+    assertSecondFactorPresented(session, ctx.tenant.id);
+
     // Enrich the observability context with tenant and user info
     mergeRequestContext({
         tenantId: ctx.tenant.id,
@@ -402,6 +410,15 @@ export async function getOrgCtx(
     const orgSlug = (params.orgSlug ?? '').trim();
     if (!orgSlug) {
         throw badRequest('Missing organization slug');
+    }
+
+    // An org spans several farms and drives all of them (portfolio export,
+    // provisioning members into every child tenant), so a session that still
+    // owes a second factor to ANY farm is refused here (#3198). The org layer
+    // has no MFA policy of its own; this is the conservative reading of the
+    // per-farm ones it acts across.
+    if (session.mfaPending === true || (session.mfaPendingTenantIds?.length ?? 0) > 0) {
+        throw codedForbidden('MFA_REQUIRED', 'MFA verification required.');
     }
 
     // Generic external message — same string for both "no such org"
