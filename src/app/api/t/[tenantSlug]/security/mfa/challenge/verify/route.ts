@@ -7,10 +7,9 @@ import {
     checkRateLimitDistributed,
     resetRateLimitDistributed,
 } from '@/lib/security/rate-limit-middleware';
-import { verifyMfaChallenge } from '@/app-layer/usecases/mfa-challenge';
+import { resolveChallengeTenantId, verifyMfaChallenge } from '@/app-layer/usecases/mfa-challenge';
 import { env } from '@/env';
 import { jsonResponse } from '@/lib/api-response';
-import prisma from '@/lib/prisma';
 
 /**
  * POST /api/t/[tenantSlug]/security/mfa/challenge/verify
@@ -53,14 +52,10 @@ export const POST = withApiErrorHandling(async (
     // every correct code was checked against, and stamped on, the wrong farm.
     // An ACTIVE membership is required, so the slug cannot name a farm the
     // caller does not belong to.
-    const membership = await prisma.tenantMembership.findFirst({
-        where: { userId, status: 'ACTIVE', tenant: { slug: tenantSlug, deletedAt: null } },
-        select: { tenantId: true },
-    });
-    if (!membership) {
+    const tenantId = await resolveChallengeTenantId(userId, tenantSlug);
+    if (!tenantId) {
         return jsonResponse({ error: 'No tenant context' }, { status: 400 });
     }
-    const tenantId = membership.tenantId;
 
     // ── Rate Limit Check ────────────────────────────────────────────
     const rateLimitKey = `mfa-challenge:${userId}`;

@@ -10,7 +10,10 @@ jest.mock('@/auth', () => ({
     auth: jest.fn(async () => ({ user: { id: 'u1', tenantId: 't-primary' } })),
 }));
 const findFirst = jest.fn();
-jest.mock('@/lib/prisma', () => ({ __esModule: true, default: { tenantMembership: { findFirst: (...a: unknown[]) => findFirst(...a) } } }));
+jest.mock('@/lib/prisma', () => {
+    const client = { tenantMembership: { findFirst: (...a: unknown[]) => findFirst(...a) } };
+    return { __esModule: true, default: client, prisma: client };
+});
 jest.mock('@/lib/security/rate-limit-middleware', () => ({
     ...jest.requireActual('@/lib/security/rate-limit-middleware'),
     checkRateLimitDistributed: jest.fn(async () => ({ allowed: true, remaining: 4, retryAfterMs: 0 })),
@@ -18,6 +21,9 @@ jest.mock('@/lib/security/rate-limit-middleware', () => ({
 }));
 const verifyMfaChallenge = jest.fn();
 jest.mock('@/app-layer/usecases/mfa-challenge', () => ({
+    // The REAL farm resolution (it reads the mocked prisma above); only the
+    // TOTP check is a double.
+    resolveChallengeTenantId: jest.requireActual('@/app-layer/usecases/mfa-challenge').resolveChallengeTenantId,
     verifyMfaChallenge: (...a: unknown[]) => verifyMfaChallenge(...a),
 }));
 
