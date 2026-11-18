@@ -6,11 +6,17 @@ import { SamlConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
 import {
     buildSamlInstance,
     validateSamlResponse,
-    decodeSamlRelayState,
 } from '@/lib/security/saml-client';
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { env } from '@/env';
+import type { SamlRelayState } from '@/lib/security/saml-client';
+import {
+    SSO_FLOW_COOKIE,
+    SSO_FLOW_COOKIE_CLEAR,
+    openSsoFlow,
+    safeReturnTo,
+} from '@/lib/security/sso-flow-binding';
 import jwt from 'jsonwebtoken';
 
 export const dynamic = 'force-dynamic';
@@ -48,8 +54,13 @@ export async function POST(req: NextRequest) {
         return redirectToLogin(req, 'missing_relay', 'Missing RelayState parameter');
     }
 
-    const relayState = decodeSamlRelayState(relayStateRaw);
-    if (!relayState) {
+    // RelayState is a random token; the flow it names lives in this browser's
+    // HttpOnly cookie, so a SAMLResponse posted from another browser — login
+    // CSRF — is refused (#3205). Expired on the way out: single-use.
+    const jar = await cookies();
+    const relayState = openSsoFlow<SamlRelayState>(jar.get(SSO_FLOW_COOKIE)?.value, relayStateRaw);
+    jar.set(SSO_FLOW_COOKIE, '', SSO_FLOW_COOKIE_CLEAR);
+    if (!relayState || !relayState.tenantSlug || !relayState.providerId) {
         return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
     }
 
@@ -195,7 +206,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Redirect to app ──
-    const returnTo = relayState.returnTo || `/t/${tenant.slug}/dashboard`;
+    const returnTo = safeReturnTo(relayState.returnTo) ?? `/t/${tenant.slug}/dashboard`;
     return NextResponse.redirect(new URL(returnTo, baseUrl));
 }
 

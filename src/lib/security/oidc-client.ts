@@ -47,7 +47,8 @@ export interface OidcStatePayload {
     providerId: string;
     codeVerifier: string;
     nonce: string;
-    returnTo?: string;
+    /** A same-origin relative path, or null (#3205). */
+    returnTo?: string | null;
 }
 
 // ─── Discovery ───────────────────────────────────────────────────────
@@ -111,28 +112,10 @@ export function generateNonce(): string {
     return randomBytes(16).toString('base64url');
 }
 
-// ─── State Encoding ──────────────────────────────────────────────────
-
-/**
- * Encode state payload as a base64url JSON string.
- * This is passed through the IdP redirect and validated on callback.
- */
-export function encodeState(payload: OidcStatePayload): string {
-    return Buffer.from(JSON.stringify(payload)).toString('base64url');
-}
-
-export function decodeState(state: string): OidcStatePayload | null {
-    try {
-        const json = Buffer.from(state, 'base64url').toString('utf8');
-        const parsed = JSON.parse(json);
-        if (!parsed.tenantSlug || !parsed.providerId || !parsed.codeVerifier || !parsed.nonce) {
-            return null;
-        }
-        return parsed as OidcStatePayload;
-    } catch {
-        return null;
-    }
-}
+// The `state` parameter is no longer an encoding of this payload: it is a
+// random token, and the payload (verifier and nonce included) is sealed in a
+// browser-bound cookie by `@/lib/security/sso-flow-binding` (#3205). Carrying
+// the verifier in the URL had made PKCE compare the state with itself.
 
 // ─── Authorization URL ───────────────────────────────────────────────
 

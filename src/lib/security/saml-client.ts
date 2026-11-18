@@ -42,25 +42,13 @@ export interface SamlValidatedResponse {
 export interface SamlRelayState {
     tenantSlug: string;
     providerId: string;
-    returnTo?: string;
+    /** A same-origin relative path, or null (#3205). */
+    returnTo?: string | null;
 }
 
-// ─── RelayState Encoding ─────────────────────────────────────────────
-
-export function encodeSamlRelayState(payload: SamlRelayState): string {
-    return Buffer.from(JSON.stringify(payload)).toString('base64url');
-}
-
-export function decodeSamlRelayState(relayState: string): SamlRelayState | null {
-    try {
-        const json = Buffer.from(relayState, 'base64url').toString('utf8');
-        const parsed = JSON.parse(json);
-        if (!parsed.tenantSlug || !parsed.providerId) return null;
-        return parsed as SamlRelayState;
-    } catch {
-        return null;
-    }
-}
+// RelayState is no longer an encoding of this payload: it is a random token,
+// and the payload is sealed in a browser-bound cookie by
+// `@/lib/security/sso-flow-binding` (#3205).
 
 // ─── SAML Instance Builder ──────────────────────────────────────────
 

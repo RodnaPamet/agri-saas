@@ -8,14 +8,13 @@ import {
     generateCodeVerifier,
     generateCodeChallenge,
     generateNonce,
-    encodeState,
-    decodeState,
     extractIdTokenClaims,
     validateIdTokenNonce,
     buildAuthorizationUrl,
     type OidcStatePayload,
     type OidcDiscoveryDocument,
 } from '../../src/lib/security/oidc-client';
+import { sealSsoFlow, openSsoFlow } from '../../src/lib/security/sso-flow-binding';
 import type { OidcConfig } from '../../src/app-layer/schemas/sso-config.schemas';
 
 describe('OIDC Client', () => {
@@ -69,37 +68,8 @@ describe('OIDC Client', () => {
         });
     });
 
-    // ─── State Encoding/Decoding ─────────────────────────────────────
-
-    describe('State Encoding', () => {
-        const validPayload: OidcStatePayload = {
-            tenantSlug: 'acme-corp',
-            providerId: 'provider-123',
-            codeVerifier: 'verifier-abc',
-            nonce: 'nonce-xyz',
-            returnTo: '/dashboard',
-        };
-
-        it('round-trips a valid state payload', () => {
-            const encoded = encodeState(validPayload);
-            const decoded = decodeState(encoded);
-            expect(decoded).toEqual(validPayload);
-        });
-
-        it('returns null for invalid base64', () => {
-            expect(decodeState('not-valid-base64!!!')).toBeNull();
-        });
-
-        it('returns null for valid base64 but invalid JSON', () => {
-            const encoded = Buffer.from('not json').toString('base64url');
-            expect(decodeState(encoded)).toBeNull();
-        });
-
-        it('returns null for JSON missing required fields', () => {
-            const encoded = Buffer.from(JSON.stringify({ tenantSlug: 'acme' })).toString('base64url');
-            expect(decodeState(encoded)).toBeNull();
-        });
-    });
+    // State sealing moved to sso-flow-binding (#3205) — see
+    // tests/unit/sso-flow-binding.test.ts.
 
     // ─── ID Token Claims ─────────────────────────────────────────────
 
@@ -223,17 +193,18 @@ describe('OIDC Flow Logic', () => {
         expect(true).toBe(true);
     });
 
-    it('state payload carries tenant slug for safe callback resolution', () => {
-        // Verify the state roundtrip includes tenant context
-        const state = encodeState({
+    it('the state sent to the IdP carries no tenant context or verifier (#3205)', () => {
+        const { state, cookie } = sealSsoFlow({
             tenantSlug: 'acme-corp',
             providerId: 'p1',
-            codeVerifier: 'cv',
+            codeVerifier: 'cv-secret',
             nonce: 'n',
         });
-        const decoded = decodeState(state);
-        expect(decoded?.tenantSlug).toBe('acme-corp');
-        expect(decoded?.providerId).toBe('p1');
+        expect(state).not.toContain('acme');
+        expect(Buffer.from(state, 'base64url').toString('utf8')).not.toContain('cv-secret');
+        const opened = openSsoFlow<{ tenantSlug: string; providerId: string }>(cookie, state);
+        expect(opened?.tenantSlug).toBe('acme-corp');
+        expect(opened?.providerId).toBe('p1');
     });
 
     it('PKCE prevents authorization code interception', () => {
