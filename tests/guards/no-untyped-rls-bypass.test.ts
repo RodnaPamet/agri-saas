@@ -297,7 +297,15 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // (`channel-digest`) rather than borrowing `channel-card-generation`:
         // that bypass WRITES channel posts, this one READS a notification
         // population and stamps a send ledger.
-        expect(callers.length).toBeLessThanOrEqual(14);
+        // 14 -> 15 by agrent-ios #678: `usecases/push-subscription.ts`. An iOS
+        // device token names the PHONE, and the previous person's rows for it
+        // sit under their own user and usually under a farm the new person is
+        // not in, so the caller's tenant context cannot see them — and while
+        // they exist the phone keeps receiving the previous person's
+        // notifications. Its own reason (`push-device-token-handover`): a
+        // DELETE bounded by (iOS, this exact token, a different user), which
+        // returns nothing.
+        expect(callers.length).toBeLessThanOrEqual(15);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -424,7 +432,10 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // attributable in `rls-middleware.bypass_invoked`, which logs the
         // caller line: one scope would report both as whichever line opened
         // it.
-        expect(sites.length).toBeLessThanOrEqual(32);
+        // 32 -> 33 by agrent-ios #678: ONE site in `push-subscription.ts`,
+        // the device-token hand-over delete, run BEFORE the tenant
+        // transaction opens rather than inside it (#1191).
+        expect(sites.length).toBeLessThanOrEqual(33);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

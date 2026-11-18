@@ -195,3 +195,50 @@ describeFn('saveApnsRegistration — the APNs environment', () => {
         expect(row?.userAgent).toBe('agrent-ios/2.0');
     });
 });
+
+describeFn('saveApnsRegistration — a device token belongs to one person (agrent-ios #678)', () => {
+    const HANDOVER_TOKEN = 'cd'.repeat(32);
+    const OTHER_TENANT = `t2-${TAG}`;
+    let previousUserId = '';
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        await prisma.tenant.upsert({
+            where: { id: OTHER_TENANT },
+            update: {},
+            create: { id: OTHER_TENANT, name: OTHER_TENANT, slug: `${TAG}-b` },
+        });
+        const email = `prev-${TAG}@example.test`;
+        previousUserId = (await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } })).id;
+    }, 60_000);
+
+    afterAll(async () => {
+        if (!DB_AVAILABLE) return;
+        await prisma.pushSubscription.deleteMany({ where: { deviceToken: HANDOVER_TOKEN } });
+    });
+
+    it('removes the PREVIOUS person’s row for this phone, in a farm the new person is not in', async () => {
+        // The previous person, signed in on this phone under another farm,
+        // whose session ended without «Изход» — so nothing unregistered it.
+        await prisma.pushSubscription.create({
+            data: { tenantId: OTHER_TENANT, userId: previousUserId, platform: 'IOS', deviceToken: HANDOVER_TOKEN },
+        });
+        // Control: the same person on a DIFFERENT phone keeps their row.
+        await prisma.pushSubscription.create({
+            data: { tenantId: OTHER_TENANT, userId: previousUserId, platform: 'IOS', deviceToken: 'ef'.repeat(32) },
+        });
+
+        await saveApnsRegistration(ctx(), { deviceToken: HANDOVER_TOKEN, environment: 'production' });
+
+        const rows = await prisma.pushSubscription.findMany({
+            where: { deviceToken: { in: [HANDOVER_TOKEN, 'ef'.repeat(32)] } },
+            select: { userId: true, deviceToken: true },
+        });
+        expect(rows).toEqual(expect.arrayContaining([
+            { userId, deviceToken: HANDOVER_TOKEN },
+            { userId: previousUserId, deviceToken: 'ef'.repeat(32) },
+        ]));
+        expect(rows).toHaveLength(2);
+        await prisma.pushSubscription.deleteMany({ where: { deviceToken: 'ef'.repeat(32) } });
+    });
+});

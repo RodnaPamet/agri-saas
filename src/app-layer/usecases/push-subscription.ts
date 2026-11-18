@@ -14,6 +14,7 @@ import type { ApnsEnvironment } from '@prisma/client';
  */
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
+import { runWithoutRls } from '@/lib/db/rls-middleware';
 
 export interface SavePushSubscriptionInput {
     endpoint: string;
@@ -95,6 +96,23 @@ export async function saveApnsRegistration(
         environment?: 'development' | 'production';
     },
 ): Promise<{ id: string }> {
+    // ── A device token belongs to ONE person at a time (agrent-ios #678) ──
+    //
+    // The token names the phone. When somebody else signs in on it, their
+    // registration arrives with the same token while the previous person's
+    // rows — under their own user, often under a farm the new person is not in
+    // — are still here, so the phone went on receiving the previous person's
+    // notifications. Their app only unregisters on «Изход»; a session that
+    // expired, was revoked or ended with an account deletion never did. So the
+    // register removes every OTHER person's iOS row for this token, before the
+    // tenant transaction opens (privileged, and outside it so it cannot hold a
+    // second pool connection inside the first — #1191).
+    await runWithoutRls({ reason: 'push-device-token-handover' }, (db) =>
+        db.pushSubscription.deleteMany({
+            where: { platform: 'IOS', deviceToken: input.deviceToken, userId: { not: ctx.userId } },
+        }),
+    );
+
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.pushSubscription.findFirst({
             where: {
