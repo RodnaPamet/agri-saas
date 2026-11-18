@@ -89,7 +89,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // Auth: same `getLegacyCtx` guard the REST list route uses.
     // Throws on unauthenticated; middleware-level guards already
     // handle the 401 surface for the route prefix.
-    const ctx = await getLegacyCtx(req);
+    const ctx = await getLegacyCtx(req, { allowOperator: true }); // the operator's own surface (#3207)
 
     /**
      * 204, deliberately, and it has to be a non-200 of some kind.

@@ -85,6 +85,14 @@ describe('it deletes abandoned signups', () => {
         const where = mockFindMany.mock.calls[0][0].where;
         expect(UNVERIFIED_GRACE_DAYS).toBe(7);
         expect(where.emailVerified).toBeNull();
+        // #3177: only a PASSWORD sign-up with no OAuth/SSO identity and no
+        // lifecycle decision. The row-level proof is the integration suite
+        // `unverified-account-sweep-population`.
+        expect(where.passwordHash).toEqual({ not: null });
+        expect(where.accounts).toEqual({ none: {} });
+        expect(where.identityLinks).toEqual({ none: {} });
+        expect(where.suspendedAt).toBeNull();
+        expect(where.pseudonymisedAt).toBeNull();
         expect(where.createdAt.lt).toEqual(
             new Date(NOW.getTime() - 7 * 24 * 60 * 60 * 1000),
         );

@@ -177,6 +177,31 @@ describeFn('the pending-MFA ticket', () => {
         });
     });
 
+    describe('#3187 — a sessionless ticket reaches the code check', () => {
+        it('a ticket shaped as the Apple route issues it (no session row) reaches the code check', async () => {
+            const verifier = newVerifier();
+            // Exactly what `/api/auth/native/apple` writes: no session, a tenant.
+            const code = await issueAuthCode({
+                userSessionRowId: null,
+                userId: USER_ID,
+                tenantId: `t-3187-${randomUUID()}`,
+                codeChallenge: deriveChallenge(verifier),
+                redirectUri: 'native:mfa',
+                purpose: 'PENDING_MFA',
+            });
+
+            const outcome = await redeemMfaTicket({ rawCode: code.raw, codeVerifier: verifier, totpCode: '000000' })
+                .catch((e: Error) => ({ reachedCodeCheck: e.message }));
+
+            // The ticket was ACCEPTED and the code handed to the verifier, which
+            // refuses because this fixture user has no authenticator enrolled.
+            // Before the fix every such ticket resolved `ticket_invalid` at the
+            // session check, so no code — right or wrong — was ever looked at.
+            expect(outcome).not.toEqual({ ok: false, reason: 'ticket_invalid' });
+            expect(outcome).toEqual({ reachedCodeCheck: expect.stringMatching(/MFA not configured/) });
+        });
+    });
+
     describe('a malformed code costs nothing', () => {
         it.each(['', '12345', '1234567', 'abcdef', '12 34 56'])(
             'refuses %p as malformed and leaves the attempt count alone',

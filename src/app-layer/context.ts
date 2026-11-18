@@ -39,7 +39,20 @@ function getRequestId(req?: NextRequest): string {
  */
 export async function getTenantCtx(
     params: { tenantSlug: string },
-    req?: NextRequest
+    req?: NextRequest,
+    opts: {
+        /**
+         * Resolve even though this farm is still owed a second factor — for the
+         * routes that ENROL one, and nothing else (#3185). Under a REQUIRED
+         * policy a member who has never enrolled is pending, and the enrol
+         * routes resolved through this function, so the gate refused the very
+         * calls that would satisfy it: nobody new could ever enter the farm.
+         * Re-enrolment is still refused by the routes themselves (a verified
+         * enrolment answers 409), so a password alone cannot replace an
+         * existing authenticator. Removing one does NOT pass this.
+         */
+        allowOwedSecondFactor?: boolean;
+    } = {},
 ): Promise<RequestContext> {
     // Try API key auth first if Authorization header is present.
     // The URL's slug is passed and COMPARED — see tryApiKeyAuth.
@@ -81,7 +94,7 @@ export async function getTenantCtx(
     // single cookie read; this half has one, so it is the authoritative
     // answer. A stale or truncated claim can then only cause an unnecessary
     // challenge, never a missed one.
-    assertSecondFactorPresented(session, ctx.tenant.id);
+    if (!opts.allowOwedSecondFactor) assertSecondFactorPresented(session, ctx.tenant.id);
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.
@@ -307,7 +320,17 @@ async function isOperatorOnly(userId: string): Promise<boolean> {
  *
  * This also performs a membership check that legacy routes previously skipped.
  */
-export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
+export async function getLegacyCtx(
+    req?: NextRequest,
+    opts: {
+        /**
+         * The machine operator may use this route (#3207). Their OWN surfaces
+         * only — the notification bell and the live streams — and every other
+         * slug-less route refuses them.
+         */
+        allowOperator?: boolean;
+    } = {},
+): Promise<RequestContext> {
     // NO API-key auth here, deliberately. A legacy route has no `tenantSlug`
     // in its params, so there is nothing to compare the key's tenant against —
     // and an unchecked key context would silently REPLACE the session's tenant
@@ -320,6 +343,24 @@ export async function getLegacyCtx(req?: NextRequest): Promise<RequestContext> {
 
     // Resolve tenant context from session's tenantId (verifies membership)
     const ctx = await resolveTenantContext({ tenantId: session.tenantId }, session.userId);
+
+    // The second factor, exactly as `getTenantCtx` asks for it (#3198). This
+    // resolver backs `/api/sso`, `/api/evidence*`, `/api/audit-log` and
+    // `/api/notifications*`, none of which the Edge MFA gate covers (it ranges
+    // over tenant and person paths only), so without this a session holding a
+    // stolen password and no TOTP could register an identity provider on a
+    // farm whose policy is REQUIRED.
+    assertSecondFactorPresented(session, ctx.tenant.id);
+
+    // The MECHANISATOR lockdown (#3207). It lives at the Edge and only inside
+    // `isTenantPath`, keyed on the slug in the URL — and these routes have no
+    // slug, so the persona whose "real confinement is the middleware lockdown"
+    // could `GET /api/evidence` and read the farm's whole evidence register,
+    // the audit log and the SSO configuration. Refused here unless the route
+    // is one of the operator's own.
+    if (ctx.role === 'MECHANISATOR' && !opts.allowOperator) {
+        throw codedForbidden('OPERATOR_SCOPE', 'This screen is not available to a machine operator.');
+    }
 
     // Enrich the observability context with tenant and user info
     mergeRequestContext({
@@ -402,6 +443,15 @@ export async function getOrgCtx(
     const orgSlug = (params.orgSlug ?? '').trim();
     if (!orgSlug) {
         throw badRequest('Missing organization slug');
+    }
+
+    // An org spans several farms and drives all of them (portfolio export,
+    // provisioning members into every child tenant), so a session that still
+    // owes a second factor to ANY farm is refused here (#3198). The org layer
+    // has no MFA policy of its own; this is the conservative reading of the
+    // per-farm ones it acts across.
+    if (session.mfaPending === true || (session.mfaPendingTenantIds?.length ?? 0) > 0) {
+        throw codedForbidden('MFA_REQUIRED', 'MFA verification required.');
     }
 
     // Generic external message — same string for both "no such org"

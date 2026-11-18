@@ -274,6 +274,41 @@ describeFn('P9.3d — channel auto-hide (#2937)', () => {
         expect(row.autoHiddenAt).toBeNull();
     }, 90_000);
 
+    it('#3210 — does NOT hide on three people from ONE verified farm', async () => {
+        // The attack the bar exists for, by its other route: one verified
+        // farm's member plus two more accounts invited into the same farm.
+        // Three distinct verified REPORTERS, one verified FARM.
+        const farmTenant = await prisma.tenantMembership.findFirstOrThrow({
+            where: { userId: verifiedReporters[0] }, select: { tenantId: true },
+        });
+        const sameFarm: string[] = [];
+        for (let i = 0; i < 2; i += 1) {
+            const id = `u-p93d-samefarm-${randomUUID()}`;
+            await prisma.user.create({
+                data: { id, email: `${id}@example.test`, emailHash: `hash-${id}`, name: 'Invited' },
+            });
+            await prisma.tenantMembership.create({
+                data: { tenantId: farmTenant.tenantId, userId: id, role: 'READER', status: 'ACTIVE' },
+            });
+            sameFarm.push(id);
+        }
+        try {
+            const post = await postToChannel(ctxFor(AUTHOR), channelId, { body: 'една ферма, трима души' });
+            for (const r of [verifiedReporters[0], ...sameFarm]) await reportPost(post.postId, r);
+
+            await runChannelAutoHide();
+
+            const row = await prisma.channelPost.findUniqueOrThrow({
+                where: { id: post.postId }, select: { autoHiddenAt: true },
+            });
+            expect(row.autoHiddenAt).toBeNull();
+        } finally {
+            await prisma.tenantMembership.deleteMany({ where: { userId: { in: sameFarm } } });
+            await prisma.contentReport.deleteMany({ where: { reporterUserId: { in: sameFarm } } });
+            await prisma.user.deleteMany({ where: { id: { in: sameFarm } } });
+        }
+    }, 90_000);
+
     it('does NOT count UNVERIFIED reporters — the whole point of the bar', async () => {
         // Three reports from THREE DISTINCT accounts, none belonging to a
         // verified farm. The distinctness is what gives this teeth: with one

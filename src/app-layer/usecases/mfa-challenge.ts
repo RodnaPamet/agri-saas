@@ -119,3 +119,19 @@ export async function verifyMfaChallenge(
         message: 'MFA verification successful',
     };
 }
+
+/**
+ * The farm a challenge is for: the one named in the URL, if the caller is an
+ * ACTIVE member of it (#3186), else null.
+ *
+ * The verify route read the session's PRIMARY farm, while enrolments and the
+ * pending list are per (user, farm) — so a non-primary farm that requires a
+ * factor could never be cleared.
+ */
+export async function resolveChallengeTenantId(userId: string, tenantSlug: string): Promise<string | null> {
+    const membership = await prisma.tenantMembership.findFirst({
+        where: { userId, status: 'ACTIVE', tenant: { slug: tenantSlug, deletedAt: null } },
+        select: { tenantId: true },
+    });
+    return membership?.tenantId ?? null;
+}

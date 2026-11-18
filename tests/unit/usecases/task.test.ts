@@ -141,7 +141,9 @@ const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenant
 // transaction-scoped advisory lock before reading, to serialise the concurrent
 // outbox drains that were writing two TASK_STATUS_CHANGED rows for one
 // operator action. A bare `{}` is a double too SMALL for the code under test.
-const TX = { $executeRaw: async () => 1 };
+// `tenantMembership.count` answers "every id asked about is a member" — the
+// assignee check (#3208) asks it, and a case about a NON-member overrides it.
+const TX = { $executeRaw: async () => 1, tenantMembership: { count: async (a: { where: { userId: { in: string[] } } }) => a.where.userId.in.length } };
 const mockGetById = WorkItemRepository.getById as jest.MockedFunction<typeof WorkItemRepository.getById>;
 const mockCreate = WorkItemRepository.create as jest.MockedFunction<typeof WorkItemRepository.create>;
 const mockSetStatus = WorkItemRepository.setStatus as jest.MockedFunction<typeof WorkItemRepository.setStatus>;
@@ -336,6 +338,19 @@ describe('assignTask', () => {
         await expect(
             assignTask(makeRequestContext('READER'), 't1', 'user-2'),
         ).rejects.toThrow();
+    });
+
+    it('#3208 — REFUSES an assignee who is not an ACTIVE member of this farm, before writing anything', async () => {
+        const count = jest.fn(async () => 0);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ ...TX, tenantMembership: { count } } as never));
+
+        await expect(assignTask(makeRequestContext('EDITOR'), 't1', 'someone-from-a-channel'))
+            .rejects.toMatchObject({ code: 'TARGET_USER_NOT_IN_TENANT' });
+        expect(mockAssign).not.toHaveBeenCalled();
+        expect(count).toHaveBeenCalledWith({
+            where: expect.objectContaining({ userId: { in: ['someone-from-a-channel'] }, status: 'ACTIVE' }),
+        });
     });
 
     it('throws notFound when repo returns null (cross-tenant id)', async () => {

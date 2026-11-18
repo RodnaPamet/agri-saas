@@ -147,6 +147,52 @@ async function captureSnapshot(
                 break;
             }
             case 'MESSAGE': {
+                // A PRIVATE negotiation, so the DIRECT_MESSAGE arm's rule (#3215).
+                // This read the body for any id from anyone — including the
+                // anonymous route, which has no reporter at all — so an id from
+                // a log, a screenshot or a farm the reporter has since left
+                // copied a private thread into the moderation queue, with the
+                // same `{ id, RECEIVED }` answer either way.
+                if (!reporterUserId) {
+                    captureError = 'SUBJECT_REQUIRES_A_REPORTER';
+                    break;
+                }
+                // Metadata first, without the body: a non-party must never
+                // cause the plaintext to exist.
+                const meta = await prisma.exchangeMessage.findUnique({
+                    where: { id: subjectId },
+                    select: {
+                        thread: {
+                            select: {
+                                inquirerTenantId: true,
+                                inquirerUserId: true,
+                                listing: { select: { sellerTenantId: true, sellerUserId: true } },
+                            },
+                        },
+                    },
+                });
+                if (!meta) {
+                    captureError = 'SUBJECT_NOT_FOUND';
+                    break;
+                }
+                // The thread's audience, as `exchange_thread_audience` draws it:
+                // the two people in the conversation, or an ACTIVE owner or
+                // admin of either farm.
+                const { thread } = meta;
+                const isPerson = reporterUserId === thread.inquirerUserId
+                    || reporterUserId === thread.listing.sellerUserId;
+                const isFarmAdmin = isPerson ? false : (await prisma.tenantMembership.count({
+                    where: {
+                        userId: reporterUserId,
+                        status: 'ACTIVE',
+                        role: { in: ['OWNER', 'ADMIN'] },
+                        tenantId: { in: [thread.inquirerTenantId, thread.listing.sellerTenantId] },
+                    },
+                })) > 0;
+                if (!isPerson && !isFarmAdmin) {
+                    captureError = 'SUBJECT_NOT_VISIBLE_TO_REPORTER';
+                    break;
+                }
                 const row = await prisma.exchangeMessage.findUnique({
                     where: { id: subjectId },
                     select: { body: true, senderTenantId: true, createdAt: true },

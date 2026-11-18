@@ -204,3 +204,27 @@ describe('Epic O-2 — getOrgCtx', () => {
         });
     });
 });
+
+describe('#3198 — the org layer refuses a session that still owes a second factor', () => {
+    it.each([
+        ['the session-wide flag', { mfaPending: true }],
+        ['a pending farm', { mfaPendingTenantIds: ['tenant-b'] }],
+    ])('throws MFA_REQUIRED on %s, before any org lookup', async (_label, pending) => {
+        sessionMock.mockResolvedValue({
+            userId: 'user-1', tenantId: 'tenant-a', role: 'ADMIN', ...pending,
+        });
+
+        await expect(getOrgCtx({ orgSlug: 'acme-org' })).rejects.toMatchObject({ code: 'MFA_REQUIRED' });
+        expect(orgFindUniqueMock).not.toHaveBeenCalled();
+    });
+
+    it('control: an empty pending list is not a refusal', async () => {
+        sessionMock.mockResolvedValue({
+            userId: 'user-1', tenantId: 'tenant-a', role: 'ADMIN', mfaPending: false, mfaPendingTenantIds: [],
+        });
+        orgFindUniqueMock.mockResolvedValue({ id: 'org-1', slug: 'acme-org' });
+        orgMembershipFindUniqueMock.mockResolvedValue({ role: 'ORG_ADMIN' });
+
+        await expect(getOrgCtx({ orgSlug: 'acme-org' })).resolves.toMatchObject({ organizationId: 'org-1' });
+    });
+});

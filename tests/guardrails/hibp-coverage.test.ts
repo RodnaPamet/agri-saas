@@ -117,6 +117,12 @@ const HIBP_REQUIRED_ROUTES: ReadonlyArray<{
         field: 'password',
     },
     {
+        // #3206 — verify now SETS the password the mailbox owner chose, so it
+        // ingests a user-chosen password and must screen it like step 1.
+        file: 'src/app/api/auth/register/verify/route.ts',
+        field: 'password',
+    },
+    {
         file: 'src/app/api/auth/change-password/route.ts',
         field: 'newPassword',
     },
@@ -461,6 +467,7 @@ describe('HIBP coverage guardrail — structural scan', () => {
             // called HIBP; it now declares its password field in Zod, so the
             // detector can see it and the curated entry above has teeth.
             'src/app/api/auth/register/start/route.ts': ['password'],
+            'src/app/api/auth/register/verify/route.ts': ['password'],
             'src/app/api/auth/change-password/route.ts': ['currentPassword', 'newPassword'],
             'src/app/api/auth/reset-password/route.ts': ['newPassword'],
         });
@@ -490,6 +497,7 @@ describe('HIBP coverage guardrail — structural scan', () => {
             // proving it, because this one cannot be deleted without somebody
             // noticing the signup route changed.
             'src/app/api/auth/register/start/route.ts -> src/lib/schemas/index.ts',
+            'src/app/api/auth/register/verify/route.ts -> src/lib/schemas/index.ts',
             // #3080 moved the two password-management bodies into
             // `@/lib/schemas` as well, because `request-body-declared-once`
             // caps dual declarations at ZERO and these were the last ones —

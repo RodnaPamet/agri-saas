@@ -6,11 +6,17 @@ import {
     generateCodeVerifier,
     generateCodeChallenge,
     generateNonce,
-    encodeState,
     buildAuthorizationUrl,
 } from '@/lib/security/oidc-client';
 import { ssoLog, generateSsoRequestId, redactSsoUrl } from '@/lib/security/sso-logging';
 import { env } from '@/env';
+import { secureCookiesEnabled } from '@/lib/auth/secure-cookies';
+import {
+    SSO_FLOW_COOKIE,
+    safeReturnTo,
+    sealSsoFlow,
+    ssoFlowCookieOptions,
+} from '@/lib/security/sso-flow-binding';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import {
     badRequest,
@@ -36,7 +42,9 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const { searchParams } = req.nextUrl;
     const tenantSlug = searchParams.get('tenant');
     const providerId = searchParams.get('provider');
-    const returnTo = searchParams.get('returnTo') || '/';
+    // Same-origin relative paths only (#3205); anything else is dropped and
+    // the callback lands on the farm's dashboard.
+    const returnTo = safeReturnTo(searchParams.get('returnTo'));
 
     // ── Validate params ──
     if (!tenantSlug || !providerId) {
@@ -105,7 +113,9 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const codeChallenge = generateCodeChallenge(codeVerifier);
     const nonce = generateNonce();
 
-    const state = encodeState({
+    // The IdP sees a random token; the verifier, nonce and destination stay in
+    // an HttpOnly cookie bound to this browser (#3205).
+    const { state, cookie: flowCookie } = sealSsoFlow({
         tenantSlug: tenant.slug,
         providerId: provider.id,
         codeVerifier,
@@ -132,5 +142,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         meta: { authUrl: redactSsoUrl(authUrl) },
     });
 
-    return NextResponse.redirect(authUrl);
+    const response = NextResponse.redirect(authUrl);
+    response.cookies.set(
+        SSO_FLOW_COOKIE,
+        flowCookie,
+        ssoFlowCookieOptions({ crossSitePost: false, secure: secureCookiesEnabled() }),
+    );
+    return response;
 });

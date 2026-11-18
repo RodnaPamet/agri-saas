@@ -165,6 +165,22 @@ describeFn('P9.6 — channel media (#2940)', () => {
             expect(mine?.deleted).toBe(false);
         }, 60_000);
 
+        it('#3209 — the caption is sanitised like a post body, and an over-long one is refused before any work', async () => {
+            const posted = await postChannelPhoto(ctxFor(MEMBER), channelId, {
+                bytes: await jpegWithExif(),
+                body: '  <b>Нивата</b> днес<script>alert(1)</script>  ',
+            });
+            const row = await prisma.channelPost.findUniqueOrThrow({ where: { id: posted.postId }, select: { body: true } });
+            expect(row.body).toBe('Нивата днес');
+
+            const before = await prisma.channelPost.count({ where: { channelId } });
+            await expect(postChannelPhoto(ctxFor(MEMBER), channelId, {
+                bytes: await jpegWithExif(),
+                body: 'а'.repeat(4001),
+            })).rejects.toMatchObject({ code: 'CHANNEL_POST_TOO_LONG' });
+            expect(await prisma.channelPost.count({ where: { channelId } })).toBe(before);
+        }, 60_000);
+
         it('the stored photograph has NO metadata — the strip ran', async () => {
             const original = await jpegWithExif();
             const posted = await postChannelPhoto(ctxFor(MEMBER), channelId, { bytes: original });

@@ -16,6 +16,7 @@ import type { PrismaClient } from '@prisma/client';
 import { buildOutboundHeaders, computeBatchId } from '../events/webhook-headers';
 import { enqueue } from '../jobs/queue';
 import { checkWebhookUrl, assertPublicAddress } from './webhook-safety';
+import { fetchPublicUrl, BlockedRequestError } from '@/lib/security/safe-fetch';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { TERMINAL_WORK_ITEM_STATUSES, isCompletedStatus } from '../domain/work-item-status';
 import type {
@@ -273,22 +274,33 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
             ...(cfg.headers ?? {}),
         };
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+    // Through `fetchPublicUrl`, never bare `fetch` (#3203). The checks above
+    // validate the URL the RULE names; a bare `fetch` then follows redirects by
+    // default, so the RESPONDER chose where the request landed — a `307` to the
+    // GCE metadata endpoint or a compose-network service (`redis`, `ollama`,
+    // `127.0.0.1:3000`) was followed with the method, the body and the rule's
+    // custom headers intact, and the final status came back in the execution
+    // summary as a probe. `maxRedirects: 0` because a signed body may carry a
+    // secret header (the OIDC token-exchange precedent): a redirect is refused,
+    // not re-checked and followed.
     try {
-        const res = await fetch(cfg.url, {
+        const res = await fetchPublicUrl(cfg.url, {
             method: cfg.method ?? 'POST',
             headers,
             body,
-            signal: controller.signal,
+            timeoutMs: WEBHOOK_TIMEOUT_MS,
+            maxRedirects: 0,
         });
         return {
             ok: res.ok,
             summary: `Webhook ${cfg.url} → ${res.status}`,
             detail: { status: res.status },
         };
-    } finally {
-        clearTimeout(timer);
+    } catch (err) {
+        if (err instanceof BlockedRequestError) {
+            return { ok: false, summary: `Webhook blocked: ${err.message}` };
+        }
+        throw err;
     }
 }
 

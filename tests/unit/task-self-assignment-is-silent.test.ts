@@ -104,6 +104,8 @@ function txWithUsers() {
             findUnique: jest.fn()
                 .mockResolvedValue({ email: 'a@b.test', name: 'A', uiLanguage: 'bg' }),
         },
+        // Every assignee asked about is a member (#3208's check).
+        tenantMembership: { count: async (a: { where: { userId: { in: string[] } } }) => a.where.userId.in.length },
     };
 }
 

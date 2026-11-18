@@ -52,6 +52,7 @@ import { scanOrRefuse } from '@/lib/upload/ingest';
 import { runInUserContext } from '@/lib/db-context';
 import { publishPersonEvent } from '@/lib/notifications/notification-bus';
 import type { UserContext } from '@/app-layer/types';
+import { assertMayWriteToConversation, cleanCaption } from './direct-messages';
 
 /**
  * Cap on what a caller may upload, mirroring `AVATAR_UPLOAD_MAX_BYTES`.
@@ -108,6 +109,9 @@ export async function sendDirectPhoto(
     // not have to learn that a photograph in a conversation reports a size
     // limit differently from every other upload in the product — that is the
     // nav-vocabulary argument applied to error codes.
+    // Cleaned (sanitised, capped) before any work is done on the bytes (#3209).
+    const caption = cleanCaption(input.body);
+
     if (input.bytes.byteLength === 0) {
         throw codedBadRequest('FILE_EMPTY', 'That file is empty.');
     }
@@ -141,6 +145,12 @@ export async function sendDirectPhoto(
         // hold back.
         throw codedBadRequest('DM_PHOTO_NEEDS_ACCEPTED', 'Not accepted yet.');
     }
+
+    // The person block, which `sendDirectMessage` checks and this path did not
+    // (#3202): a blocked person could still deliver photos, with captions, to
+    // the person who blocked them. Before the scan and the storage write, so a
+    // refused photo costs neither.
+    await assertMayWriteToConversation(ctx, input.conversationId, notThere);
 
     // SCAN FIRST, on the ORIGINAL bytes — the order is the whole safety
     // argument and I had it backwards in the first draft.
@@ -193,7 +203,7 @@ export async function sendDirectPhoto(
             data: {
                 conversationId: input.conversationId,
                 senderUserId: ctx.userId,
-                body: input.body?.trim() ? input.body.trim() : null,
+                body: caption,
                 attachmentKey: key,
                 // The SNIFFED type, which is what the bytes are after
                 // stripping — the helper preserves format.

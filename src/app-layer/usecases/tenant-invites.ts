@@ -623,6 +623,19 @@ async function finalizeInviteRedemption(
     userId: string,
 ): Promise<RedeemResult> {
     const txResult = await prisma.$transaction(async (tx) => {
+        // The seat limit, AT REDEMPTION (#3183). It was checked only when an
+        // invite was created, against ACTIVE memberships, so a 3-seat farm
+        // could issue thirty invites while it still had one member and then
+        // redeem all thirty. Re-checked here, inside the transaction that
+        // writes the membership, unless this person is already an ACTIVE
+        // member (a re-redemption adds no seat).
+        const existing = await tx.tenantMembership.findUnique({
+            where: { tenantId_userId: { tenantId: invite.tenantId, userId } },
+            select: { status: true },
+        });
+        if (existing?.status !== 'ACTIVE') {
+            await assertWithinLimit({ tenantId: invite.tenantId }, 'user', tx);
+        }
         const membership = await tx.tenantMembership.upsert({
             where: {
                 tenantId_userId: {

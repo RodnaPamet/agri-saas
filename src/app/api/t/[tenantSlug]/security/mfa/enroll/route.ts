@@ -15,7 +15,9 @@ export const GET = withApiErrorHandling(async (
     { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
 ) => {
     const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+    // Reading one's own status is part of enrolling (#3185). DELETE keeps the
+    // requirement: removing a factor needs the factor.
+    const ctx = await getTenantCtx(params, req, { allowOwedSecondFactor: true });
     const status = await getUserMfaStatus(ctx);
 
     return jsonResponse(status);

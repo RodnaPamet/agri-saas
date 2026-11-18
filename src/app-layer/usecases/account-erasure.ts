@@ -53,6 +53,8 @@ import { logger } from '@/lib/observability/logger';
 import { PERSONAL_DATA_REGISTRY } from '@/lib/privacy/personal-data-registry';
 import type { DeletionInitiator } from '@prisma/client';
 import { codedForbidden } from '@/lib/errors/types';
+import { getStorageProvider } from '@/lib/storage';
+import { avatarStorageKey } from '@/lib/account/avatar';
 
 /** How long a person has to change their mind. Owner ruling: 30 days. */
 export const DELETION_GRACE_DAYS = 30;
@@ -231,11 +233,22 @@ export async function eraseAccount(userId: string): Promise<ErasureOutcome> {
         // the one asserting the hash is gone — it received a hash of the
         // tombstone instead of null, which is the right OUTCOME by a mechanism
         // I had wrong.
+        // What the registry cannot reach (#3211). `UserIdentityLink` is
+        // tenant-scoped, so it is outside the TENANTLESS registry above, and it
+        // carries the original e-mail (`emailAtLinkTime`) and lets that farm's
+        // IdP keep resolving to this row — the `Account` entry's own reason.
+        await tx.userIdentityLink.deleteMany({ where: { userId } });
+
         await tx.user.update({
             where: { id: userId },
             data: {
                 email: `${pseudonym}@erased.invalid`,
                 name: null,
+                // The profile picture's URL and the credential, which survived
+                // until #3211: the row is kept on purpose (Art 17(3)(b)), the
+                // person's identifying content and ability to sign in are not.
+                image: null,
+                passwordHash: null,
                 deletionRequestedAt: null,
                 pseudonymisedAt: new Date(),
                 // Any live credential is already gone with `Account` and
@@ -246,6 +259,21 @@ export async function eraseAccount(userId: string): Promise<ErasureOutcome> {
 
         return true;
     });
+
+    // The avatar BYTES, after the commit (#3211) — a storage delete cannot be
+    // rolled back. `GET /api/account/avatar/{userId}` served the picture to any
+    // signed-in user after the account was reported erased. Best effort: a
+    // failure here leaves an object nothing links to any more (`image` is
+    // NULL), and is logged rather than failing a completed erasure.
+    if (applied) {
+        try {
+            await getStorageProvider().delete(avatarStorageKey(userId));
+        } catch (err) {
+            logger.warn('account-erasure.avatar_delete_failed', {
+                component: 'account-erasure', userId, error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
 
     logger.info('account-erasure.completed', {
         component: 'account-erasure',

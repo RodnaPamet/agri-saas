@@ -132,7 +132,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
     // The delivery context. See the docblock's second axis for why a tenant is
     // required at all on a person-scoped path.
-    const ctx = await getLegacyCtx(req);
+    const ctx = await getLegacyCtx(req, { allowOperator: true }); // the operator's own surface (#3207)
 
     // 204 rather than 404 or 403, matching the notifications stream: per the
     // EventSource specification a non-200 fails the connection WITHOUT a

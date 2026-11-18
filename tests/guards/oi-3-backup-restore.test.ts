@@ -166,7 +166,11 @@ describe('OI-3 — restore-test.yml wiring', () => {
         //
         // `v[2-9]\d*` still refuses a downgrade to v1, whose input surface
         // predates the WIF flow this workflow relies on.
-        expect(src).toMatch(/google-github-actions\/auth@v[2-9]\d*/);
+        //
+        // Since #3189 the reference is a commit SHA with the version in a
+        // trailing comment (`@<sha> # v3`), which Dependabot maintains; the
+        // version floor is read from that comment.
+        expect(src).toMatch(/google-github-actions\/auth@(?:v[2-9]\d*|[0-9a-f]{40} # v[2-9]\d*)/);
 
         expect(src).toMatch(/workload_identity_provider/);
         expect(wf.permissions['id-token']).toBe('write');

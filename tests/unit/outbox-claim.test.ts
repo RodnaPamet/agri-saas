@@ -29,12 +29,17 @@ jest.mock('@/lib/prisma', () => ({
     prisma: mockPrisma,
     default: mockPrisma,
 }));
-jest.mock('@/lib/mailer', () => ({ sendEmail: jest.fn() }));
+// ONE fn behind both names: the drain sends through `sendEmailOrFail` (#3181)
+// and this suite asserts on the `sendEmail` import.
+jest.mock('@/lib/mailer', () => {
+    const send = jest.fn();
+    return { sendEmail: send, sendEmailOrFail: send };
+});
 jest.mock('@/app-layer/notifications/settings', () => ({
     getTenantNotificationSettings: jest.fn(),
 }));
 
-import { processOutbox } from '@/app-layer/notifications/processOutbox';
+import { processOutbox, OUTBOX_CLAIM_LEASE_MS } from '@/app-layer/notifications/processOutbox';
 import { sendEmail } from '@/lib/mailer';
 import {
     getTenantNotificationSettings,
@@ -118,10 +123,26 @@ describe('the outbox claim', () => {
 
         await processOutbox({ maxAttempts: 5 });
 
-        const where = mockPrisma.notificationOutbox.updateMany.mock.calls[0][0].where;
-        expect(where).toEqual({ id: 'row-1', status: 'PENDING', attempts: 2 });
-        expect(mockPrisma.notificationOutbox.updateMany.mock.calls[0][0].data)
-            .toEqual({ attempts: 3 });
+        const { where, data } = mockPrisma.notificationOutbox.updateMany.mock.calls[0][0];
+        expect(where).toEqual({ id: 'row-1', status: 'PENDING', attempts: 2, sendAfter: { lte: expect.any(Date) } });
+        expect(data).toEqual({ attempts: 3, sendAfter: expect.any(Date) });
+    });
+
+    it('#3179 — the claim is a LEASE: it moves sendAfter forward, out of every other runner’s read', async () => {
+        // A second runner reads `sendAfter <= now`. Before the lease, a row
+        // mid-send was still PENDING with `sendAfter` in the past, so a runner
+        // whose read landed then claimed it again on the bumped attempts and
+        // sent a duplicate.
+        mockPrisma.notificationOutbox.findMany.mockResolvedValue([row()]);
+        mockPrisma.notificationOutbox.updateMany.mockResolvedValue({ count: 1 });
+        const before = Date.now();
+
+        await processOutbox();
+
+        const { where, data } = mockPrisma.notificationOutbox.updateMany.mock.calls[0][0];
+        expect(data.sendAfter.getTime()).toBeGreaterThanOrEqual(before + OUTBOX_CLAIM_LEASE_MS);
+        // And the claim itself refuses a row whose lease has not ended.
+        expect(where.sendAfter.lte.getTime()).toBeLessThan(data.sendAfter.getTime());
     });
 
     it('spends exactly one attempt per send — the claim, not the claim plus the mark', async () => {

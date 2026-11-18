@@ -181,6 +181,29 @@ export async function getTask(ctx: RequestContext, taskId: string) {
 // ─── Create ───
 
 /**
+ * Refuse a person id that is not an ACTIVE member of this farm (#3208).
+ *
+ * `assigneeUserId` and `reviewerUserId` arrive from the request as bare
+ * strings. They were stored as given, the assign response included the
+ * referenced person's `name` and `email`, and the assignee was e-mailed — so
+ * an editor could take a user id the social surfaces expose on purpose (a
+ * channel author, an exchange counterparty), assign a task to it, read that
+ * person's address off the response and send them mail from a farm they have
+ * no relation to. Read through the caller's tenant transaction, so RLS scopes
+ * it too. `null` (unassign) is always allowed.
+ */
+async function assertActiveMembers(db: PrismaTx, ctx: RequestContext, ...userIds: Array<string | null | undefined>) {
+    const ids = [...new Set(userIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+    if (ids.length === 0) return;
+    const found = await db.tenantMembership.count({
+        where: { tenantId: ctx.tenantId, userId: { in: ids }, status: 'ACTIVE' },
+    });
+    if (found !== ids.length) {
+        throw codedNotFound('TARGET_USER_NOT_IN_TENANT', 'That person is not a member of this farm.');
+    }
+}
+
+/**
  * `suppressAssignmentNotification` (#1740): skip the "you have been assigned"
  * email and bell.
  *
@@ -216,6 +239,7 @@ export async function createTask(ctx: RequestContext, input: {
 }) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, input.assigneeUserId, input.reviewerUserId);
         // Validate metadataJson on write
         if (input.metadataJson !== undefined) {
             input.metadataJson = validateTaskMetadata(input.metadataJson);
@@ -298,6 +322,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
         // rather than a forbidden — which is the existing behaviour and the
         // right one: it discloses nothing about another farm's tasks.
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
+        await assertActiveMembers(db, ctx, patch.reviewerUserId);
         if (!existing) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         assertCanEditTask(ctx, existing);
 
@@ -718,6 +743,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
 export async function assignTask(ctx: RequestContext, taskId: string, assigneeUserId: string | null) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, assigneeUserId);
         const task = await WorkItemRepository.assign(db, ctx, taskId, assigneeUserId);
         if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         await logEvent(db, ctx, {
@@ -2103,6 +2129,7 @@ export async function getTaskActivity(ctx: RequestContext, taskId: string) {
 export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], assigneeUserId: string | null) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, assigneeUserId);
         const result = await WorkItemRepository.bulkAssign(db, ctx, taskIds, assigneeUserId);
         for (const id of taskIds) {
             await logEvent(db, ctx, {

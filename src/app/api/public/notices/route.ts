@@ -86,7 +86,9 @@ export const POST = withApiErrorHandling(
         // here would confirm that `DIRECT_MESSAGE` is a real kind which exists
         // and is merely not accepted on this route, which is the same
         // disclosure one step removed. The signed-in route accepts it.
-        if (parsed.data.subjectKind === 'DIRECT_MESSAGE') {
+        // `MESSAGE` (an exchange negotiation) is private for the same reason
+        // and needs a reporter to check against (#3215).
+        if (parsed.data.subjectKind === 'DIRECT_MESSAGE' || parsed.data.subjectKind === 'MESSAGE') {
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
 

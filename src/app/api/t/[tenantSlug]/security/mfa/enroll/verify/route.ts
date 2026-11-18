@@ -25,7 +25,8 @@ export const POST = withApiErrorHandling(withValidatedBody(
     VerifyMfaInput,
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }, body) => {
         const params = await paramsPromise;
-        const ctx = await getTenantCtx(params, req);
+        // The enrolment a REQUIRED policy demands (#3185).
+        const ctx = await getTenantCtx(params, req, { allowOwedSecondFactor: true });
 
         // Rate limit check
         const rateLimitKey = `mfa-enroll:${ctx.userId}`;

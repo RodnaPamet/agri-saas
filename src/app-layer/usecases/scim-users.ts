@@ -40,6 +40,9 @@
  * 4. Historical records (audit, evidence, tasks) remain intact after deprovisioning
  * 5. All mutations emit structured audit events (SCIM_USER_*)
  */
+import { ScimAuthError } from '@/lib/scim/auth';
+import { reachesBeyondTenant } from '@/lib/auth/tenant-reach';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
@@ -265,9 +268,12 @@ export async function scimCreateUser(
             where: { tenantId_userId: { tenantId: ctx.tenantId, userId: existingUser.id } },
         });
 
-        if (existingMembership) {
+        // A REMOVED row is somebody who left this farm (or was removed from
+        // it). Bringing them back is the same act as adding a stranger, so it
+        // takes the same refusal below rather than a silent reactivation.
+        if (existingMembership && existingMembership.status !== 'REMOVED') {
             // ── Idempotent: already exists ──
-            if (existingMembership.status === 'DEACTIVATED' || existingMembership.status === 'REMOVED') {
+            if (existingMembership.status === 'DEACTIVATED') {
                 // Reactivate
                 await prisma.tenantMembership.update({
                     where: { id: existingMembership.id },
@@ -288,28 +294,41 @@ export async function scimCreateUser(
             };
         }
 
-        // User exists but no membership — add to tenant
-        const membership = await prisma.tenantMembership.create({
-            data: {
-                tenantId: ctx.tenantId,
-                userId: existingUser.id,
-                role,
-                status: input.active === false ? 'DEACTIVATED' : 'ACTIVE',
-            },
+        // The person has an account and is not (or no longer) in this farm.
+        //
+        // This used to CREATE an ACTIVE membership for them: an existing
+        // person — who may own other farms — was joined to whatever tenant
+        // minted the SCIM token, without being asked or told (#3197). SCIM
+        // tokens are minted by a tenant ADMIN, and every self-serve sign-up is
+        // the OWNER of its own farm, so "a membership row" was a thing any
+        // stranger could manufacture; combined with a tenant-controlled SSO IdP
+        // it was a sign-in as that person (#3196).
+        //
+        // Joining an existing account to a farm is the person's decision, and
+        // this repo already has the mechanism that asks them: an invite. RFC
+        // 7644 §3.3 gives a provisioning client a defined answer for "this
+        // userName is taken" — 409 with scimType `uniqueness` — which IdP
+        // connectors surface to their operator rather than retrying.
+        logger.warn('SCIM create refused for an existing account', {
+            component: 'scim', tenantId: ctx.tenantId, reason: 'existing_account',
         });
-
-        await emitScimAudit(ctx.tenantId, 'SCIM_USER_CREATED', existingUser.id, {
-            email, role, existingUser: true, tokenLabel: ctx.tokenLabel,
+        await emitScimAudit(ctx.tenantId, 'SCIM_USER_CREATE_REFUSED', existingUser.id, {
+            reason: 'existing_account', tokenLabel: ctx.tokenLabel,
         });
-
-        return {
-            user: toScimUser(existingUser, membership, baseUrl),
-            created: true,
-        };
+        throw new ScimAuthError(
+            'A user with this userName already exists outside this tenant. Invite them from the members screen instead.',
+            409,
+            'uniqueness',
+        );
     }
 
     // Create new user + membership in transaction
     const result = await prisma.$transaction(async (tx) => {
+        // SCIM provisioning counts against the seat limit too (#3183); it
+        // created ACTIVE memberships with no check at all.
+        if (input.active !== false) {
+            await assertWithinLimit({ tenantId: ctx.tenantId }, 'user', tx);
+        }
         const newUser = await tx.user.create({
             data: { email, emailHash: hashForLookup(email), name: displayName },
         });
@@ -356,8 +375,10 @@ export async function scimPatchUser(
     operations: ScimPatchOperation[],
     baseUrl: string
 ): Promise<ScimUser | null> {
+    // Not REMOVED: a removed person is outside this farm, and `active: true`
+    // here would otherwise rejoin them without asking (#3197).
     const membership = await prisma.tenantMembership.findFirst({
-        where: { tenantId: ctx.tenantId, userId },
+        where: { tenantId: ctx.tenantId, userId, status: { not: 'REMOVED' } },
         include: { user: true },
     });
 
@@ -430,8 +451,11 @@ export async function scimPatchUser(
         }
     }
 
-    // Apply user profile updates
-    if (Object.keys(userUpdates).length > 0) {
+    // Apply user profile updates — only to a person this tenant wholly governs.
+    // `User.name` is platform-wide: it is the name every other farm, channel
+    // and conversation shows, so a SCIM token from one farm must not rename a
+    // person who belongs to others (#3197).
+    if (Object.keys(userUpdates).length > 0 && !(await reachesBeyondTenant(userId, ctx.tenantId))) {
         await prisma.user.update({
             where: { id: userId },
             data: userUpdates,
@@ -485,7 +509,7 @@ export async function scimPutUser(
     baseUrl: string
 ): Promise<ScimUser | null> {
     const membership = await prisma.tenantMembership.findFirst({
-        where: { tenantId: ctx.tenantId, userId },
+        where: { tenantId: ctx.tenantId, userId, status: { not: 'REMOVED' } },
     });
 
     if (!membership) return null;
@@ -495,10 +519,14 @@ export async function scimPutUser(
         || [input.name?.givenName, input.name?.familyName].filter(Boolean).join(' ')
         || input.userName.split('@')[0];
 
-    await prisma.user.update({
-        where: { id: userId },
-        data: { name: displayName },
-    });
+    // See the PATCH path: the platform-wide name is this tenant's to set only
+    // when the person's access is wholly inside it (#3197).
+    if (!(await reachesBeyondTenant(userId, ctx.tenantId))) {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { name: displayName },
+        });
+    }
 
     const newStatus = input.active === false ? 'DEACTIVATED' : 'ACTIVE';
     if (membership.status !== newStatus) {

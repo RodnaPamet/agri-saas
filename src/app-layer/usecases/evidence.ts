@@ -670,7 +670,7 @@ export async function uploadEvidenceFile(
         }
 
         // ─── SHA-256 Dedup ───
-        const existingFile = await FileRepository.findBySha256(db, ctx.tenantId, writeResult.sha256);
+        const existingFile = await FileRepository.findBySha256(db, ctx.tenantId, writeResult.sha256, 'evidence');
         let fileRecordId: string;
         let deduplicated = false;
 

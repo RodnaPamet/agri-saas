@@ -680,7 +680,7 @@ export async function uploadLogEntryPhoto(
 
         // Reuse an existing identical FileRecord if one is already stored
         // (SHA-256 dedup), else create + mark stored.
-        const existingFile = await FileRepository.findBySha256(db, ctx.tenantId, writeResult.sha256);
+        const existingFile = await FileRepository.findBySha256(db, ctx.tenantId, writeResult.sha256, 'logEntryFiles');
         let fileRecordId: string;
         if (existingFile && existingFile.status === 'STORED') {
             fileRecordId = existingFile.id;

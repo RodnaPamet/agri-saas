@@ -65,7 +65,7 @@ import { randomUUID } from 'crypto';
 
 import type { ChannelAutoHidePayload, JobRunResult } from './types';
 
-import { verifiedFarmMembers } from '@/lib/farm-identity/verification-status';
+import { distinctVerifiedFarms, verifiedFarmsByMember } from '@/lib/farm-identity/verification-status';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { queueStatementForAction } from '@/app-layer/usecases/statement-queue';
@@ -111,7 +111,11 @@ export async function runChannelAutoHide(
     // post whose notices were all triaged has been decided on, and counting
     // them again would re-hide something a moderator left up.
     const open = await prisma.contentReport.findMany({
-        where: { subjectKind: 'CHANNEL_POST', status: 'RECEIVED' },
+        // Signed-in notices only (#3184). An anonymous notice can never count
+        // toward the threshold, and the window is oldest-first with nothing
+        // draining it, so 150 anonymous notices — fifteen minutes from one
+        // IP — filled it permanently and the rule never saw a newer notice.
+        where: { subjectKind: 'CHANNEL_POST', status: 'RECEIVED', reporterUserId: { not: null } },
         select: { id: true, subjectId: true, reporterUserId: true },
         take: take * AUTO_HIDE_THRESHOLD,
         orderBy: { createdAt: 'asc' },
@@ -132,8 +136,8 @@ export async function runChannelAutoHide(
     }
 
     const allReporters = [...new Set(open.flatMap((r) => (r.reporterUserId ? [r.reporterUserId] : [])))];
-    const verified = await verifiedFarmMembers(allReporters);
-    verifiedReporters = verified.size;
+    const farmsByMember = await verifiedFarmsByMember(allReporters);
+    verifiedReporters = farmsByMember.size;
 
     // WHICH POSTS QUALIFY is decided with no query at all — the threshold is
     // pure set arithmetic over rows already read. Splitting the decision from
@@ -146,7 +150,10 @@ export async function runChannelAutoHide(
         // DISTINCT verified reporters. Three notices from one person is one
         // person's opinion, and `@@unique` does not stop somebody filing twice
         // — the Set is what makes the threshold mean three farms.
-        const count = [...entry.reporters].filter((id) => verified.has(id)).length;
+        // Distinct verified FARMS, as the threshold is documented (#3210) —
+        // not distinct people who belong to one. Counting people let one
+        // verified farm and two invited accounts hide any post.
+        const count = distinctVerifiedFarms(entry.reporters, farmsByMember);
         if (count < AUTO_HIDE_THRESHOLD) {
             skipped += 1;
             continue;

@@ -306,7 +306,8 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'softened (#1447).' +
             '\n\nRefusals that live in the usecase rather than the route: promoting or demoting yourself, and removing ' +
             'the role from the last active OWNER/ADMIN. A farm must never become unadministrable.' +
-            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each of these is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. The English message says which wording applies; the param says which state was required. Here `requiredStatus` is `ACTIVE`: a deactivated member’s role is not editable, and a client should refresh rather than retry.',
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each of these is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. The English message says which wording applies; the param says which state was required. Here `requiredStatus` is `ACTIVE`: a deactivated member’s role is not editable, and a client should refresh rather than retry.' +
+            '\n\n**`CUSTOM_ROLE_ON_OWNER`** (403) — `customRoleId` was set on an OWNER membership. A custom role replaces the membership\'s permissions and can never carry OWNER-only ones, so it would demote the owner; change `role` first.',
         tags: ['Admin'],
         params: MembershipParams,
         body: UpdateAdminMemberSchema,

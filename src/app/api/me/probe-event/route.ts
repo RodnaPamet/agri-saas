@@ -66,7 +66,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     // The delivery context. The bus channel is per (farm, person), so a probe
     // addresses the caller's ACTIVE farm — which is the one their open stream
     // lists first.
-    const ctx = await getLegacyCtx(req);
+    const ctx = await getLegacyCtx(req, { allowOperator: true }); // the operator's own surface (#3207)
 
     const id = `${PROBE_ID_PREFIX}${randomUUID()}`;
     // Wrapped even though there is no transaction here, and that uniformity is

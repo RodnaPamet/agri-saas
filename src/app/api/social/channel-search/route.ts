@@ -65,5 +65,12 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         }
     }
 
-    return jsonResponse(await searchChannelPosts(ctx, { q, scope, limit, before }));
+    // The tie-breaker (#3193). `searchChannelPosts` orders by (createdAt, id)
+    // and takes `beforeId` for exactly the rows that share a millisecond —
+    // which `channel-cards` produces by writing one item into many channels in
+    // a single run — and this route never passed it on, so the next page
+    // started strictly past that instant and those rows were never returned.
+    const beforeId = url.searchParams.get('beforeId') ?? undefined;
+
+    return jsonResponse(await searchChannelPosts(ctx, { q, scope, limit, before, beforeId }));
 });

@@ -309,7 +309,9 @@ export function FarmWizard({ startAtFarmType, termsVersion }: FarmWizardProps) {
             const res = await fetch('/api/auth/register/verify', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, code: code.trim() }),
+                // The password again, so the person who proves the mailbox owns
+                // the credential (#3206).
+                body: JSON.stringify({ email, code: code.trim(), password }),
             });
             if (!res.ok) {
                 // Wrong, expired and too-many-attempts are one answer by

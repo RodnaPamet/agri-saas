@@ -174,6 +174,23 @@ export type RlsBypassReason =
      */
     | 'dm-recipient-resolution'
     /**
+     * Handing an APNs device token to the person now signed in on that phone —
+     * agrent-ios #678, `saveApnsRegistration`.
+     *
+     * An iOS device token identifies the PHONE, not the person or the farm. A
+     * previous person's rows for the same token sit under their own user, and
+     * usually under a tenant the new person is not a member of, so a
+     * tenant-scoped transaction cannot see them — and while they exist that
+     * phone keeps receiving the previous person's notifications (task
+     * assignments, messages) on top of the new person's.
+     *
+     * Bounded by the WHERE, which is the whole argument: `platform: 'IOS'`,
+     * `deviceToken` equal to the one this caller just proved they hold (iOS
+     * hands it only to the app on that device), and `userId` NOT the caller.
+     * It deletes and returns nothing, so no row of another tenant is read out.
+     */
+    | 'push-device-token-handover'
+    /**
      * Reading (and pruning) ONE PERSON's push devices across every farm —
      * #2987.
      *
@@ -419,6 +436,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'module-availability': true,
     'org-tenant-bootstrap': true,
     'dm-recipient-resolution': true,
+    'push-device-token-handover': true,
     'person-push-devices': true,
     'person-push-deferral': true,
 };

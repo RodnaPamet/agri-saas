@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
+import { getCsrfToken } from 'next-auth/react';
 import { sanitizeRedirectPath } from '@/lib/auth/safe-redirect';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
@@ -97,8 +98,19 @@ export default function MfaChallengePage() {
             const data = await res.json();
 
             if (data.success) {
-                // MFA challenge complete — redirect to original target
-                // The JWT will be refreshed on next request, clearing mfaPending
+                // Re-mint the session cookie BEFORE navigating (#3212). The old
+                // comment here said the JWT "will be refreshed on next
+                // request"; it is not — there is no SessionProvider, and in the
+                // App Router `auth()` discards the rewritten cookie. The Edge
+                // reads the cookie as it stands, still saw this farm as owed a
+                // factor, and sent the person straight back here after a
+                // correct code, indefinitely. The `jwt` callback recomputes the
+                // pending farms from the database on every pass, so a re-mint
+                // after the challenge stamped `lastChallengeAt` carries the
+                // cleared list. This is the documented CSRF POST (CLAUDE.md,
+                // "There is NO <SessionProvider>"), with a JSON body — a
+                // form-encoded one is silently ignored.
+                await remintSession();
                 window.location.href = next;
             } else {
                 setAttempts(a => a + 1);
@@ -203,4 +215,22 @@ export default function MfaChallengePage() {
             </Card>
         </div>
     );
+}
+
+/**
+ * Ask next-auth to re-run the `jwt` callback and write a fresh session cookie.
+ * Failure is swallowed: the worst case is the old behaviour (the Edge sends the
+ * person back to the challenge), never a lost session.
+ */
+async function remintSession(): Promise<void> {
+    try {
+        const csrfToken = await getCsrfToken();
+        await fetch('/api/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csrfToken, data: {} }),
+        });
+    } catch {
+        // See the docblock.
+    }
 }

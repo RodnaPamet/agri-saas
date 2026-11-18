@@ -148,7 +148,7 @@ jobs:
         # Same pinned version as release.yml. If that pin moves, move this
         # one with it, or a backfilled SBOM stops being comparable to its
         # neighbours.
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: spdx-json
