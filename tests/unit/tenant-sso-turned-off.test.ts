@@ -9,10 +9,19 @@
  * IdP exchange or the token lookup would be the switch failing late.
  */
 const mockFlagOn = jest.fn(async (_key: string, _userId: string | null) => false);
-jest.mock('@/lib/feature-flags', () => ({
-    ...jest.requireActual('@/lib/feature-flags'),
-    isFeatureEnabled: (key: string, userId: string | null) => mockFlagOn(key, userId),
-}));
+jest.mock('@/lib/feature-flags', () => {
+    const actual = jest.requireActual('@/lib/feature-flags');
+    const { notFound } = jest.requireActual('@/lib/errors/types');
+    return {
+        ...actual,
+        isFeatureEnabled: (key: string, userId: string | null) => mockFlagOn(key, userId),
+        // The real one calls the module's own `isFeatureEnabled`, which a
+        // module mock cannot reach — so the double answers it the same way.
+        assertFeatureEnabled: async (key: string, userId: string | null) => {
+            if (!(await mockFlagOn(key, userId))) throw notFound('Not found');
+        },
+    };
+});
 
 const mockFindProvider = jest.fn();
 const mockFindToken = jest.fn();

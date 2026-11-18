@@ -34,8 +34,7 @@
  * a cohort-gated row would answer OFF for every request — turning either
  * surface back on means `enabled = true` with NO cohorts.
  */
-import { isFeatureEnabled } from '@/lib/feature-flags';
-import { notFound } from '@/lib/errors/types';
+import { assertFeatureEnabled, isFeatureEnabled } from '@/lib/feature-flags';
 
 /** Flag key for tenant SAML / OIDC single sign-on. */
 export const TENANT_SSO_FLAG = 'auth.tenant-sso';
@@ -52,14 +51,15 @@ export async function isScimEnabled(): Promise<boolean> {
 }
 
 /**
- * Refuse with a 404 while tenant SSO is off — the `assertFeatureEnabled`
- * answer, for its reason: a dormant surface should not advertise that it
- * exists.
+ * Refuse with a 404 while tenant SSO is off. This IS `assertFeatureEnabled`,
+ * rather than a second throw beside it, so the refusal is the same one every
+ * dark-launched surface gives — a dormant surface should not advertise that it
+ * exists — and so there is one 404 for a flag, not two to keep in step.
  */
 export async function assertTenantSsoEnabled(): Promise<void> {
-    if (!(await isTenantSsoEnabled())) throw notFound('Not found');
+    await assertFeatureEnabled('auth.tenant-sso', null);
 }
 
 export async function assertScimEnabled(): Promise<void> {
-    if (!(await isScimEnabled())) throw notFound('Not found');
+    await assertFeatureEnabled('auth.scim', null);
 }

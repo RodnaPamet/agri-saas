@@ -124,6 +124,17 @@ export const REFERENCED_FLAG_KEYS = [
     // an absent row and a disabled row behave identically to every caller, and
     // the only difference is whether the probe can see that somebody decided.
     'assistant.memory',
+    /**
+     * Tenant SAML / OIDC SSO and SCIM provisioning, TURNED OFF and dormant
+     * (owner ruling 2026-11-18) — see `@/lib/auth/tenant-sso-availability`.
+     * Unlike a dark launch these are not waiting to go on: no row is the
+     * intended state, so their appearance in `missingRows` reads as "off, as
+     * decided", not as a launch somebody forgot. Turning either back on is a
+     * row with `enabled = true` and NO cohorts, because neither surface's
+     * requests carry a user.
+     */
+    'auth.scim',
+    'auth.tenant-sso',
     'integrations.google',
     /**
      * «Вдъхновение» — the book library (#2980). Gates both reads:
