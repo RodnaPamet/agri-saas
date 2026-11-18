@@ -226,13 +226,23 @@ describe('FileRepository — reads', () => {
         // record of an upload that never finished — reusing its pathKey
         // hands the caller a storage key with no bytes behind it, and the
         // resulting evidence download 404s.
-        await FileRepository.findBySha256(asTx(db), 'tenant-1', 'b'.repeat(64));
+        await FileRepository.findBySha256(asTx(db), 'tenant-1', 'b'.repeat(64), 'logEntryFiles');
 
         expect(whereOf(db.fileRecord.findFirst)).toEqual({
             tenantId: 'tenant-1',
             sha256: 'b'.repeat(64),
             status: 'STORED',
+            logEntryFiles: { some: {} },
         });
+    });
+
+    it('#3180 — dedups only against a record the SAME kind of owner already holds', async () => {
+        // A journal photo must not adopt a farm document's record: the
+        // document's delete or retention sweep would then destroy the
+        // journal attachment's bytes.
+        await FileRepository.findBySha256(asTx(db), 'tenant-1', 'c'.repeat(64), 'evidence');
+        expect(whereOf(db.fileRecord.findFirst)).toMatchObject({ evidence: { some: {} } });
+        expect(whereOf(db.fileRecord.findFirst)).not.toHaveProperty('logEntryFiles');
     });
 
     it('finds abandoned PENDING rows strictly older than the cutoff', async () => {
