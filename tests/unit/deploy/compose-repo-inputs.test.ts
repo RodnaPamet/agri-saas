@@ -15,12 +15,20 @@ import { join, resolve } from 'path';
 const REPO_ROOT = resolve(__dirname, '../../..');
 const LIB = join(REPO_ROOT, 'deploy/lib/compose-repo-inputs.sh');
 
+/**
+ * The driver is a FIXED script read from stdin (`bash -s`), and every path
+ * reaches it as a positional argument — none is ever spliced into shell text.
+ * It used `bash -c '<script>' _ <paths>`, which is equally safe but reads to a
+ * scanner as a shell string built next to environment-derived paths (CodeQL
+ * #454); `-s` keeps the same argv shape with no command string to construct.
+ */
+const DRIVER = 'set -euo pipefail; . "$1"; compose_repo_inputs "$2" "$3"\n';
+
 function inputs(compose: string, root: string): { code: number; out: string[]; err: string } {
-    const r = spawnSync(
-        'bash',
-        ['-c', 'set -euo pipefail; . "$1"; compose_repo_inputs "$2" "$3"', '_', LIB, compose, root],
-        { encoding: 'utf8' },
-    );
+    const r = spawnSync('bash', ['-s', '--', LIB, compose, root], {
+        input: DRIVER,
+        encoding: 'utf8',
+    });
     return { code: r.status ?? 1, out: r.stdout.split('\n').filter(Boolean), err: r.stderr };
 }
 
