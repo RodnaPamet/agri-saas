@@ -372,10 +372,19 @@ export async function redeemMfaTicket(input: {
         logger.warn('native-auth.mfa_ticket_pkce_mismatch', { component: 'native-auth' });
         return { ok: false, reason: 'ticket_invalid' };
     }
+    // A ticket that CARRIES a session must still find it live. The one issuer
+    // today (`/api/auth/native/apple`) deliberately issues WITHOUT one —
+    // `recordNewSession` enforces `maxConcurrentSessions`, so recording before
+    // the code passes would let a stolen first factor evict real sessions —
+    // and `POST /api/auth/native/mfa` records it after redemption. Requiring a
+    // row here made every such ticket `ticket_invalid`, so an MFA-required
+    // farm could never complete Sign in with Apple (#3187). The unit fixture
+    // carried a session the route never writes, which is why nothing caught it.
     if (
-        !row.session ||
-        row.session.revokedAt !== null ||
-        row.session.expiresAt.getTime() <= Date.now()
+        row.userSessionId !== null &&
+        (!row.session ||
+            row.session.revokedAt !== null ||
+            row.session.expiresAt.getTime() <= Date.now())
     ) {
         return { ok: false, reason: 'ticket_invalid' };
     }
