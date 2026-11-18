@@ -10,6 +10,14 @@
  * - Audit events emitted for all mutations
  * - Tenant isolation
  */
+// SCIM is turned OFF in production (owner ruling 2026-11-18). This suite
+// exercises the dormant mechanism, so the flag is ON here; the off-state
+// refusal is covered by tests/unit/scim-auth-metrics.test.ts.
+jest.mock('@/lib/auth/tenant-sso-availability', () => ({
+    isScimEnabled: async () => true,
+    assertScimEnabled: async () => undefined,
+}));
+
 import { createHash } from 'crypto';
 
 // ─── Mock Prisma ────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { getTenantCtx } from '@/app-layer/context';
 import { isPlatformTenant } from '@/lib/auth/platform-support';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { isScimEnabled, isTenantSsoEnabled } from '@/lib/auth/tenant-sso-availability';
 import { LanguageSetting } from './LanguageSetting';
 
 export const dynamic = 'force-dynamic';
@@ -65,6 +66,12 @@ export default async function AdminPage({
     // It was found by `pages-are-reachable`, not by design review: the
     // platform operator had no discoverable path to their own console either.
     const usageConsole = isPlatformTenant(tenantSlug) && ctx.permissions.canAdmin;
+
+    // Tenant SAML / OIDC SSO and SCIM are turned off, dormant rather than
+    // removed (owner ruling 2026-11-18). Their tiles are absent on the same
+    // flags their pages and APIs answer 404 on, so nothing here offers a
+    // screen that refuses. Entra stays on and keeps its tile.
+    const [tenantSso, scim] = await Promise.all([isTenantSsoEnabled(), isScimEnabled()]);
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
 
@@ -133,22 +140,26 @@ export default async function AdminPage({
                     <CreditCard className="w-3.5 h-3.5" />
                     {t('hub.billing')}
                 </Link>
-                <Link
-                    href={tenantHref('/admin/sso')}
-                    className={buttonVariants({ variant: 'secondary' })}
-                    id="sso-pill-btn"
-                >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    {t('hub.ssoIdentity')}
-                </Link>
-                <Link
-                    href={tenantHref('/admin/scim')}
-                    className={buttonVariants({ variant: 'secondary' })}
-                    id="scim-pill-btn"
-                >
-                    <CloudCog className="w-3.5 h-3.5" />
-                    {t('hub.scimProvisioning')}
-                </Link>
+                {tenantSso ? (
+                    <Link
+                        href={tenantHref('/admin/sso')}
+                        className={buttonVariants({ variant: 'secondary' })}
+                        id="sso-pill-btn"
+                    >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        {t('hub.ssoIdentity')}
+                    </Link>
+                ) : null}
+                {scim ? (
+                    <Link
+                        href={tenantHref('/admin/scim')}
+                        className={buttonVariants({ variant: 'secondary' })}
+                        id="scim-pill-btn"
+                    >
+                        <CloudCog className="w-3.5 h-3.5" />
+                        {t('hub.scimProvisioning')}
+                    </Link>
+                ) : null}
                 <Link
                     href={tenantHref('/admin/entra')}
                     className={buttonVariants({ variant: 'secondary' })}

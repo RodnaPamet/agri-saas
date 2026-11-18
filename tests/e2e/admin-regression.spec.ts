@@ -9,11 +9,24 @@
  */
 import { test, expect } from '@playwright/test';
 import { expectSettledSingle, loginAndGetTenant, safeGoto } from './e2e-utils';
+import { enableFlags } from './feature-flag-fixtures';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 const READER_USER = { email: 'viewer@acme.com', password: 'password123' };
 
 test.describe('Admin Area Regression', () => {
+    // Tenant SSO and SCIM are dormant in production (owner ruling
+    // 2026-11-18). This file exercises their admin UI, so it turns the flags
+    // on for its own duration; `admin-sso.spec.ts` asserts the off state.
+    let restoreFlags: () => Promise<void> = async () => {};
+    test.beforeAll(async () => {
+        restoreFlags = await enableFlags('auth.tenant-sso', 'auth.scim');
+    });
+    test.afterAll(async () => {
+        await restoreFlags();
+    });
+
+
 
     // ── 1. Warm-up: admin pill buttons ──
     test('admin page shows all pill buttons', async ({ page }) => {

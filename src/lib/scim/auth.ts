@@ -14,6 +14,7 @@ import { createHash } from 'crypto';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { recordScimAuth } from '@/lib/observability/metrics';
+import { isScimEnabled } from '@/lib/auth/tenant-sso-availability';
 
 export interface ScimContext {
     tenantId: string;
@@ -45,10 +46,18 @@ export function hashToken(token: string): string {
  * Returns a ScimContext with the resolved tenantId.
  *
  * Throws ScimAuthError if:
+ * - SCIM is turned off (404 — see `@/lib/auth/tenant-sso-availability`)
  * - No Authorization header
  * - Token not found or revoked
  */
 export async function authenticateScimRequest(req: NextRequest): Promise<ScimContext> {
+    // Every SCIM resource route authenticates through here, so this is the
+    // one place the off switch has to sit. Checked BEFORE the token, so a
+    // dormant SCIM surface answers the same 404 to a valid token, a revoked
+    // one and none — it does not confirm that any token is still live.
+    if (!(await isScimEnabled())) {
+        throw new ScimAuthError('Not found', 404, '');
+    }
     const authHeader = req.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         recordScimAuth({ outcome: 'failure', reason: 'missing_header' });

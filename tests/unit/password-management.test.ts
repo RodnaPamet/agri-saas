@@ -27,8 +27,16 @@ const mockPrisma = {
         update: jest.fn(),
     },
     userSession: { updateMany: jest.fn() },
+    account: { count: jest.fn() },
     $transaction: jest.fn(),
 };
+
+// Tenant SSO is OFF in production (owner ruling 2026-11-18); each case below
+// that depends on it says so by setting this.
+const mockTenantSsoEnabled = jest.fn(async () => false);
+jest.mock('@/lib/auth/tenant-sso-availability', () => ({
+    isTenantSsoEnabled: () => mockTenantSsoEnabled(),
+}));
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
 jest.mock('@/lib/mailer', () => ({ sendEmail: jest.fn() }));
@@ -66,6 +74,9 @@ const mockVerifyPassword = verifyPassword as jest.Mock;
 
 beforeEach(() => {
     jest.clearAllMocks();
+    // clearAllMocks keeps implementations, so a case that turned SSO on must
+    // not leak it into the next one.
+    mockTenantSsoEnabled.mockResolvedValue(false);
     // Array-form $transaction → resolve every queued op.
     mockPrisma.$transaction.mockImplementation((ops: Promise<unknown>[]) =>
         Promise.all(ops),
@@ -91,11 +102,45 @@ describe('issuePasswordReset', () => {
             email: 'oauth@example.com',
             passwordHash: null,
         });
+        // Linked to Google / Apple / Entra — it already has a way in.
+        mockPrisma.account.count.mockResolvedValue(1);
 
         await issuePasswordReset('oauth@example.com');
 
         expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
         expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    describe('an account stranded by the SSO turn-off (no password, no OAuth link)', () => {
+        const stranded = {
+            id: 'u-sso',
+            email: 'sso-only@example.test',
+            passwordHash: null,
+            uiLanguage: 'en',
+        };
+
+        beforeEach(() => {
+            mockPrisma.user.findUnique.mockResolvedValue(stranded);
+            mockPrisma.account.count.mockResolvedValue(0);
+            mockPrisma.passwordResetToken.deleteMany.mockResolvedValue({ count: 0 });
+            mockPrisma.passwordResetToken.create.mockResolvedValue({});
+        });
+
+        it('is sent a reset link while tenant SSO is off, to set a first password', async () => {
+            mockTenantSsoEnabled.mockResolvedValue(false);
+            await issuePasswordReset(stranded.email);
+            expect(mockPrisma.passwordResetToken.create).toHaveBeenCalledTimes(1);
+            expect(mockPrisma.passwordResetToken.create.mock.calls[0][0].data.userId).toBe('u-sso');
+            expect(mockSendEmail).toHaveBeenCalledTimes(1);
+            expect(mockSendEmail.mock.calls[0][0].to).toBe(stranded.email);
+        });
+
+        it('stays a no-op if tenant SSO is turned back on — a password would go around the IdP', async () => {
+            mockTenantSsoEnabled.mockResolvedValue(true);
+            await issuePasswordReset(stranded.email);
+            expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
+            expect(mockSendEmail).not.toHaveBeenCalled();
+        });
     });
 
     it('mints a hashed token and emails a reset link for a credentials user', async () => {

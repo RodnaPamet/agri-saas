@@ -22,6 +22,13 @@
 const mockGetTenantCtx = jest.fn();
 const mockAppendAuditEntry = jest.fn();
 
+// Tenant SSO is turned off in production (owner ruling 2026-11-18); this
+// suite is about the PERMISSION gate on the dormant SSO config route, so the
+// flag is on here. The off state is tests/unit/tenant-sso-turned-off.test.ts.
+jest.mock('@/lib/auth/tenant-sso-availability', () => ({
+    assertScimEnabled: async () => undefined,
+    assertTenantSsoEnabled: async () => undefined,
+}));
 jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (...args: unknown[]) => mockGetTenantCtx(...args),
 }));

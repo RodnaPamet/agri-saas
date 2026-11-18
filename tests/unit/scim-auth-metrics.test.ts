@@ -28,6 +28,13 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
+// SCIM is turned OFF in production (owner ruling 2026-11-18). These cases
+// exercise the dormant mechanism, so the flag is ON unless a case says not.
+const mockScimEnabled = jest.fn(async () => true);
+jest.mock('@/lib/auth/tenant-sso-availability', () => ({
+    isScimEnabled: () => mockScimEnabled(),
+}));
+
 import { authenticateScimRequest, ScimAuthError } from '@/lib/scim/auth';
 
 /** Minimal NextRequest stand-in — the function only reads the auth header. */
@@ -38,6 +45,7 @@ function reqWith(authorization?: string) {
 }
 
 beforeEach(() => {
+    mockScimEnabled.mockResolvedValue(true);
     mockRecord.mockClear();
     mockFindUnique.mockReset();
     mockUpdate.mockClear().mockResolvedValue(undefined);
@@ -77,5 +85,23 @@ describe('authenticateScimRequest — scim.auth.count metric', () => {
         mockFindUnique.mockResolvedValue({ id: 't1', tenantId: 'ten1', label: 'okta', revokedAt: null });
         await authenticateScimRequest(reqWith('Bearer abc'));
         expect(mockRecord).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('authenticateScimRequest — while SCIM is turned off', () => {
+    it('answers 404 before looking at the token, so a live token is not confirmed', async () => {
+        mockScimEnabled.mockResolvedValue(false);
+        // A token that WOULD authenticate, so the refusal is the switch's.
+        mockFindUnique.mockResolvedValue({ id: 't1', tenantId: 'ten1', label: 'okta', revokedAt: null });
+        const err = await authenticateScimRequest(reqWith('Bearer abc')).catch((e) => e);
+        expect(err).toBeInstanceOf(ScimAuthError);
+        expect(err.status).toBe(404);
+        expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('answers the same 404 with no Authorization header at all', async () => {
+        mockScimEnabled.mockResolvedValue(false);
+        const err = await authenticateScimRequest(reqWith(undefined)).catch((e) => e);
+        expect(err.status).toBe(404);
     });
 });

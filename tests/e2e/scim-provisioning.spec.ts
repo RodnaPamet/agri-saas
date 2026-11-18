@@ -33,10 +33,99 @@
  * difference between "the handler ran and rejected you" and "the handler never
  * ran", and it is precisely the distinction that was invisible for the entire
  * life of the feature.
+ *
+ * ## SCIM is turned OFF (owner ruling 2026-11-18)
+ *
+ * Dormant, not removed: the `auth.scim` flag is off, so every SCIM route
+ * answers 404 and no token can be minted. The Edge property above still
+ * matters — if SCIM is ever turned back on, a request that dies at the Edge
+ * would bring the original defect straight back — and it is still observable
+ * with the flag off, because the 404 is the HANDLER's, in the SCIM Error
+ * schema. So this spec now asserts the dormant state as production serves
+ * it, and keeps the same load-bearing distinction: a SCIM body means the
+ * handler ran; `{"error":"Unauthorized"}` means the Edge swallowed it. The
+ * flag-ON mechanism (tokens, isolation, Users, Groups) stays covered by
+ * `tests/integration/scim*.test.ts`.
  */
 import { test, expect } from './fixtures';
+import { enableFlags } from './feature-flag-fixtures';
 
-test.describe('SCIM 2.0 provisioning is reachable', () => {
+const SCIM_ERROR = 'urn:ietf:params:scim:api:messages:2.0:Error';
+
+test.describe('SCIM 2.0 provisioning is turned off, and still Edge-reachable', () => {
+    test('a cookie-less IdP request reaches the handler, which answers a SCIM 404', async ({
+        authedPage,
+        isolatedTenant,
+    }) => {
+        test.setTimeout(120_000);
+        const slug = isolatedTenant.tenantSlug;
+
+        // ── The admin cannot mint a token while SCIM is off ──────────────
+        const mint = await authedPage.request.post(`/api/t/${slug}/admin/scim`, {
+            data: { name: 'e2e-idp' },
+        });
+        expect(mint.status(), 'minting a SCIM token while SCIM is off').toBe(404);
+
+        // ── A COOKIE-LESS context: exactly what Okta or Entra sends ──────
+        // Using authedPage.request would carry the session cookie and prove
+        // nothing — the cookie alone clears the Edge, so the bearer would
+        // never be the thing under test.
+        const idp = await authedPage.context().browser()!.newContext();
+        const api = idp.request;
+
+        try {
+            // 1. A bearer → 404, from the HANDLER, not the Edge.
+            const withBearer = await api.get(`/api/scim/v2/Users`, {
+                headers: { Authorization: 'Bearer scim_definitely_not_a_real_token' },
+            });
+            expect(withBearer.status()).toBe(404);
+            const body = await withBearer.json();
+            // THE load-bearing assertion, unchanged in kind: a SCIM Error body
+            // means the handler ran. `{"error":"Unauthorized"}` would mean the
+            // middleware is swallowing SCIM again, which would surface the
+            // moment the flag is turned back on.
+            expect(
+                body.schemas,
+                `expected a SCIM Error body (handler ran); got ${JSON.stringify(body)} — ` +
+                    `if this is {"error":"Unauthorized"} the Edge is 401ing SCIM again.`,
+            ).toContain(SCIM_ERROR);
+
+            // 2. NO bearer → the same 404: a dormant surface does not tell a
+            //    caller with a token from one without.
+            const none = await api.get(`/api/scim/v2/Users`);
+            expect(none.status()).toBe(404);
+            expect((await none.json()).schemas).toContain(SCIM_ERROR);
+
+            // 3. Discovery advertises nothing while SCIM is off.
+            const cfg = await api.get('/api/scim/v2/ServiceProviderConfig');
+            expect(cfg.status()).toBe(404);
+            expect((await cfg.json()).schemas).toContain(SCIM_ERROR);
+
+            // 4. The token-minting admin route stays behind the session gate —
+            //    a bearer is refused at the Edge before the flag is consulted.
+            const escalate = await api.post(`/api/t/${slug}/admin/scim`, {
+                headers: { Authorization: 'Bearer scim_definitely_not_a_real_token' },
+                data: { name: 'should-not-work' },
+            });
+            expect(
+                escalate.status(),
+                'a SCIM bearer must not reach the token-minting admin route',
+            ).toBe(401);
+        } finally {
+            await idp.close();
+        }
+    });
+});
+
+test.describe('SCIM 2.0 provisioning is reachable once turned back on', () => {
+    let restore: () => Promise<void> = async () => {};
+    test.beforeAll(async () => {
+        restore = await enableFlags('auth.scim');
+    });
+    test.afterAll(async () => {
+        await restore();
+    });
+
     test('an IdP bearer reaches the handler, and a bad one is refused BY the handler', async ({
         authedPage,
         isolatedTenant,

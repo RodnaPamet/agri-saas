@@ -14,6 +14,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import prisma from '@/lib/prisma';
 import { jsonResponse } from '@/lib/api-response';
+import { assertScimEnabled } from '@/lib/auth/tenant-sso-availability';
 
 /**
  * GET — list SCIM tokens for tenant (admin.scim only).
@@ -21,6 +22,7 @@ import { jsonResponse } from '@/lib/api-response';
  */
 export const GET = withApiErrorHandling(
     requirePermission('admin.scim', async (req: NextRequest, _routeArgs, ctx) => {
+    await assertScimEnabled();
         const tokens = await prisma.tenantScimToken.findMany({
             where: { tenantId: ctx.tenantId },
             select: {
@@ -50,6 +52,7 @@ export const GET = withApiErrorHandling(
  */
 export const POST = withApiErrorHandling(
     requirePermission('admin.scim', async (req: NextRequest, _routeArgs, ctx) => {
+    await assertScimEnabled();
         const body = (await req.json()) as { label?: string };
         const label = body.label || 'SCIM Token';
 
@@ -83,6 +86,7 @@ export const POST = withApiErrorHandling(
  */
 export const DELETE = withApiErrorHandling(
     requirePermission('admin.scim', async (req: NextRequest, _routeArgs, ctx) => {
+    await assertScimEnabled();
         const { tokenId } = (await req.json()) as { tokenId: string };
         if (!tokenId) {
             return jsonResponse({ error: 'tokenId required' }, { status: 400 });
