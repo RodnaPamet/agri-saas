@@ -125,6 +125,37 @@ describeFn('#2961 — a thread is readable, and resolved state is visible', () =
             .toEqual(ids);
     }, 90_000);
 
+    it('#3193 — pages through replies that share ONE createdAt, losing none, with afterId', async () => {
+        const parent = await postToChannel(ctxFor(MEMBER), channelId, { body: 'родител за равни часове' });
+        // One statement, so all five share the transaction timestamp — the
+        // shape a batch writer produces, not a contrived date.
+        await prisma.channelPost.createMany({
+            data: Array.from({ length: 5 }, (_, i) => ({
+                channelId, authorUserId: MEMBER, kind: 'POST' as const,
+                body: `равен ${i}`, parentPostId: parent.postId,
+            })),
+        });
+        const stamps = await prisma.channelPost.findMany({
+            where: { parentPostId: parent.postId }, select: { createdAt: true },
+        });
+        expect(new Set(stamps.map((r) => r.createdAt.getTime())).size).toBe(1); // the premise
+
+        const seen: string[] = [];
+        let after: Date | undefined;
+        let afterId: string | undefined;
+        for (let page = 0; page < 5; page += 1) {
+            const r = await readPostReplies(ctxFor(MEMBER), parent.postId, { limit: 2, after, afterId });
+            seen.push(...r.replies.map((x) => x.id));
+            if (!r.hasMore) break;
+            const last = r.replies.at(-1)!;
+            after = new Date(last.createdAt);
+            afterId = last.id;
+        }
+        // With `after` alone this returns two: every remaining row is tied
+        // with the boundary and `gt` excludes them all.
+        expect(new Set(seen).size).toBe(5);
+    }, 60_000);
+
     it('a NON-MEMBER reads the thread, exactly as they read the feed', async () => {
         // Not a weaker rule and not a stronger one: `channel_post_select`
         // admits any authenticated caller, so the database already allows this

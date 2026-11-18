@@ -1523,7 +1523,12 @@ export async function readPost(
 export async function readPostReplies(
     ctx: UserContext,
     postId: string,
-    opts?: { limit?: number; after?: Date },
+    /**
+     * `afterId` breaks a `createdAt` tie (#3193): the previous page's NEWEST
+     * id. Optional, so a caller sending `after` alone keeps working — with the
+     * old behaviour of dropping rows tied at the boundary.
+     */
+    opts?: { limit?: number; after?: Date; afterId?: string },
 ): Promise<{ replies: ChannelPostView[]; hasMore: boolean }> {
     const limit = Math.min(
         Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
@@ -1550,7 +1555,21 @@ export async function readPostReplies(
         const rows = await tx.channelPost.findMany({
             where: {
                 parentPostId: postId,
-                ...(opts?.after ? { createdAt: { gt: opts.after } } : {}),
+                // (createdAt, id) keyset, matching the order below. AND, never
+                // a sibling `OR` key — P8.5 records that a second `OR` in the
+                // same object silently replaces the first.
+                ...(opts?.after
+                    ? opts.afterId
+                        ? {
+                            AND: [{
+                                OR: [
+                                    { createdAt: { gt: opts.after } },
+                                    { createdAt: opts.after, id: { gt: opts.afterId } },
+                                ],
+                            }],
+                        }
+                        : { createdAt: { gt: opts.after } }
+                    : {}),
             },
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             // The `hasMore` probe, and NOTHING is filtered after this query —

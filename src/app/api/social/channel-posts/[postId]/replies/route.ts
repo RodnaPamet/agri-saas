@@ -59,7 +59,9 @@ export const GET = withApiErrorHandling(
             }
         }
 
-        const thread = await readPostReplies(ctx, postId, { limit, after });
+        // The tie-breaker for replies written in the same millisecond (#3193).
+        const afterId = url.searchParams.get('afterId') ?? undefined;
+        const thread = await readPostReplies(ctx, postId, { limit, after, afterId });
         return jsonResponse(thread);
     },
 );
