@@ -39,7 +39,20 @@ function getRequestId(req?: NextRequest): string {
  */
 export async function getTenantCtx(
     params: { tenantSlug: string },
-    req?: NextRequest
+    req?: NextRequest,
+    opts: {
+        /**
+         * Resolve even though this farm is still owed a second factor — for the
+         * routes that ENROL one, and nothing else (#3185). Under a REQUIRED
+         * policy a member who has never enrolled is pending, and the enrol
+         * routes resolved through this function, so the gate refused the very
+         * calls that would satisfy it: nobody new could ever enter the farm.
+         * Re-enrolment is still refused by the routes themselves (a verified
+         * enrolment answers 409), so a password alone cannot replace an
+         * existing authenticator. Removing one does NOT pass this.
+         */
+        allowOwedSecondFactor?: boolean;
+    } = {},
 ): Promise<RequestContext> {
     // Try API key auth first if Authorization header is present.
     // The URL's slug is passed and COMPARED — see tryApiKeyAuth.
@@ -81,7 +94,7 @@ export async function getTenantCtx(
     // single cookie read; this half has one, so it is the authoritative
     // answer. A stale or truncated claim can then only cause an unnecessary
     // challenge, never a missed one.
-    assertSecondFactorPresented(session, ctx.tenant.id);
+    if (!opts.allowOwedSecondFactor) assertSecondFactorPresented(session, ctx.tenant.id);
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.

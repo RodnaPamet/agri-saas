@@ -20,7 +20,8 @@ export const POST = withApiErrorHandling(async (
     { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
 ) => {
     const params = await paramsPromise;
-    const ctx = await getTenantCtx(params, req);
+    // The enrolment a REQUIRED policy demands (#3185).
+    const ctx = await getTenantCtx(params, req, { allowOwedSecondFactor: true });
 
     // Check if user already has verified MFA — prevent re-enrollment without explicit removal
     const status = await getUserMfaStatus(ctx);
