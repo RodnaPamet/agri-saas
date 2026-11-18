@@ -360,6 +360,31 @@ describe('Custom Roles — Assign', () => {
         ).rejects.toThrow(/not found|inactive/i);
     });
 
+    it('#3201 — REFUSES to put a custom role on an OWNER (it would demote them)', async () => {
+        const owner = { ...activeMembership, role: 'OWNER' };
+        const update = jest.fn();
+        mockTx.tenantMembership = { findFirst: jest.fn(async () => owner), update };
+        mockTx.tenantCustomRole = {
+            findFirst: jest.fn(async () => ({ id: 'cr-1', tenantId: 'tenant-1', isActive: true, permissionsJson: {} })),
+        };
+
+        // ADMIN is the attack: an ADMIN stripping the farm's owner.
+        await expect(assignCustomRole(makeCtx('ADMIN'), 'm-1', 'cr-1'))
+            .rejects.toMatchObject({ code: 'CUSTOM_ROLE_ON_OWNER' });
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('#3201 — still lets a custom role be REMOVED from an OWNER (null only restores their own role)', async () => {
+        const owner = { ...activeMembership, role: 'OWNER', customRoleId: 'cr-legacy' };
+        mockTx.tenantMembership = {
+            findFirst: jest.fn(async () => owner),
+            update: jest.fn(async () => ({ ...owner, customRoleId: null, customRole: null })),
+        };
+
+        const result = await assignCustomRole(makeCtx(), 'm-1', null);
+        expect(result.customRoleId).toBeNull();
+    });
+
     it('rejects assigning to a non-existent member', async () => {
         mockTx.tenantMembership = {
             findFirst: jest.fn(async () => null),

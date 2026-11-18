@@ -7334,6 +7334,7 @@
         "MACHINE_NOT_FOUND": "That machine was not found.",
         "MACHINES_MANAGE_REQUIRED": "Only an owner or an administrator may change which machines are on a task.",
         "MAINTENANCE_RECORD_NOT_FOUND": "That maintenance record was not found.",
+        "CUSTOM_ROLE_ON_OWNER": "A custom role cannot be assigned to an owner. Change their role first.",
         "MEMBERSHIP_NOT_FOUND": "Membership not found or not active.",
         "MEMORY_POINT_EMPTY": "A remembered point cannot be empty.",
         "MEMORY_POINT_INVALID": "That remembered point is not valid.",

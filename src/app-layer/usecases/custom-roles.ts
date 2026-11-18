@@ -15,7 +15,7 @@ import { RequestContext } from '../types';
 import { assertCanManageMembers } from '../policies/admin.policies';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { codedNotFound, notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { badRequest, codedForbidden, codedNotFound, forbidden, notFound } from '@/lib/errors/types';
 import { permissionsExceeding, validatePermissionsJson } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 
@@ -367,6 +367,22 @@ export async function assignCustomRole(
         }
 
         // If assigning, verify the custom role exists and belongs to this tenant
+        // A custom role REPLACES the membership's permissions with its base
+        // role's (`tenant-context.ts`: `customRole?.baseRole ?? role`), and a
+        // custom role can never carry OWNER-only permissions. So assigning one
+        // to an OWNER always DEMOTES them — while the enum column still reads
+        // OWNER, which is why the last-OWNER trigger never fired and why
+        // `updateTenantMemberRole`'s OWNER boundary was never reached (#3201).
+        // An ADMIN could strip the owner of every capability, including the
+        // ones needed to undo it. Demoting an owner is `updateTenantMemberRole`'s
+        // job, with its checks; this path refuses outright, for every caller.
+        if (customRoleId && membership.role === 'OWNER') {
+            throw codedForbidden(
+                'CUSTOM_ROLE_ON_OWNER',
+                'A custom role cannot be assigned to an OWNER. Change their role first.',
+            );
+        }
+
         if (customRoleId) {
             const customRole = await db.tenantCustomRole.findFirst({
                 where: {
