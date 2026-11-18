@@ -19,6 +19,7 @@ import { checkWebhookUrl, assertPublicAddress } from './webhook-safety';
 import { fetchPublicUrl, BlockedRequestError } from '@/lib/security/safe-fetch';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { TERMINAL_WORK_ITEM_STATUSES, isCompletedStatus } from '../domain/work-item-status';
+import { logger } from '@/lib/observability/logger';
 import type {
     NotifyUserActionConfig,
     CreateTaskActionConfig,
@@ -154,6 +155,26 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     if (existing) {
         return { ok: true, summary: `Task already open (${existing.id})`, detail: { taskId: existing.id, deduped: true } };
     }
+    // The rule's assignee must still be an ACTIVE member of this farm (#3208).
+    // It was saved by an admin from a body, and membership can end after the
+    // rule was written. Unlike a request, there is nobody to answer, so the
+    // task is created UNASSIGNED rather than the rule failing — an assignee
+    // outside the farm would be stored with their name and e-mail one read
+    // away, and mailed about a farm they have left.
+    let assigneeUserId: string | null = cfg.assigneeUserId ?? null;
+    if (assigneeUserId) {
+        const member = await db.tenantMembership.count({
+            where: { tenantId: event.tenantId, userId: assigneeUserId, status: 'ACTIVE' },
+        });
+        if (member === 0) {
+            logger.warn('automation.task_assignee_not_a_member', {
+                component: 'automation',
+                ruleId: rule.id,
+                tenantId: event.tenantId,
+            });
+            assigneeUserId = null;
+        }
+    }
     const task = await db.task.create({
         data: {
             tenantId: event.tenantId,
@@ -165,7 +186,7 @@ async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
             source: 'INTEGRATION',
             key: dedupeKey,
             createdByUserId,
-            assigneeUserId: cfg.assigneeUserId ?? null,
+            assigneeUserId,
         },
     });
     return { ok: true, summary: `Created task ${task.id}`, detail: { taskId: task.id } };

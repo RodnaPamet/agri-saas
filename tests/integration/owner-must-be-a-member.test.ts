@@ -17,6 +17,7 @@ import { makeRequestContext } from '../helpers/make-context';
 import { createLocation } from '@/app-layer/usecases/location';
 import { createEvidence } from '@/app-layer/usecases/evidence';
 import { createAsset } from '@/app-layer/usecases/asset';
+import { createAccessReview } from '@/app-layer/usecases/access-review';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -67,6 +68,12 @@ describeFn('a named owner must be an ACTIVE member of this farm (#3208)', () => 
 
     it('an asset cannot be assigned to an outsider', async () => {
         await expect(createAsset(ctx, { name: `${TAG} трактор`, type: 'TRACTOR', ownerUserId: outsiderId }))
+            .rejects.toMatchObject({ code: 'TARGET_USER_NOT_IN_TENANT' });
+    });
+
+    it('an access review cannot be assigned to a reviewer from another farm', async () => {
+        const adminCtx = makeRequestContext('ADMIN', { tenantId: FARM, tenantSlug: FARM, userId: editorId });
+        await expect(createAccessReview(adminCtx, { name: `${TAG} преглед`, scope: 'ALL_USERS', reviewerUserId: outsiderId }))
             .rejects.toMatchObject({ code: 'TARGET_USER_NOT_IN_TENANT' });
     });
 
