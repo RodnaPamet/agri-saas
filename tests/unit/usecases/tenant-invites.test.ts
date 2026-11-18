@@ -495,7 +495,12 @@ describe('redeemInvite — atomic claim + email binding', () => {
         const upsertSpy = jest.fn().mockResolvedValue({ id: 'membership-1' });
         mockTransaction.mockImplementationOnce(async (fn: any) =>
             fn({
-                tenantMembership: { upsert: upsertSpy },
+                tenantMembership: {
+                    upsert: upsertSpy,
+                    // #3183: redemption asks whether this person already
+                    // holds a seat before counting one against the plan.
+                    findUnique: jest.fn().mockResolvedValue(null),
+                },
                 tenant: {
                     findUnique: jest.fn().mockResolvedValue({ slug: 'acme' }),
                     findFirst: jest.fn().mockResolvedValue({ slug: 'acme' }),

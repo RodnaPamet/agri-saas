@@ -51,7 +51,7 @@
 import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
-import { sendEmail } from '@/lib/mailer';
+import { sendEmailOrFail } from '@/lib/mailer';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { composeStatementBody, resolveRedressAddress } from '@/app-layer/usecases/statement-body';
@@ -171,7 +171,7 @@ export async function runStatementDispatch(
             // "name an address, or name none" branch already handles that
             // case, so there is nothing to point at.
             const redressAddress = resolveRedressAddress();
-            await sendEmail({
+            await sendEmailOrFail({
                 to: recipient.email,
                 subject,
                 text: body,

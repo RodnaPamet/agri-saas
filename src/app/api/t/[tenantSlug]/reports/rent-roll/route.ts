@@ -17,6 +17,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { contentDisposition } from '@/lib/http/content-disposition';
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
+import { escapeCSV } from '@/lib/reports/csv-escape';
 
 // PDFKit needs the Node runtime (stream/zlib/Buffer).
 export const runtime = 'nodejs';
@@ -24,9 +25,18 @@ export const maxDuration = 60;
 
 type Ctx = { params: Promise<{ tenantSlug: string }> };
 
+/**
+ * One CSV cell. Text goes through the shared `escapeCSV`, which neutralises a
+ * leading `= + - @ \t \r` (#3216): `lessorName`, `lessorEik` and `rentUnit`
+ * are free text any writer in the farm can enter, and this route used a local
+ * quoter that did not, so a lessor named `=HYPERLINK(...)` ran as a formula in
+ * the owner's spreadsheet. NUMBERS are written as they are, because the same
+ * neutralisation would turn a negative `outstanding` (an overpayment) into
+ * text — and a number cannot carry a formula.
+ */
 function csvCell(v: string | number | null): string {
-    const s = v == null ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
+    return escapeCSV(v);
 }
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: Ctx) => {

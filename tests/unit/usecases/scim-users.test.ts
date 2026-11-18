@@ -51,8 +51,19 @@ jest.mock('@/lib/prisma', () => ({
             update: jest.fn(),
             count: jest.fn(),
         },
+        // `reachesBeyondTenant` (#3197) counts org memberships before a
+        // platform-wide rename.
+        orgMembership: { count: jest.fn() },
         $transaction: jest.fn(),
     },
+}));
+
+// #3183: provisioning checks the plan's seat limit. Pass-through by
+// default; one test makes it refuse.
+const mockAssertWithinLimit = jest.fn();
+jest.mock('@/lib/billing/entitlements', () => ({
+    ...jest.requireActual('@/lib/billing/entitlements'),
+    assertWithinLimit: (...args: unknown[]) => mockAssertWithinLimit(...args),
 }));
 
 jest.mock('@/lib/audit/audit-writer', () => ({
@@ -87,6 +98,8 @@ const scimCtx = (tenantId = 'tenant-1') => ({
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockAssertWithinLimit.mockReset();
+    mockAssertWithinLimit.mockResolvedValue(undefined);
 });
 
 describe('resolveScimRole — ADMIN block + allow-list', () => {
@@ -242,6 +255,20 @@ describe('scimCreateUser — idempotency + reactivation', () => {
         expect(observedRole).toBe('READER');
     });
 
+    it('#3183: an ACTIVE provisioned user is counted against the seat limit; a refusal writes nothing', async () => {
+        mockAssertWithinLimit.mockRejectedValueOnce(new Error('plan_limit_exceeded: user'));
+        mockUserFindUnique.mockResolvedValueOnce(null);
+        const userCreate = jest.fn();
+        const tx = { user: { create: userCreate }, tenantMembership: { create: jest.fn() } };
+        mockTransaction.mockImplementationOnce(async (fn: any) => fn(tx));
+
+        await expect(
+            scimCreateUser(scimCtx(), { userName: 'a@b.com' }, 'https://x'),
+        ).rejects.toThrow(/plan_limit_exceeded/);
+        expect(mockAssertWithinLimit).toHaveBeenCalledWith({ tenantId: scimCtx().tenantId }, 'user', tx);
+        expect(userCreate).not.toHaveBeenCalled();
+    });
+
     it('creates user inactive when input.active === false', async () => {
         mockUserFindUnique.mockResolvedValueOnce(null);
 
@@ -271,32 +298,24 @@ describe('scimCreateUser — idempotency + reactivation', () => {
         expect(observedStatus).toBe('DEACTIVATED');
     });
 
-    it('attaches existing-user (e.g. cross-tenant member) with new membership in caller tenant', async () => {
+    it('REFUSES to attach an existing user from another tenant — 409 uniqueness, no membership written (#3197)', async () => {
+        // This case used to assert the OPPOSITE, as a regression test for
+        // consultants on several farms. Reversed deliberately: attaching an
+        // existing account to whichever farm minted the SCIM token, without
+        // asking the person, was half of an account takeover (#3196/#3197) —
+        // every self-serve sign-up owns a farm and can mint a token. A person
+        // joins a second farm through an invite they accept.
         mockUserFindUnique.mockResolvedValueOnce({
             id: 'shared-user', email: 'shared@b.com', name: 'Shared',
             createdAt: new Date(), updatedAt: new Date(),
         } as never);
-        // No existing membership in caller tenant.
         mockMembershipFindUnique.mockResolvedValueOnce(null);
-        mockMembershipCreate.mockResolvedValueOnce({
-            id: 'm-new', status: 'ACTIVE', role: 'READER',
-        } as never);
 
-        await scimCreateUser(scimCtx('tenant-A'), {
+        await expect(scimCreateUser(scimCtx('tenant-A'), {
             userName: 'shared@b.com',
-        }, 'https://x');
+        }, 'https://x')).rejects.toMatchObject({ status: 409, scimType: 'uniqueness' });
 
-        expect(mockMembershipCreate).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({
-                    tenantId: 'tenant-A',
-                    userId: 'shared-user',
-                }),
-            }),
-        );
-        // Regression: a refactor that bailed on "user already exists"
-        // would prevent shared users (e.g. consultants on multiple
-        // tenants) from being provisioned via SCIM into a new tenant.
+        expect(mockMembershipCreate).not.toHaveBeenCalled();
     });
 });
 

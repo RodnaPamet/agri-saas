@@ -456,7 +456,11 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             + 'against other rows of the same table, which is the shape a policy on that '
             + 'table cannot query. It is a THROTTLE, so two concurrent posts may both '
             + 'pass — acceptable for a rate limit and not for an access rule, which is '
-            + 'why the access rules are in the WITH CHECK and this is not.',
+            + 'why the access rules are in the WITH CHECK and this is not.\n\n'
+            + '**`Idempotency-Key` header** (optional, ≤128 chars, #3195). A retry of a '
+            + 'send whose answer was lost, under the same key, returns the FIRST post '
+            + 'instead of writing a second. The key is scoped to the author. Reusing a '
+            + 'key for a different channel or parent answers 409 `IDEMPOTENCY_KEY_REUSED`.',
         tags: TAGS,
         body: z.object({
             body: z.string().min(1).max(8000),

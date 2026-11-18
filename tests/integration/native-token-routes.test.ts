@@ -119,6 +119,21 @@ describeFn('POST /api/auth/token', () => {
         expect((await res.json()).error).toBe('session_not_tracked');
     });
 
+    it.each([
+        ['mfaPending', { mfaPending: true }],
+        ['a pending farm', { mfaPendingTenantIds: ['tenant-requires-mfa'] }],
+    ])('REFUSES a session that still owes its second factor (%s) — #3199', async (_label, pending) => {
+        const s = await makeSession();
+        const res = await issue(await issueReq({
+            userId: USER_ID, sub: USER_ID, email: EMAIL, userSessionId: s.sessionId, ...pending,
+        }), ROUTE_CTX);
+        expect(res.status).toBe(403);
+        expect((await res.json()).error).toBe('mfa_required');
+        // Refused BEFORE anything was minted.
+        const rows = await db.nativeRefreshToken.findMany({ where: { userSessionId: s.id }, select: { id: true } });
+        expect(rows).toHaveLength(0);
+    });
+
     it('refuses a revoked session', async () => {
         const s = await makeSession({ revokedAt: new Date() });
         const res = await issue(await issueReq({

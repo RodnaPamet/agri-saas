@@ -75,31 +75,47 @@ if [ -z "$REMOTE_SHA" ]; then
     exit 2
 fi
 
-# The db build context, which decides what the production database image IS.
-# Hashing only the compose file let the VM's Dockerfile sit three months behind
-# the repo with this check green (measured 2026-09-17: repo dd44f03d… vs VM
-# 4940b1d6…). A compose file that is in sync says nothing about the image the
-# `db` service builds from it.
-LOCAL_DF="${SCRIPT_DIR}/postgres/Dockerfile"
-REMOTE_DF="${REMOTE_DIR}/deploy/postgres/Dockerfile"
+# The repo files the compose file depends on: build contexts and `./deploy/…`
+# bind mounts. Hashing only the compose file let the VM's db Dockerfile sit
+# three months behind the repo with this check green (measured 2026-09-17:
+# repo dd44f03d… vs VM 4940b1d6…). The fix named that one Dockerfile by hand,
+# and the next context (`deploy/zarnoborsa`) and the `init-roles.sh` mount then
+# went unhashed (#3191), so the set is DERIVED from the compose file by
+# `compose_repo_inputs` — shared with apply.sh, so what is shipped and what is
+# checked cannot disagree.
+# shellcheck source=deploy/lib/compose-repo-inputs.sh
+. "${SCRIPT_DIR}/lib/compose-repo-inputs.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DF_DRIFT=0
-if [ -f "$LOCAL_DF" ]; then
-    LOCAL_DF_SHA="$(sha256sum "$LOCAL_DF" | awk '{print $1}')"
-    REMOTE_DF_SHA="$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" \
-        --command "sudo sha256sum '${REMOTE_DF}'" 2>/dev/null | awk '{print $1}')" || REMOTE_DF_SHA=""
-    if [ -z "$REMOTE_DF_SHA" ]; then
-        err "could not read ${REMOTE_DF} on ${VM_NAME} — absent, or unreadable."
+DF_CHECKED=0
+if ! INPUT_LIST="$(compose_repo_inputs "$LOCAL_COMPOSE" "$REPO_ROOT")"; then
+    err "the compose file names a build context or mount the repo does not have."
+    DF_DRIFT=1
+fi
+while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    l_sha="$(sha256sum "${REPO_ROOT}/${rel}" | awk '{print $1}')"
+    # `< /dev/null`: ssh would otherwise swallow the rest of this loop's input
+    # (the backup table below records the same trap).
+    r_sha="$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" \
+        --command "sudo sha256sum '${REMOTE_DIR}/${rel}'" < /dev/null 2>/dev/null | awk '{print $1}')" || r_sha=""
+    DF_CHECKED=$((DF_CHECKED + 1))
+    if [ -z "$r_sha" ]; then
+        err "could not read ${REMOTE_DIR}/${rel} on ${VM_NAME} — absent, or unreadable."
         DF_DRIFT=1
-    elif [ "$LOCAL_DF_SHA" != "$REMOTE_DF_SHA" ]; then
-        err "DRIFT — deploy/postgres/Dockerfile differs (local ${LOCAL_DF_SHA:0:12}, remote ${REMOTE_DF_SHA:0:12})."
-        err "  The db service builds from it. Reconcile with deploy/apply.sh, and note that"
-        err "  copying it does NOT rebuild the image — see docs/runbooks/postgis-trixie-cutover.md."
+    elif [ "$l_sha" != "$r_sha" ]; then
+        err "DRIFT — ${rel} differs (local ${l_sha:0:12}, remote ${r_sha:0:12})."
+        err "  The compose file builds or mounts it. Reconcile with deploy/apply.sh, and note"
+        err "  that copying a build context does NOT rebuild its image — see"
+        err "  docs/runbooks/postgis-trixie-cutover.md for the db one."
         DF_DRIFT=1
     else
-        ok "in sync — deploy/postgres/Dockerfile matches (${LOCAL_DF_SHA:0:12})"
+        ok "in sync — ${rel} matches (${l_sha:0:12})"
     fi
-else
-    err "missing $LOCAL_DF — the db build context is not where this script expects it."
+done <<<"${INPUT_LIST:-}"
+# The denominator, so "in sync" over zero files cannot read as a pass.
+if [ "$DF_CHECKED" -eq 0 ]; then
+    err "derived no repo inputs from the compose file — the selector matched nothing."
     DF_DRIFT=1
 fi
 
@@ -416,7 +432,7 @@ if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
     # silently skipping two reads as "one problem".
     FAILED=""
     [ "$CADDY_DRIFT" -ne 0 ] && FAILED="${FAILED} the Caddy site set;"
-    [ "$DF_DRIFT" -ne 0 ] && FAILED="${FAILED} the db build context;"
+    [ "$DF_DRIFT" -ne 0 ] && FAILED="${FAILED} a build context or mounted file;"
     [ "$RUNNING_DRIFT" -ne 0 ] && FAILED="${FAILED} a container's running state;"
     [ "$BACKUP_DRIFT" -ne 0 ] && FAILED="${FAILED} the database backup mechanism;"
     [ "$KEY_DRIFT" -ne 0 ] && FAILED="${FAILED} the encryption key's durable copy;"

@@ -9,7 +9,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { sendEmail } from '@/lib/mailer';
+import { sendEmailOrFail } from '@/lib/mailer';
 import { getTenantNotificationSettings } from './settings';
 import { isPlatformAudience } from './audience';
 import { logger } from '@/lib/observability/logger';
@@ -26,6 +26,9 @@ export interface ProcessOutboxResult {
     failed: number;
     skipped: number;
 }
+
+/** How long a claimed row is invisible to other runners while it is sent. */
+export const OUTBOX_CLAIM_LEASE_MS = 10 * 60 * 1000;
 
 export async function processOutbox(
     options: ProcessOutboxOptions = {},
@@ -89,9 +92,20 @@ export async function processOutbox(
             // Claiming also fixes the crash window: `attempts` now increments
             // BEFORE the send, so a process that dies mid-send has spent an
             // attempt rather than leaving a row that retries for ever.
+            // The claim is also a LEASE (#3179). It used to bump `attempts` and
+            // leave the row PENDING with `sendAfter` in the past for the whole
+            // send, so a second runner whose read landed mid-send (the 06:00
+            // evidence job, the next 5-minute tick, the admin `run-job` route)
+            // saw the bumped value, won its own compare-and-set on it and sent
+            // the same mail again. Moving `sendAfter` forward takes the row out
+            // of every other runner's read until the lease ends, and the
+            // `sendAfter` condition here keeps two claims from both winning.
+            // A failed send stays PENDING behind the lease, which is the retry
+            // back-off; a crash mid-send is retried once the lease expires.
+            const claimedAt = new Date();
             const claim = await prisma.notificationOutbox.updateMany({
-                where: { id: row.id, status: 'PENDING', attempts: row.attempts },
-                data: { attempts: row.attempts + 1 },
+                where: { id: row.id, status: 'PENDING', attempts: row.attempts, sendAfter: { lte: claimedAt } },
+                data: { attempts: row.attempts + 1, sendAfter: new Date(claimedAt.getTime() + OUTBOX_CLAIM_LEASE_MS) },
             });
             if (claim.count === 0) {
                 // Another runner has it. Not an error, and not this run's to count.
@@ -99,7 +113,7 @@ export async function processOutbox(
                 continue;
             }
 
-            await sendEmail({
+            await sendEmailOrFail({
                 to: row.toEmail,
                 subject: row.subject,
                 purpose: 'notification-outbox',

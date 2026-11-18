@@ -4,10 +4,16 @@ import { SamlConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
 import {
     buildSamlInstance,
     generateAuthnRequest,
-    encodeSamlRelayState,
 } from '@/lib/security/saml-client';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { env } from '@/env';
+import { secureCookiesEnabled } from '@/lib/auth/secure-cookies';
+import {
+    SSO_FLOW_COOKIE,
+    safeReturnTo,
+    sealSsoFlow,
+    ssoFlowCookieOptions,
+} from '@/lib/security/sso-flow-binding';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import {
     badRequest,
@@ -36,7 +42,8 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const { searchParams } = req.nextUrl;
     const tenantSlug = searchParams.get('tenant');
     const providerId = searchParams.get('provider');
-    const returnTo = searchParams.get('returnTo') || '/';
+    // Same-origin relative paths only (#3205).
+    const returnTo = safeReturnTo(searchParams.get('returnTo'));
 
     // ── Validate params ──
     if (!tenantSlug || !providerId) {
@@ -94,8 +101,8 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
 
     const saml = buildSamlInstance(samlConfig, callbackUrl, spIssuer);
 
-    // ── Encode tenant context in RelayState ──
-    const relayState = encodeSamlRelayState({
+    // ── RelayState is a random token; the context is in a bound cookie (#3205) ──
+    const { state: relayState, cookie: flowCookie } = sealSsoFlow({
         tenantSlug: tenant.slug,
         providerId: provider.id,
         returnTo,
@@ -108,7 +115,14 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
             requestId, tenantSlug: tenant.slug, providerType: 'SAML',
             providerId: provider.id, stage: 'redirect',
         });
-        return NextResponse.redirect(redirectUrl);
+        const response = NextResponse.redirect(redirectUrl);
+        // The IdP answers with a cross-site POST, hence `crossSitePost`.
+        response.cookies.set(
+            SSO_FLOW_COOKIE,
+            flowCookie,
+            ssoFlowCookieOptions({ crossSitePost: true, secure: secureCookiesEnabled() }),
+        );
+        return response;
     } catch (err) {
         ssoLog('error', 'AuthnRequest generation failed', {
             requestId, tenantSlug: tenant.slug, providerType: 'SAML',

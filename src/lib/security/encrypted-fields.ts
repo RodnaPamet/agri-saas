@@ -57,10 +57,13 @@
  *     middleware rewrites them as ciphertext).
  *   - The one-shot backfill migration (later Epic B phase) iterates
  *     every row and `encryptField()`s each listed field in place.
- *   - Detection is idempotent: every ciphertext begins with the
- *     `v1:` version prefix (see `encryption.ts`). The middleware
- *     uses `isEncryptedValue()` before both encrypt and decrypt so
- *     double-encryption and plaintext-during-rollout are both safe.
+ *   - Every ciphertext begins with a `v1:` / `v2:` version prefix (see
+ *     `encryption.ts`). The READ path uses `isEncryptedValue()` so
+ *     plaintext left over from a rollout passes through. The WRITE path
+ *     does NOT trust the prefix (#3204): it skips only a value the
+ *     extension itself wrote into the same args object, so a pasted
+ *     envelope is encrypted like any other text — see
+ *     `encryption-middleware.ts` → "Idempotency".
  *
  * **Fields DELIBERATELY NOT in this manifest:**
  *   - PII fields (email, name, phone, tokens) — already handled by

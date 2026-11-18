@@ -42,6 +42,20 @@ async function handleIssue(req: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // A session that has presented a password but not its second factor must
+    // not leave with a credential that has neither (#3199). This route is
+    // under `/api/auth/`, so the Edge's MFA gate never runs for it, and the
+    // pair it mints is read by `resolveBearerSession`, which builds a principal
+    // with `mfaPending: false` — so issuing here turned "password only" into
+    // "fully signed in" on every `/api/t/**` route. Native sign-in clears the
+    // factor through its own ticket (`/api/auth/native/*`) and never needs this.
+    if (
+        token.mfaPending === true
+        || (Array.isArray(token.mfaPendingTenantIds) && token.mfaPendingTenantIds.length > 0)
+    ) {
+        return NextResponse.json({ error: 'mfa_required' }, { status: 403 });
+    }
+
     const externalSessionId = token.userSessionId;
     if (typeof externalSessionId !== 'string' || !externalSessionId) {
         // A token with no session lineage cannot produce a revocable

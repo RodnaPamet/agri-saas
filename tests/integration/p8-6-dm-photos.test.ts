@@ -169,6 +169,22 @@ describeFn('P8.6 — conversation photographs (#2800)', () => {
             expect(row.attachmentKey).not.toBeNull();
         }, 60_000);
 
+        it('#3209 — the caption is sanitised like a message body, and an over-long one is refused', async () => {
+            const sent = await sendDirectPhoto(ctxFor(ALICE), {
+                conversationId: CONV,
+                bytes: await jpegWithExif(),
+                body: '<img src=x onerror=alert(1)>Снимка от нивата',
+            });
+            const row = await prisma.directMessage.findUniqueOrThrow({ where: { id: sent.messageId }, select: { body: true } });
+            expect(row.body).toBe('Снимка от нивата');
+
+            await expect(sendDirectPhoto(ctxFor(ALICE), {
+                conversationId: CONV,
+                bytes: await jpegWithExif(),
+                body: 'а'.repeat(4001),
+            })).rejects.toMatchObject({ code: 'DM_BODY_TOO_LONG' });
+        }, 60_000);
+
         it('refuses a non-image on the MAGIC NUMBER, not the declared type', async () => {
             await expect(
                 sendDirectPhoto(ctxFor(ALICE), {
@@ -218,6 +234,33 @@ describeFn('P8.6 — conversation photographs (#2800)', () => {
             // refused" is not the property — indistinguishability is.
             expect(refusals[0]).toBe('CONVERSATION_NOT_FOUND');
             expect(refusals[1]).toBe(refusals[0]);
+        }, 60_000);
+
+        it('#3202 — a BLOCKED participant cannot send a photograph, and is told only "not found"', async () => {
+            const blockId = `ub-${randomUUID()}`;
+            await prisma.$executeRawUnsafe(
+                `INSERT INTO "UserBlock"("id","blockerUserId","blockedUserId") VALUES ($1,$2,$3)`,
+                blockId, BORIS, ALICE,
+            );
+            try {
+                const before = await prisma.directMessage.count({ where: { conversationId: CONV } });
+                const code = await sendDirectPhoto(ctxFor(ALICE), {
+                    conversationId: CONV,
+                    bytes: await jpegWithExif(),
+                    body: 'подпис',
+                }).catch((e) => (e as { code?: string }).code);
+
+                expect(code).toBe('CONVERSATION_NOT_FOUND');
+                expect(await prisma.directMessage.count({ where: { conversationId: CONV } })).toBe(before);
+            } finally {
+                await prisma.$executeRawUnsafe(`DELETE FROM "UserBlock" WHERE "id" = $1`, blockId);
+            }
+            // Control: the same send with the block lifted goes through, so the
+            // refusal above was the block and not something else.
+            await expect(sendDirectPhoto(ctxFor(ALICE), {
+                conversationId: CONV,
+                bytes: await jpegWithExif(),
+            })).resolves.toMatchObject({ messageId: expect.any(String) });
         }, 60_000);
     });
 

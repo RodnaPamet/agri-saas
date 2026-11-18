@@ -39,9 +39,17 @@ const TENANT = `t-cards-${TAG}`;
 const SLUG = `cards-${TAG}`;
 let sellerId = '';
 
-/** The oblast this suite owns, so it cannot collide with another run. */
+/**
+ * The oblast this suite writes cards into. `Channel.key` is unique and the
+ * seeding suites (p9-2, p9-4-channel-cards, p9-7) leave the real catalogue,
+ * `oblast:BG-28` included, in a shared database — so creating it outright
+ * failed every case whenever one of those ran first (#3218). The channel is
+ * found-or-created in `beforeAll`, and deleted at the end only if this suite
+ * created it.
+ */
 const REGION = 'BG-28';
-const OBLAST_CHANNEL = `c-ob-${TAG}`;
+let OBLAST_CHANNEL = `c-ob-${TAG}`;
+let ownsOblastChannel = true;
 const CROP_CHANNEL = `c-crop-${TAG}`;
 
 async function mkListing(over: Record<string, unknown> = {}): Promise<string> {
@@ -98,10 +106,20 @@ beforeAll(async () => {
     await prisma.tenantMembership.create({
         data: { tenantId: TENANT, userId: sellerId, role: Role.OWNER, status: MembershipStatus.ACTIVE },
     });
+    const seeded = await prisma.channel.findUnique({
+        where: { key: `oblast:${REGION}` },
+        select: { id: true },
+    });
+    if (seeded) {
+        OBLAST_CHANNEL = seeded.id;
+        ownsOblastChannel = false;
+    }
     await prisma.channel.createMany({
         data: [
-            { id: OBLAST_CHANNEL, key: `oblast:${REGION}`, kind: 'OBLAST', nameBg: 'Тест област', nameEn: 'Test oblast' },
-            { id: CROP_CHANNEL, key: `crop:test-${TAG}`, kind: 'CROP', nameBg: 'Тест култура', nameEn: 'Test crop' },
+            ...(ownsOblastChannel
+                ? [{ id: OBLAST_CHANNEL, key: `oblast:${REGION}`, kind: 'OBLAST' as const, nameBg: 'Тест област', nameEn: 'Test oblast' }]
+                : []),
+            { id: CROP_CHANNEL, key: `crop:test-${TAG}`, kind: 'CROP' as const, nameBg: 'Тест култура', nameEn: 'Test crop' },
         ],
     });
 });
@@ -109,7 +127,11 @@ beforeAll(async () => {
 afterAll(async () => {
     if (!DB_AVAILABLE) return;
     await clearCards();
-    await prisma.channel.deleteMany({ where: { id: { in: [OBLAST_CHANNEL, CROP_CHANNEL] } } });
+    // Only the channels this suite created; a seeded oblast stays for the
+    // suites that seeded it.
+    await prisma.channel.deleteMany({
+        where: { id: { in: ownsOblastChannel ? [OBLAST_CHANNEL, CROP_CHANNEL] : [CROP_CHANNEL] } },
+    });
     await prisma.exchangeListing.deleteMany({ where: { sellerTenantId: TENANT } });
     // The tenant, user and membership are LEFT: `ExchangeListing` rows and
     // audit rows pin the user by FK, and hard-deleting them properly would

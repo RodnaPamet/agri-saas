@@ -9,6 +9,7 @@ import { assertCanDeleteTask, assertCanDeleteTasks,
     canDeleteTask,
 } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
+import { assertActiveMembers } from '../policies/member.policies';
 import { emitAutomationEvent } from '../automation';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -180,6 +181,7 @@ export async function getTask(ctx: RequestContext, taskId: string) {
 
 // ─── Create ───
 
+
 /**
  * `suppressAssignmentNotification` (#1740): skip the "you have been assigned"
  * email and bell.
@@ -216,6 +218,7 @@ export async function createTask(ctx: RequestContext, input: {
 }) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, input.assigneeUserId, input.reviewerUserId);
         // Validate metadataJson on write
         if (input.metadataJson !== undefined) {
             input.metadataJson = validateTaskMetadata(input.metadataJson);
@@ -298,6 +301,7 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
         // rather than a forbidden — which is the existing behaviour and the
         // right one: it discloses nothing about another farm's tasks.
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
+        await assertActiveMembers(db, ctx, patch.reviewerUserId);
         if (!existing) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         assertCanEditTask(ctx, existing);
 
@@ -718,6 +722,7 @@ export async function setTaskStatus(ctx: RequestContext, taskId: string, status:
 export async function assignTask(ctx: RequestContext, taskId: string, assigneeUserId: string | null) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, assigneeUserId);
         const task = await WorkItemRepository.assign(db, ctx, taskId, assigneeUserId);
         if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         await logEvent(db, ctx, {
@@ -2103,6 +2108,7 @@ export async function getTaskActivity(ctx: RequestContext, taskId: string) {
 export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], assigneeUserId: string | null) {
     assertCanWriteTasks(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, assigneeUserId);
         const result = await WorkItemRepository.bulkAssign(db, ctx, taskIds, assigneeUserId);
         for (const id of taskIds) {
             await logEvent(db, ctx, {

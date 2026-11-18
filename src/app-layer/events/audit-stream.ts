@@ -51,6 +51,7 @@ import {
     startAuditStreamBufferReporting,
 } from '@/lib/observability/metrics';
 import { env } from '@/env';
+import { fetchPublicUrl, BlockedRequestError } from '@/lib/security/safe-fetch';
 
 // ─── Public payload shape ──────────────────────────────────────────
 
@@ -255,18 +256,25 @@ export type StreamPostFn = (
 ) => Promise<{ ok: boolean; status: number; statusText?: string }>;
 
 const defaultPost: StreamPostFn = async (url, body, headers) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
+    // The tenant-configured SIEM URL gets the same two-layer host policy, at
+    // every hop, as an automation webhook (#3203). A redirect is refused
+    // (`maxRedirects: 0`): the body is HMAC-signed audit data.
     try {
-        const res = await fetch(url, {
+        const res = await fetchPublicUrl(url, {
             method: 'POST',
             body,
             headers,
-            signal: controller.signal,
+            timeoutMs: POST_TIMEOUT_MS,
+            maxRedirects: 0,
         });
         return { ok: res.ok, status: res.status, statusText: res.statusText };
-    } finally {
-        clearTimeout(timer);
+    } catch (err) {
+        // A refused destination will be refused again, so it must not look
+        // retryable: `isRetryable` treats status 0 as a network blip.
+        if (err instanceof BlockedRequestError) {
+            return { ok: false, status: 400, statusText: `blocked: ${err.message}` };
+        }
+        throw err;
     }
 };
 

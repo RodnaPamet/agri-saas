@@ -6,11 +6,17 @@ import { SamlConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
 import {
     buildSamlInstance,
     validateSamlResponse,
-    decodeSamlRelayState,
 } from '@/lib/security/saml-client';
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { env } from '@/env';
+import type { SamlRelayState } from '@/lib/security/saml-client';
+import {
+    SSO_FLOW_COOKIE,
+    SSO_FLOW_COOKIE_CLEAR,
+    openSsoFlow,
+    safeReturnTo,
+} from '@/lib/security/sso-flow-binding';
 import jwt from 'jsonwebtoken';
 
 export const dynamic = 'force-dynamic';
@@ -48,8 +54,13 @@ export async function POST(req: NextRequest) {
         return redirectToLogin(req, 'missing_relay', 'Missing RelayState parameter');
     }
 
-    const relayState = decodeSamlRelayState(relayStateRaw);
-    if (!relayState) {
+    // RelayState is a random token; the flow it names lives in this browser's
+    // HttpOnly cookie, so a SAMLResponse posted from another browser — login
+    // CSRF — is refused (#3205). Expired on the way out: single-use.
+    const jar = await cookies();
+    const relayState = openSsoFlow<SamlRelayState>(jar.get(SSO_FLOW_COOKIE)?.value, relayStateRaw);
+    jar.set(SSO_FLOW_COOKIE, '', SSO_FLOW_COOKIE_CLEAR);
+    if (!relayState || !relayState.tenantSlug || !relayState.providerId) {
         return redirectToLogin(req, 'invalid_relay', 'Invalid RelayState');
     }
 
@@ -129,6 +140,7 @@ export async function POST(req: NextRequest) {
             subject_conflict: 'Identity conflict detected. Contact your administrator.',
             jit_disabled: 'No matching account found. Contact your administrator.',
             no_email: 'Identity provider did not return an email',
+            multi_tenant_account: 'This account belongs to more than one farm. Sign in with your usual method.',
         };
         ssoLog('warn', 'SAML identity linking rejected', {
             requestId, tenantSlug: relayState.tenantSlug, providerType: 'SAML',
@@ -154,7 +166,9 @@ export async function POST(req: NextRequest) {
         },
     });
 
-    if (!membership) {
+    // ACTIVE only (#3196): a DEACTIVATED or REMOVED row is a person this farm
+    // let go, not one its IdP may sign in.
+    if (!membership || membership.status !== 'ACTIVE') {
         return redirectToLogin(req, 'no_membership');
     }
 
@@ -192,7 +206,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Redirect to app ──
-    const returnTo = relayState.returnTo || `/t/${tenant.slug}/dashboard`;
+    const returnTo = safeReturnTo(relayState.returnTo) ?? `/t/${tenant.slug}/dashboard`;
     return NextResponse.redirect(new URL(returnTo, baseUrl));
 }
 

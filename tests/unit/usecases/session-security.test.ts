@@ -101,7 +101,7 @@ describe('revokeUserSessions — self vs other', () => {
 
     it('looks up membership keyed on tenantId_userId (composite, not userId alone)', async () => {
         mockMembershipFindUnique.mockResolvedValueOnce({
-            id: 'm1', tenantId: 'tenant-1', userId: 'other',
+            id: 'm1', tenantId: 'tenant-1', userId: 'other', status: 'ACTIVE',
         } as never);
 
         await revokeUserSessions(makeRequestContext('ADMIN'), 'other');
@@ -112,6 +112,18 @@ describe('revokeUserSessions — self vs other', () => {
             },
         });
     });
+
+    it.each(['REMOVED', 'DEACTIVATED'])(
+        '#3214 — REFUSES a %s member: the bump is platform-wide and they are no longer this farm’s to sign out',
+        async (status) => {
+            mockMembershipFindUnique.mockResolvedValueOnce({
+                id: 'm1', tenantId: 'tenant-1', userId: 'former', status,
+            } as never);
+
+            await expect(revokeUserSessions(makeRequestContext('ADMIN'), 'former'))
+                .rejects.toMatchObject({ code: 'TARGET_USER_NOT_IN_TENANT' });
+        },
+    );
 
     it('audit emit is best-effort — revoke succeeds even if logEvent throws', async () => {
         mockLog.mockRejectedValueOnce(new Error('audit-chain-down'));
@@ -167,6 +179,11 @@ describe('revokeAllTenantSessions', () => {
             data: { sessionVersion: { increment: 1 } },
         });
         expect(result.usersAffected).toBe(3);
+        // #3214: ACTIVE members only — a former member's other farms are not
+        // this farm's to sign out.
+        expect(mockMembershipFindMany).toHaveBeenCalledWith(expect.objectContaining({
+            where: { tenantId: 'tenant-1', status: 'ACTIVE' },
+        }));
     });
 });
 

@@ -35,6 +35,9 @@ import { NextRequest } from 'next/server';
 
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
+import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
+import { AuthRegisterVerifySchema } from '@/lib/schemas';
 import prisma from '@/lib/prisma';
 import { hashForLookupCandidates } from '@/lib/security/encryption';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
@@ -59,9 +62,33 @@ export const POST = withApiErrorHandling(
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
 
-        const { email: rawEmail, code } = (body ?? {}) as Record<string, unknown>;
-        if (typeof rawEmail !== 'string' || typeof code !== 'string' || !rawEmail || !code) {
+        const parsedBody = AuthRegisterVerifySchema.safeParse(body ?? {});
+        if (!parsedBody.success || !parsedBody.data.email || !parsedBody.data.code) {
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+        }
+        const { email: rawEmail, code, password } = parsedBody.data;
+
+        // The password the MAILBOX OWNER chose (#3206). `register/start` for an
+        // address that already had an unverified row reissued the code and
+        // DISCARDED the new caller's password, so the row kept the FIRST
+        // writer's — and verifying then turned an attacker's pre-registration
+        // into a verified account whose password the attacker knew. Whoever
+        // proves the mailbox here sets the password, checked exactly as at
+        // `register/start`, before the code is spent.
+        let newPasswordHash: string | null = null;
+        if (password !== undefined) {
+            const policy = validatePasswordPolicy(password);
+            if (!policy.ok) {
+                return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+            }
+            const hibp = await checkPasswordAgainstHIBP(password);
+            if (hibp.breached) {
+                return jsonResponse(
+                    { error: 'This password appears in known data breaches. Please choose a different password.' },
+                    { status: 400 },
+                );
+            }
+            newPasswordHash = await hashPassword(password);
         }
 
         const email = normaliseEmail(rawEmail);
@@ -99,7 +126,7 @@ export const POST = withApiErrorHandling(
                 emailHash: { in: hashForLookupCandidates(email) },
                 emailVerified: null,
             },
-            data: { emailVerified: new Date() },
+            data: { emailVerified: new Date(), ...(newPasswordHash ? { passwordHash: newPasswordHash } : {}) },
         });
 
         if (count === 0) {

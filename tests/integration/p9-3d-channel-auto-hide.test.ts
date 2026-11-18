@@ -274,6 +274,41 @@ describeFn('P9.3d — channel auto-hide (#2937)', () => {
         expect(row.autoHiddenAt).toBeNull();
     }, 90_000);
 
+    it('#3210 — does NOT hide on three people from ONE verified farm', async () => {
+        // The attack the bar exists for, by its other route: one verified
+        // farm's member plus two more accounts invited into the same farm.
+        // Three distinct verified REPORTERS, one verified FARM.
+        const farmTenant = await prisma.tenantMembership.findFirstOrThrow({
+            where: { userId: verifiedReporters[0] }, select: { tenantId: true },
+        });
+        const sameFarm: string[] = [];
+        for (let i = 0; i < 2; i += 1) {
+            const id = `u-p93d-samefarm-${randomUUID()}`;
+            await prisma.user.create({
+                data: { id, email: `${id}@example.test`, emailHash: `hash-${id}`, name: 'Invited' },
+            });
+            await prisma.tenantMembership.create({
+                data: { tenantId: farmTenant.tenantId, userId: id, role: 'READER', status: 'ACTIVE' },
+            });
+            sameFarm.push(id);
+        }
+        try {
+            const post = await postToChannel(ctxFor(AUTHOR), channelId, { body: 'една ферма, трима души' });
+            for (const r of [verifiedReporters[0], ...sameFarm]) await reportPost(post.postId, r);
+
+            await runChannelAutoHide();
+
+            const row = await prisma.channelPost.findUniqueOrThrow({
+                where: { id: post.postId }, select: { autoHiddenAt: true },
+            });
+            expect(row.autoHiddenAt).toBeNull();
+        } finally {
+            await prisma.tenantMembership.deleteMany({ where: { userId: { in: sameFarm } } });
+            await prisma.contentReport.deleteMany({ where: { reporterUserId: { in: sameFarm } } });
+            await prisma.user.deleteMany({ where: { id: { in: sameFarm } } });
+        }
+    }, 90_000);
+
     it('does NOT count UNVERIFIED reporters — the whole point of the bar', async () => {
         // Three reports from THREE DISTINCT accounts, none belonging to a
         // verified farm. The distinctness is what gives this teeth: with one
@@ -319,6 +354,51 @@ describeFn('P9.3d — channel auto-hide (#2937)', () => {
         });
         expect(statuses.length).toBe(AUTO_HIDE_THRESHOLD);
         expect(statuses.every((s) => s.status === 'RECEIVED')).toBe(true);
+    }, 90_000);
+
+    it('#3184 — notices that can never count do not starve a qualifying post', async () => {
+        // The window used to be the oldest `limit * 3` open notices. Fill it
+        // with notices from UNVERIFIED reporters — they never count and
+        // nothing drains them — and a post reported later by three verified
+        // farms was never read. With `limit: 1` that window is three notices.
+        const junk = await postToChannel(ctxFor(AUTHOR), channelId, { body: 'шум' });
+        for (const r of unverifiedReporters) await reportPost(junk.postId, r);
+        const real = await postToChannel(ctxFor(AUTHOR), channelId, { body: 'наистина' });
+        for (const r of verifiedReporters) await reportPost(real.postId, r);
+
+        const { result } = await runChannelAutoHide({ limit: 1 });
+
+        const hiddenReal = await prisma.channelPost.findUniqueOrThrow({
+            where: { id: real.postId }, select: { autoHiddenAt: true },
+        });
+        expect(hiddenReal.autoHiddenAt).not.toBeNull();
+        // Control: the junk post is untouched — unverified notices still do
+        // not count.
+        const junkPost = await prisma.channelPost.findUniqueOrThrow({
+            where: { id: junk.postId }, select: { autoHiddenAt: true },
+        });
+        expect(junkPost.autoHiddenAt).toBeNull();
+        expect(result.success).toBe(true);
+    }, 90_000);
+
+    it('#3184 — a post already hidden is not a candidate, so it cannot hold a batch', async () => {
+        const gone = await postToChannel(ctxFor(AUTHOR), channelId, { body: 'изтрита' });
+        for (const r of verifiedReporters) await reportPost(gone.postId, r);
+        await prisma.channelPost.update({ where: { id: gone.postId }, data: { deletedAt: new Date() } });
+        const real = await postToChannel(ctxFor(AUTHOR), channelId, { body: 'следваща' });
+        for (const r of verifiedReporters) await reportPost(real.postId, r);
+
+        await runChannelAutoHide({ limit: 1 });
+
+        const after = await prisma.channelPost.findUniqueOrThrow({
+            where: { id: real.postId }, select: { autoHiddenAt: true },
+        });
+        expect(after.autoHiddenAt).not.toBeNull();
+        // The retracted post stays the author's retraction, not an auto-hide.
+        const goneAfter = await prisma.channelPost.findUniqueOrThrow({
+            where: { id: gone.postId }, select: { autoHiddenAt: true },
+        });
+        expect(goneAfter.autoHiddenAt).toBeNull();
     }, 90_000);
 
     it('is IDEMPOTENT — a second run does not hide or announce twice', async () => {

@@ -50,8 +50,42 @@ import { logger } from '@/lib/observability/logger';
  * through unchanged.
  */
 export async function resolveBearerSession(): Promise<Session | null> {
-    const token = await resolveBearerToken();
-    if (!token) return null;
+    const resolved = await resolveBearer();
+    if (!resolved) return null;
+    const { token } = resolved;
+
+    // ── Which farms still owe a second factor (#3199) ──────────────────
+    //
+    // `getTenantCtx` refuses a farm on `mfaPendingTenantIds`, and that list was
+    // produced in exactly one place: the cookie `jwt` callback, which has the
+    // database and a sign-in `iat`. A bearer is minted ONCE by
+    // `buildSessionClaims` and presented unchanged, so it never carried the
+    // list, and every farm read as "nothing owed" for the life of the
+    // session. Two cases that leaves open:
+    //
+    //   * the Apple path collects a code for ONE farm (the one the ticket
+    //     names), so a member of a second farm whose policy is REQUIRED
+    //     reached it without that farm's factor; and
+    //   * a farm that turns MFA on, or is joined, after the session was minted
+    //     stays open to it for as long as the phone keeps refreshing.
+    //
+    // So the list is resolved HERE, per request, by the same function the
+    // cookie path uses. The anchor cannot be the token's `iat` — an access
+    // token is minted every 15 minutes, so a rule relative to it would
+    // re-challenge for ever (see `MfaClaimSource`). It is the SESSION's
+    // sign-in instead: every refresh keeps the same `UserSession` row, so its
+    // `createdAt` plays the role the cookie's `iat` plays. Less the Apple
+    // ticket's lifetime, because that flow verifies the code BEFORE it creates
+    // the row, so the challenge that produced the session predates it by up
+    // to that long.
+    //
+    // Farm routes only. The session-wide `mfaPending` stays as minted, so a
+    // person's own account pages remain reachable: this bearer passed a second
+    // factor at mint, and what changed since is a FARM's requirement, which is
+    // that farm's to enforce.
+    const pending = await bearerPendingTenantIds(token, resolved.sessionCreatedAt);
+    if (pending === 'refuse') return null;
+    token.mfaPendingTenantIds = pending;
 
     const userId = token.userId ?? token.sub;
 
@@ -91,6 +125,15 @@ export async function resolveBearerSession(): Promise<Session | null> {
  * applies to claim production.
  */
 export async function resolveBearerToken(): Promise<JWT | null> {
+    return (await resolveBearer())?.token ?? null;
+}
+
+/**
+ * The validator itself, also reporting when the session was signed in — the
+ * anchor `resolveBearerSession` needs. Undefined when the row could not be
+ * read (no lineage, or the fail-open branch below).
+ */
+async function resolveBearer(): Promise<{ token: JWT; sessionCreatedAt: Date | undefined } | null> {
     const h = await headers();
     const authorization = h.get('authorization');
     if (!authorization || !authorization.startsWith('Bearer ')) return null;
@@ -132,10 +175,12 @@ export async function resolveBearerToken(): Promise<JWT | null> {
     // note): failing closed would turn a database blip into a fleet-wide
     // sign-out. A definite "revoked" is honoured; an unknown answer is not
     // manufactured into one.
+    let sessionCreatedAt: Date | undefined;
     if (typeof token.userSessionId === 'string' && token.userSessionId) {
         try {
             const result = await verifyAndTouchSession(token.userSessionId);
             if (result.revoked) return null;
+            sessionCreatedAt = result.createdAt;
         } catch (err) {
             logger.warn('native-auth.session_check_failed', {
                 component: 'native-auth',
@@ -144,7 +189,46 @@ export async function resolveBearerToken(): Promise<JWT | null> {
         }
     }
 
-    return token;
+    return { token, sessionCreatedAt };
+}
+
+/**
+ * The farms this bearer must still present a factor for, or `'refuse'` when
+ * the check could not complete for a farm that asked to fail CLOSED.
+ *
+ * An unknown anchor (no session row could be read) treats nothing as
+ * satisfied — the resolver's own rule for an undefined `tokenIssuedAt` — so
+ * it holds rather than releases. Same direction as the cookie path.
+ */
+async function bearerPendingTenantIds(
+    token: JWT,
+    sessionCreatedAt: Date | undefined,
+): Promise<string[] | 'refuse'> {
+    const userId = (token.userId ?? token.sub) as string;
+    const tenantIds = (token.memberships ?? [])
+        .map((m) => m.tenantId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (tenantIds.length === 0) return [];
+
+    const [{ resolveMfaRequirementsForTenants }, { MFA_TICKET_TTL_SECONDS }] = await Promise.all([
+        import('@/lib/auth/mfa-requirement'),
+        import('@/lib/auth/native/auth-codes'),
+    ]);
+    const tokenIssuedAt = sessionCreatedAt
+        ? Math.floor(sessionCreatedAt.getTime() / 1000) - MFA_TICKET_TTL_SECONDS
+        : undefined;
+    const verdict = await resolveMfaRequirementsForTenants({ userId, tenantIds, tokenIssuedAt });
+
+    if (verdict.dependencyFailure) {
+        // Fail closed only where a farm asked for it; otherwise keep the claim
+        // as minted, exactly as the cookie path does — refusing by default
+        // would sign every phone out whenever the settings read hiccups.
+        logger.warn('native-auth.mfa_check_failed', { component: 'native-auth' });
+        return verdict.failClosed || token.mfaFailClosed === true
+            ? 'refuse'
+            : (token.mfaPendingTenantIds ?? []);
+    }
+    return verdict.pendingTenantIds;
 }
 
 /**

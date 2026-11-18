@@ -4,6 +4,7 @@ import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import type { TaskLinkEntityType } from '@prisma/client';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
+import { assertActiveMembers } from '../policies/member.policies';
 import { codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -73,6 +74,8 @@ export async function createAsset(ctx: RequestContext, data: any) {
     assertCanWrite(ctx);
 
     return runInTenantContext(ctx, async (db) => {
+        // A person named in the body must belong to this farm (#3208).
+        await assertActiveMembers(db, ctx, data.ownerUserId);
         const asset = await AssetRepository.create(db, ctx, {
             name: data.name,
             type: data.type,
@@ -119,6 +122,7 @@ export async function updateAsset(ctx: RequestContext, id: string, data: any) {
         // an actual change, not on every unrelated asset edit.
         const before = await AssetRepository.getById(db, ctx, id);
         const previousOwnerId = before?.ownerUserId ?? null;
+        await assertActiveMembers(db, ctx, data.ownerUserId);
 
         const asset = await AssetRepository.update(db, ctx, id, {
             name: data.name,

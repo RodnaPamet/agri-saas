@@ -5,7 +5,6 @@ import prisma from '@/lib/prisma';
 import { OidcConfigSchema } from '@/app-layer/schemas/sso-config.schemas';
 import {
     discoverOidc,
-    decodeState,
     exchangeCodeForTokens,
     extractIdTokenClaims,
     validateIdTokenNonce,
@@ -13,6 +12,13 @@ import {
 import { linkExternalIdentity } from '@/app-layer/usecases/sso';
 import { ssoLog, generateSsoRequestId } from '@/lib/security/sso-logging';
 import { env } from '@/env';
+import type { OidcStatePayload } from '@/lib/security/oidc-client';
+import {
+    SSO_FLOW_COOKIE,
+    SSO_FLOW_COOKIE_CLEAR,
+    openSsoFlow,
+    safeReturnTo,
+} from '@/lib/security/sso-flow-binding';
 import jwt from 'jsonwebtoken';
 
 export const dynamic = 'force-dynamic';
@@ -49,9 +55,15 @@ export async function GET(req: NextRequest) {
         return redirectToLogin(req, 'missing_params', 'Missing code or state');
     }
 
-    // ── Decode and validate state ──
-    const state = decodeState(stateParam);
-    if (!state) {
+    // ── Open the flow this browser started (#3205) ──
+    // The state the IdP returned must match the token sealed in this
+    // browser's HttpOnly cookie. A callback URL replayed in another browser —
+    // login CSRF — has no such cookie and is refused here. The cookie is
+    // expired on the way out whatever happens, so a flow is single-use.
+    const jar = await cookies();
+    const state = openSsoFlow<OidcStatePayload>(jar.get(SSO_FLOW_COOKIE)?.value, stateParam);
+    jar.set(SSO_FLOW_COOKIE, '', SSO_FLOW_COOKIE_CLEAR);
+    if (!state || !state.tenantSlug || !state.providerId || !state.codeVerifier || !state.nonce) {
         return redirectToLogin(req, 'invalid_state', 'Invalid SSO state');
     }
 
@@ -168,6 +180,7 @@ export async function GET(req: NextRequest) {
             subject_conflict: 'Identity conflict detected. Contact your administrator.',
             jit_disabled: 'No matching account found. Contact your administrator.',
             no_email: 'Identity provider did not return an email',
+            multi_tenant_account: 'This account belongs to more than one farm. Sign in with your usual method.',
         };
         ssoLog('warn', 'Identity linking rejected', {
             requestId, tenantSlug: state.tenantSlug, providerType: 'OIDC',
@@ -193,7 +206,9 @@ export async function GET(req: NextRequest) {
         },
     });
 
-    if (!membership) {
+    // ACTIVE only (#3196): a DEACTIVATED or REMOVED row is a person this farm
+    // let go, not one its IdP may sign in.
+    if (!membership || membership.status !== 'ACTIVE') {
         return redirectToLogin(req, 'no_membership');
     }
 
@@ -229,7 +244,8 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Redirect to app ──
-    const returnTo = state.returnTo || `/t/${tenant.slug}/dashboard`;
+    // Re-checked here as well as at start: same-origin relative paths only.
+    const returnTo = safeReturnTo(state.returnTo) ?? `/t/${tenant.slug}/dashboard`;
     return NextResponse.redirect(new URL(returnTo, baseUrl));
 }
 

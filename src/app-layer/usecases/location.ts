@@ -7,6 +7,7 @@ import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { assertActiveMembers } from '../policies/member.policies';
 
 export interface CreateLocationInput {
     name: string;
@@ -122,6 +123,8 @@ export async function createLocation(ctx: RequestContext, data: CreateLocationIn
         // decrypts it. Plain text, not HTML: a location description is a label,
         // unlike a journal note.
         const description = data.description != null ? sanitizePlainText(data.description) : null;
+        // A person named in the body must belong to this farm (#3208).
+        await assertActiveMembers(db, ctx, data.ownerUserId);
         const location = await LocationRepository.create(db, ctx, {
             name: data.name,
             description,
@@ -151,6 +154,7 @@ export async function createLocation(ctx: RequestContext, data: CreateLocationIn
 export async function updateLocation(ctx: RequestContext, id: string, data: UpdateLocationInput) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
+        await assertActiveMembers(db, ctx, data.ownerUserId);
         // Three-state preserved: `undefined` leaves the column alone, an
         // explicit null clears it, a string is sanitised.
         const description =

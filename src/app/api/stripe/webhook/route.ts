@@ -31,8 +31,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         logger.error('Stripe webhook event processing failed', { component: 'stripe', error: message });
-        // Return 200 anyway to prevent Stripe from retrying — we log the error
-        // In production, this should alert to an error tracking service
+        // 500, so Stripe RETRIES (#3182). This answered 200 "to prevent Stripe
+        // from retrying", which turned any transient failure — a database
+        // blip, pool exhaustion, the `subscriptions.retrieve` call inside
+        // checkout — into a lost state transition with no reconciliation: a
+        // paying farm left PAST_DUE and restricted 14 days later, a cancelled
+        // one left on its paid plan. Stripe's redelivery is the only recovery
+        // there is, and a retry is safe: `handleWebhookEvent` skips an event
+        // id it has already recorded, and records it only after the account
+        // write it describes. The body carries no error detail.
+        return jsonResponse({ error: 'processing_failed' }, { status: 500 });
     }
 
     return jsonResponse({ received: true });

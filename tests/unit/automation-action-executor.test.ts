@@ -40,6 +40,8 @@ function makeDb() {
             findMany: jest.fn(async (args: any) =>
                 (args.where.userId.in as string[]).map((userId: string) => ({ userId })),
             ),
+            // #3208 — the CREATE_TASK assignee is checked; a member by default.
+            count: jest.fn().mockResolvedValue(1),
         },
         tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue({ enabled: true }) },
         notification: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
@@ -80,6 +82,29 @@ describe('executeAction', () => {
         expect(db.task.create.mock.calls[0][0].data).toMatchObject({
             tenantId: 't1', title: 'Fix it', severity: 'HIGH', createdByUserId: 'u1', source: 'INTEGRATION',
         });
+    });
+
+    it('#3208 — CREATE_TASK keeps an assignee who is an ACTIVE member', async () => {
+        const db = makeDb();
+        await executeAction(db, {
+            id: 'r1', name: 'Remediate', actionType: 'CREATE_TASK', createdByUserId: 'u9',
+            actionConfigJson: { title: 'Fix it', assigneeUserId: 'member-1' },
+        }, baseEvent);
+        expect(db.tenantMembership.count).toHaveBeenCalledWith({
+            where: { tenantId: 't1', userId: 'member-1', status: 'ACTIVE' },
+        });
+        expect(db.task.create.mock.calls[0][0].data.assigneeUserId).toBe('member-1');
+    });
+
+    it('#3208 — CREATE_TASK drops an assignee who is not a member, and still creates the task', async () => {
+        const db = makeDb();
+        db.tenantMembership.count.mockResolvedValue(0);
+        const res = await executeAction(db, {
+            id: 'r1', name: 'Remediate', actionType: 'CREATE_TASK', createdByUserId: 'u9',
+            actionConfigJson: { title: 'Fix it', assigneeUserId: 'left-the-farm' },
+        }, baseEvent);
+        expect(res.ok).toBe(true);
+        expect(db.task.create.mock.calls[0][0].data.assigneeUserId).toBeNull();
     });
 
     it('UPDATE_STATUS writes the field on the event entity', async () => {
@@ -209,6 +234,28 @@ describe('PR-D hardening guards', () => {
         expect(res.ok).toBe(false);
         expect(res.summary).toMatch(/private/i);
         expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('#3203 — WEBHOOK refuses a redirect instead of following it into the metadata endpoint', async () => {
+        const db = makeDb();
+        lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+        (global.fetch as any) = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 307,
+            headers: new Headers({ location: 'http://169.254.169.254/computeMetadata/v1/' }),
+        });
+
+        const res = await executeAction(db, ruleOf('WEBHOOK', {
+            url: 'https://attacker.example.com/h',
+            headers: { 'Metadata-Flavor': 'Google' },
+        }), baseEvent);
+
+        expect(res.ok).toBe(false);
+        expect(res.summary).toMatch(/blocked/i);
+        // ONE request — to the rule's own URL. The redirect target is never asked.
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect((global.fetch as any).mock.calls[0][0]).toBe('https://attacker.example.com/h');
+        expect((global.fetch as any).mock.calls[0][1].redirect).toBe('manual');
     });
 
     it('CREATE_TASK dedupes against an existing open task', async () => {

@@ -659,7 +659,13 @@ export function isPublicPath(pathname: string): boolean {
     if (PUBLIC_PATH_PREFIXES.some((prefix) => matchesPublicPrefix(path, prefix))) return true;
 
     // Static file extensions
-    if (STATIC_EXTENSIONS.test(path)) return true;
+    // A static ASSET, never an API path (#3217). The regex is anchored on the
+    // extension only, so `/api/t/farm/anything.json` matched it too, skipping
+    // the Edge authentication and the Edge-only gates (operator lockdown, MFA,
+    // terms) for any route whose last segment could carry an extension —
+    // leaving the handler's own checks as the only control. No API route is
+    // public BY extension; the ones that must be reachable are on the lists.
+    if (!path.startsWith('/api/') && STATIC_EXTENSIONS.test(path)) return true;
 
     return false;
 }
@@ -1080,6 +1086,22 @@ export function isOperatorAllowedPath(pathname: string, slug: string): boolean {
         //   detail, parcels, basemap tiles all live under /locations/*).
         // agro — vegetation-index tile overlays (NDVI/NDMI/…) rendered on
         //   that map. All read-only; write attempts still hit the canWrite gate.
+        // NOT a parcel's leases, though they sit under `/locations/` (#3213).
+        // The prefix allowance let the operator read `lessorName` / `lessorEik`
+        // — landowners' names and national ids, third-party personal data —
+        // which the top-level `/leases` and `/reports/rent-roll` routes already
+        // keep from this persona. Nothing the operator does on the job needs
+        // who owns the land.
+        if (/^\/api\/t\/[^/]+\/locations\/[^/]+\/parcels\/[^/]+\/leases(\/|$|\?)/.test(pathname)) return false;
+        // Nor the other subtrees under `/locations/` that no field job needs
+        // (#3214): the cadastre and spatial imports (cadastre extracts carry
+        // owners' names; an import is a back-office task), the farm-record
+        // exports (the farm's dossier, which includes its leases), and the
+        // bulk delete. Excluded by name rather than by enumerating what IS
+        // allowed, so the map, parcel and tile reads the operator's screens
+        // already use are untouched.
+        if (/^\/api\/t\/[^/]+\/locations\/[^/]+\/(cadastre-import|spatial-import|farm-record|farm-records)(\/|$|\?)/.test(pathname)) return false;
+        if (/^\/api\/t\/[^/]+\/locations\/bulk(\/|$|\?)/.test(pathname)) return false;
         return /^\/api\/t\/[^/]+\/(farm-tasks|field-operations|tasks|locations|agro)(\/|$|\?)/.test(pathname);
     }
     return (

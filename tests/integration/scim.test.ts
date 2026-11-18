@@ -31,6 +31,9 @@ const mockPrisma = {
         update: jest.fn(),
         count: jest.fn(),
     },
+    orgMembership: {
+        count: jest.fn(),
+    },
     user: {
         // #1237: SCIM's match read is `findFirst` over the candidate list now
         // (an `in` predicate is not valid on `findUnique`). Both names share
@@ -308,7 +311,61 @@ describe('SCIM User Lifecycle', () => {
         );
     });
 
-    // ── Patch ──
+    // ── An existing account is never joined to a farm by SCIM (#3197) ──
+
+    test('create refuses an existing user who has no membership here — 409 uniqueness, nothing written', async () => {
+        const existingUser = { id: 'u-elsewhere', email: 'owner@farm-b.bg', name: 'B', createdAt: now, updatedAt: now };
+        mockPrisma.user.findUnique.mockResolvedValue(existingUser);
+        mockPrisma.tenantMembership.findUnique.mockResolvedValue(null);
+
+        const err = await scimCreateUser(ctx, { userName: 'owner@farm-b.bg' }, BASE_URL).catch((e) => e);
+
+        expect(err).toBeInstanceOf(ScimAuthError);
+        expect(err.status).toBe(409);
+        expect(err.scimType).toBe('uniqueness');
+        expect(mockPrisma.tenantMembership.create).not.toHaveBeenCalled();
+        expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    test('create refuses to bring back a REMOVED member', async () => {
+        const existingUser = { id: 'u-left', email: 'left@acme.com', name: 'Left', createdAt: now, updatedAt: now };
+        mockPrisma.user.findUnique.mockResolvedValue(existingUser);
+        mockPrisma.tenantMembership.findUnique.mockResolvedValue({
+            id: 'm1', tenantId: TENANT_A, userId: 'u-left', status: 'REMOVED', role: 'READER',
+        });
+
+        const err = await scimCreateUser(ctx, { userName: 'left@acme.com' }, BASE_URL).catch((e) => e);
+
+        expect(err.status).toBe(409);
+        expect(mockPrisma.tenantMembership.update).not.toHaveBeenCalled();
+    });
+
+    test('patch cannot reach a REMOVED membership (the lookup excludes it)', async () => {
+        mockPrisma.tenantMembership.findFirst.mockResolvedValueOnce(null);
+
+        const result = await scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'active', value: true }], BASE_URL);
+
+        expect(result).toBeNull();
+        expect(mockPrisma.tenantMembership.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ status: { not: 'REMOVED' } }) }),
+        );
+    });
+
+    test('patch does not rename a person who belongs to another farm (User.name is platform-wide)', async () => {
+        const user = { id: 'u1', email: 'a@acme.com', name: 'A', createdAt: now, updatedAt: now, passwordHash: null };
+        mockPrisma.tenantMembership.findFirst
+            .mockResolvedValueOnce({ id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', role: 'READER', user })
+            .mockResolvedValueOnce({ id: 'm1', tenantId: TENANT_A, userId: 'u1', status: 'ACTIVE', user });
+        // Once: `clearAllMocks` keeps implementations, and a persistent value
+        // here would make every later rename test see "another farm".
+        mockPrisma.tenantMembership.count.mockResolvedValueOnce(1);
+        mockPrisma.orgMembership.count.mockResolvedValueOnce(0);
+
+        await scimPatchUser(ctx, 'u1', [{ op: 'replace', path: 'displayName', value: 'Renamed' }], BASE_URL);
+
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
 
     test('patch active=false → DEACTIVATED + audit', async () => {
         const user = { id: 'u1', email: 'a@acme.com', name: 'A', createdAt: now, updatedAt: now, passwordHash: null };

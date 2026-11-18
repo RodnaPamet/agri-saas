@@ -54,6 +54,7 @@ import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { Readable } from 'node:stream';
 import { logger } from '@/lib/observability/logger';
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
+import { assertActiveMembers } from '../policies/member.policies';
 
 // ─── Read paths ───────────────────────────────────────────────────────
 
@@ -131,6 +132,8 @@ export async function createAccessReview(
     const parsed: CreateAccessReviewInput = CreateAccessReviewSchema.parse(input);
 
     return runInTenantContext(ctx, async (db) => {
+        // The reviewer is a person named in the body (#3208).
+        await assertActiveMembers(db, ctx, parsed.reviewerUserId);
         const memberships = await AccessReviewRepository.resolveMembershipsForScope(
             db,
             ctx,

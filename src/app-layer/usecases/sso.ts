@@ -6,6 +6,9 @@ import { UpsertSsoConfigInput } from '@/app-layer/schemas/sso-config.schemas';
 import { forbidden, notFound } from '@/lib/errors/types';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import { reachesBeyondTenant } from '@/lib/auth/tenant-reach';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
+import { markEmailVerifiedByIdp } from '@/lib/auth/email-verified-by-idp';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 /**
@@ -250,7 +253,57 @@ export type LinkRejectionReason =
     | 'no_membership'      // User exists but has no tenant membership
     | 'subject_conflict'   // User linked to a different subject for same provider
     | 'jit_disabled'       // Would need JIT but it's turned off
-    | 'no_email';          // IdP didn't provide an email
+    | 'no_email'           // IdP didn't provide an email
+    | 'multi_tenant_account'; // Reaches farms/orgs this IdP does not govern (#3196)
+
+/**
+ * May an identity provider owned by `tenantId` authenticate `userId`?
+ *
+ * ## Why this exists (#3196 / #3197)
+ *
+ * A tenant's IdP is configured by that tenant's own ADMIN, and the e-mail it
+ * asserts is whatever that IdP says. Until this check, `linkExternalIdentity`
+ * matched the assertion to the PLATFORM-WIDE `User` by e-mail and linked it
+ * whenever any membership row existed — and the session `establishSsoSession`
+ * mints carries EVERY farm the person belongs to. So any self-serve farm admin
+ * who could get a victim a membership row (SCIM did it with no consent) could
+ * sign in as that victim and operate their other farms.
+ *
+ * The rule is therefore about what the session would REACH, not about how the
+ * identity was linked. A tenant's IdP may only authenticate a person whose
+ * access is wholly inside that tenant:
+ *
+ *   - an ACTIVE membership in `tenantId` (DEACTIVATED / REMOVED / INVITED rows
+ *     used to count, because both lookups had no status filter), and
+ *   - no ACTIVE membership in any OTHER tenant and no org membership — the two
+ *     things `applyMembershipClaims` would put in the session beyond this one.
+ *
+ * It runs on EVERY SSO sign-in, not only the first link: a JIT-created user who
+ * later joins another farm must not stay reachable through the IdP that created
+ * them, which was the standing back door the JIT path left open.
+ *
+ * ## The cost, stated
+ *
+ * A person who belongs to this farm AND another (a consultant, an agronomist)
+ * can no longer use this farm's SSO; they sign in with their own method. Under
+ * `isEnforced` that method is refused for this tenant's members, so such a
+ * person needs the break-glass route or must leave one farm. That was preferred
+ * to scoping the minted session to one tenant, because a scoped session still
+ * hands the IdP's owner the person's PERSON-level data — direct messages, the
+ * account export, account deletion — which no tenant's IdP has any claim to.
+ */
+export async function ssoAuthenticationBlocker(
+    userId: string,
+    tenantId: string,
+): Promise<'no_membership' | 'multi_tenant_account' | null> {
+    const here = await prisma.tenantMembership.findUnique({
+        where: { tenantId_userId: { tenantId, userId } },
+        select: { status: true },
+    });
+    if (!here || here.status !== 'ACTIVE') return 'no_membership';
+    if (await reachesBeyondTenant(userId, tenantId)) return 'multi_tenant_account';
+    return null;
+}
 
 /**
  * Validate an email against a provider's allowed domains.
@@ -321,7 +374,14 @@ export async function linkExternalIdentity(
             logger.warn('sso identity link rejected', { component: 'sso', reason: 'cross_tenant' });
             return { status: 'rejected', reason: 'cross_tenant' };
         }
+        const blocker = await ssoAuthenticationBlocker(existingLink.userId, tenantId);
+        if (blocker) {
+            logger.warn('sso identity link rejected', { component: 'sso', reason: blocker, isNewLink: false });
+            return { status: 'rejected', reason: blocker };
+        }
         await IdentityLinkRepo.updateLastLogin(existingLink.id);
+        // The tenant's IdP vouched for the address (#3178) — see the helper.
+        await markEmailVerifiedByIdp(existingLink.userId);
         logger.info('sso identity link resolved', { component: 'sso', status: 'linked', isNewLink: false });
         return { status: 'linked', userId: existingLink.userId, isNewLink: false };
     }
@@ -333,15 +393,11 @@ export async function linkExternalIdentity(
     });
 
     if (user) {
-        // Check tenant membership
-        const membership = await prisma.tenantMembership.findUnique({
-            where: {
-                tenantId_userId: { tenantId, userId: user.id },
-            },
-        });
-
-        if (!membership) {
-            return { status: 'rejected', reason: 'no_membership' };
+        // Membership status and reach, not mere existence (#3196).
+        const blocker = await ssoAuthenticationBlocker(user.id, tenantId);
+        if (blocker) {
+            logger.warn('sso identity link rejected', { component: 'sso', reason: blocker, isNewLink: true });
+            return { status: 'rejected', reason: blocker };
         }
 
         // Check for subject conflict
@@ -364,6 +420,7 @@ export async function linkExternalIdentity(
             emailAtLinkTimeHash: hashForLookup(normalizedEmail),
         });
 
+        await markEmailVerifiedByIdp(user.id);
         logger.info('sso identity link resolved', { component: 'sso', status: 'linked', isNewLink: true });
         return { status: 'linked', userId: user.id, isNewLink: true };
     }
@@ -380,12 +437,16 @@ export async function linkExternalIdentity(
     const safeRole = jitConfig.jitDefaultRole === 'EDITOR' ? 'EDITOR' : 'READER';
 
     const newUser = await prisma.$transaction(async (tx) => {
+        // JIT provisioning counts against the seat limit too (#3183).
+        await assertWithinLimit({ tenantId }, 'user', tx);
         // Create user
         const created = await tx.user.create({
             data: {
                 email: normalizedEmail,
                 emailHash: hashForLookup(normalizedEmail),
                 name: normalizedEmail.split('@')[0],
+                // Asserted by the tenant's IdP on this sign-in (#3178).
+                emailVerified: new Date(),
             },
         });
 

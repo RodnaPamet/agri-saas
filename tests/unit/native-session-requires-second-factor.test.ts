@@ -219,6 +219,28 @@ describe('/api/auth/native/complete — no code while a factor is owed', () => {
         expect(next).toBe('/api/auth/native/complete');
     });
 
+    it('#3199: sends the browser to the farm that OWES the factor, not the primary one', async () => {
+        // Primary farm has no policy; the second farm REQUIRES a factor. The
+        // challenge clears per farm, so the primary's page could never clear it
+        // and the flow looped back here.
+        getToken.mockResolvedValue({
+            userSessionId: 'sess-1',
+            userId: 'user-1',
+            tenantId: 'tenant-1',
+            tenantSlug: 'my-farm',
+            mfaPending: true,
+            mfaPendingTenantIds: ['tenant-2'],
+            memberships: [
+                { slug: 'my-farm', role: 'OWNER', tenantId: 'tenant-1' },
+                { slug: 'strict-farm', role: 'EDITOR', tenantId: 'tenant-2' },
+            ],
+        });
+
+        const res = await call();
+        expect(issueAuthCode).not.toHaveBeenCalled();
+        expect(res.headers.get('location') ?? '').toContain('/t/strict-farm/auth/mfa');
+    });
+
     it('refuses rather than falling through when there is no slug to send them to', async () => {
         getToken.mockResolvedValue({
             userSessionId: 'sess-1',

@@ -71,7 +71,7 @@ import { sniffMimeType } from '@/lib/storage/mime-sniff';
 import { scanOrRefuse } from '@/lib/upload/ingest';
 
 import type { UserContext } from '../types';
-import { assertMayPost } from './channels';
+import { assertMayPost, cleanCaption } from './channels';
 
 /**
  * A photograph takes the SAME ceiling as an avatar and a DM photo.
@@ -237,6 +237,8 @@ export async function postChannelPhoto(
     input: { bytes: Buffer; body?: string | null },
 ): Promise<PostedMedia> {
     const sniffed = checkBytes(input.bytes, CHANNEL_PHOTO_MAX_BYTES, PHOTO_ACCEPTED, 'photograph');
+    // The caption is refused or cleaned BEFORE any work, like the bytes (#3209).
+    const caption = cleanCaption(input.body);
 
     // MEMBERSHIP BEFORE ANY WORK. Refusing early means a non-member cannot
     // make the server decode an image, which is the cheap-work-for-an-outsider
@@ -264,7 +266,7 @@ export async function postChannelPhoto(
     return writePost(ctx, channelId, {
         bytes: stripped.bytes,
         mime: sniffed,
-        body: input.body ?? null,
+        body: caption,
         durationMs: null,
     });
 }
@@ -278,6 +280,7 @@ export async function postChannelVoiceNote(
     input: { bytes: Buffer; durationMs: number; body?: string | null },
 ): Promise<PostedMedia> {
     const sniffed = checkBytes(input.bytes, VOICE_NOTE_MAX_BYTES, AUDIO_ACCEPTED, 'recording');
+    const caption = cleanCaption(input.body);
 
     /*
      * The duration is checked even though it is not the cap, because the UI
@@ -316,7 +319,7 @@ export async function postChannelVoiceNote(
     return writePost(ctx, channelId, {
         bytes: input.bytes,
         mime: sniffed,
-        body: input.body ?? null,
+        body: caption,
         durationMs: input.durationMs,
     });
 }
@@ -370,7 +373,8 @@ async function writePost(
             : CHANNEL_PHOTO_MAX_BYTES,
     });
 
-    const body = media.body?.trim() ? media.body.trim() : null;
+    // Already cleaned by `cleanCaption` at the entry points.
+    const body = media.body;
 
     return runInUserContext(ctx, async (tx) => {
         const post = await tx.channelPost.create({

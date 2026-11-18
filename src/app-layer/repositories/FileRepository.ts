@@ -112,11 +112,26 @@ export class FileRepository {
     }
 
     /**
-     * Find a STORED FileRecord with the same SHA-256 hash for a tenant (dedup).
+     * Find a STORED FileRecord with the same SHA-256 hash for a tenant (dedup),
+     * among records ALREADY OWNED BY THE SAME KIND OF THING (#3180).
+     *
+     * This matched any record in the tenant, so a journal photo identical to a
+     * farm document was linked to the DOCUMENT's record and its own bytes were
+     * deleted. The owners of that record release bytes without counting other
+     * referrers — `deleteFarmDocument`, the document retention sweep and the
+     * evidence purge each delete the object — so deleting or expiring the
+     * document destroyed an attachment in the ДНЕВНИК register, with no error
+     * anywhere. Reuse is therefore confined to records that `owner` already
+     * references, where the owner's own lifecycle governs the bytes.
      */
-    static async findBySha256(db: PrismaTx, tenantId: string, sha256: string) {
+    static async findBySha256(
+        db: PrismaTx,
+        tenantId: string,
+        sha256: string,
+        owner: 'logEntryFiles' | 'evidence',
+    ) {
         return db.fileRecord.findFirst({
-            where: { tenantId, sha256, status: 'STORED' },
+            where: { tenantId, sha256, status: 'STORED', [owner]: { some: {} } },
         });
     }
 

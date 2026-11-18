@@ -37,6 +37,8 @@ import {
 import { appendPlatformAuditEntry, verifyPlatformChain } from '@/lib/audit/platform-audit-writer';
 import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { getStorageProvider } from '@/lib/storage';
+import { avatarServeUrl, avatarStorageKey } from '@/lib/account/avatar';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -356,6 +358,46 @@ describeFn('P5.6b — erasure by pseudonymisation (#1597)', () => {
     });
 
     describe('the erasure', () => {
+        it('#3211 — also clears the picture, the password, the SSO link and the avatar bytes', async () => {
+            const { id } = await makeUser();
+            await globalPrisma.$executeRawUnsafe(
+                `UPDATE "User" SET "image" = $2, "passwordHash" = 'x-hash' WHERE "id" = $1`,
+                id, avatarServeUrl(id),
+            );
+            const slug = `p56b-sso-${randomUUID().slice(0, 8)}`;
+            const tenant = await globalPrisma.tenant.create({ data: { name: slug, slug }, select: { id: true } });
+            const provider = await globalPrisma.tenantIdentityProvider.create({
+                data: { tenantId: tenant.id, type: 'OIDC', name: 'IdP' },
+                select: { id: true },
+            });
+            await globalPrisma.userIdentityLink.create({
+                data: {
+                    userId: id, tenantId: tenant.id, providerId: provider.id,
+                    externalSubject: `sub-${randomUUID()}`, emailAtLinkTime: 'original@example.test',
+                    emailAtLinkTimeHash: hashForLookup('original@example.test'),
+                },
+            });
+            await getStorageProvider().write(avatarStorageKey(id), Buffer.from('RIFF....WEBP'), { mimeType: 'image/webp' });
+            await expect(getStorageProvider().head(avatarStorageKey(id))).resolves.toBeDefined(); // positive control
+
+            try {
+                const outcome = await eraseAccount(id);
+                expect(outcome.applied).toBe(true);
+
+                const row = await globalPrisma.user.findUniqueOrThrow({
+                    where: { id }, select: { image: true, passwordHash: true },
+                });
+                expect(row).toEqual({ image: null, passwordHash: null });
+                expect(await globalPrisma.userIdentityLink.count({ where: { userId: id } })).toBe(0);
+                // `head` of a missing object rejects; of a present one resolves.
+                await expect(getStorageProvider().head(avatarStorageKey(id))).rejects.toBeDefined();
+            } finally {
+                await globalPrisma.userIdentityLink.deleteMany({ where: { userId: id } });
+                await globalPrisma.tenantIdentityProvider.deleteMany({ where: { id: provider.id } });
+                await globalPrisma.tenant.deleteMany({ where: { id: tenant.id } });
+            }
+        });
+
         it('empties the identifying content and KEEPS the row', async () => {
             const { id, email } = await makeUser();
 

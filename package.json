@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "14.67.0",
+    "version": "14.67.3",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -183,7 +183,7 @@
         "lucide-react": "^1.66.0",
         "maplibre-gl": "6.16.0",
         "motion": "^14.9.0",
-        "next": "16.4.4",
+        "next": "16.4.6",
         "next-auth": "4.24.15",
         "next-intl": "^4.14.9",
         "nodemailer": "^10.3.1",

@@ -18,6 +18,7 @@
  */
 
 const userFindUnique = jest.fn();
+const userUpdateMany = jest.fn();
 const secSettingsFindUnique = jest.fn();
 const mfaFindUnique = jest.fn();
 const accountUpdateMany = jest.fn();
@@ -30,7 +31,8 @@ jest.mock('@/lib/prisma', () => ({
         user: {
             // #1237: the email lookup is `findFirst` now — an `in`
             // predicate is not valid on `findUnique`. Same double.
-            findFirst: (...a: unknown[]) => userFindUnique(...a), findUnique: (...a: unknown[]) => userFindUnique(...a) },
+            findFirst: (...a: unknown[]) => userFindUnique(...a), findUnique: (...a: unknown[]) => userFindUnique(...a),
+            updateMany: (...a: unknown[]) => userUpdateMany(...a) },
         tenantSecuritySettings: {
             findUnique: (...a: unknown[]) => secSettingsFindUnique(...a),
             findFirst: (...a: unknown[]) => secSettingsFindUnique(...a),
@@ -773,6 +775,44 @@ describe('jwt callback — MFA enforcement at sign-in', () => {
         // write — which `not.toHaveProperty` would accept — still fails.
         expect(JSON.stringify(result)).not.toContain('at-1');
         expect(JSON.stringify(result)).not.toContain('rt-1');
+    });
+
+    it('#3178: an OAuth sign-in records the IdP-verified address BEFORE the claims are read', async () => {
+        // Break: without it every Google/Entra account carries
+        // `emailVerified = NULL` for ever, and slow mode reads an explicit
+        // null as "never confirmed" whatever the account's age.
+        secSettingsFindUnique.mockResolvedValue(null);
+        userUpdateMany.mockResolvedValue({ count: 1 });
+
+        await signIn({ account: { provider: 'google' } });
+
+        expect(userUpdateMany).toHaveBeenCalledWith({
+            where: { id: 'u-1', emailVerified: null },
+            data: { emailVerified: expect.any(Date) },
+        });
+        // Ordered before the claim read, so THIS session's token carries it.
+        expect(userUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(
+            userFindUnique.mock.invocationCallOrder[0],
+        );
+    });
+
+    it('#3178: a credentials sign-in never marks the address verified', async () => {
+        // The credentials provider's address is self-asserted; only the
+        // e-mail code may verify it.
+        secSettingsFindUnique.mockResolvedValue(null);
+
+        await signIn();
+
+        expect(userUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('#3178: a failed verification write does not fail the sign-in', async () => {
+        secSettingsFindUnique.mockResolvedValue(null);
+        userUpdateMany.mockRejectedValueOnce(new Error('pool timeout'));
+
+        const result = await signIn({ account: { provider: 'google' } });
+
+        expect(result.provider).toBe('google');
     });
 
     it('redeems a pending invite before reading membership claims', async () => {

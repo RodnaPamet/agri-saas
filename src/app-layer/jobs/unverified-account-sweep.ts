@@ -91,6 +91,41 @@ export interface UnverifiedAccountSweepResult {
     skippedWithMembership: number;
 }
 
+/**
+ * Which rows this sweep may delete: an abandoned PASSWORD sign-up, and nothing
+ * else (#3177).
+ *
+ * The predicate used to be `emailVerified: null` alone, which was written for
+ * the credentials path and is true of far more:
+ *
+ *   - **Every Google / Entra account.** next-auth's adapter creates an OAuth
+ *     user with `emailVerified: null` and nothing in this codebase sets it
+ *     afterwards — the only writers are the register/verify route, the
+ *     verify-email link and native Apple. A person who signed in with Google
+ *     and had not joined a farm within a week was deleted.
+ *   - **System users** (`src/lib/auth/system-user.ts`), which hold no
+ *     membership by design. Where one authored a row behind a RESTRICT key the
+ *     whole `deleteMany` failed every night; where none did, it was deleted.
+ *   - **Suspended, terminated and erased accounts** with no farm left. P5.6b
+ *     keeps the erased `User` row alive ON PURPOSE (moderation history,
+ *     repeat-abuse detection), and deleting a suspended one lets the person
+ *     register again clean — suspension evasion.
+ *
+ * So the rule is positive: a password was set (only the credentials sign-up
+ * does that), no OAuth account and no SSO identity is linked, and no lifecycle
+ * column says somebody decided something about this person.
+ */
+const ABANDONED_CREDENTIALS_SIGNUP = {
+    emailVerified: null,
+    passwordHash: { not: null },
+    accounts: { none: {} },
+    identityLinks: { none: {} },
+    suspendedAt: null,
+    deletionRequestedAt: null,
+    terminatedAt: null,
+    pseudonymisedAt: null,
+} as const;
+
 export async function runUnverifiedAccountSweep(
     db: PrismaClient,
     options: UnverifiedAccountSweepOptions = {},
@@ -106,7 +141,7 @@ export async function runUnverifiedAccountSweep(
     // to sweep" from "everything was spared by the membership filter", which
     // are the same number of deletions and completely different situations.
     const candidates = await db.user.findMany({
-        where: { emailVerified: null, createdAt: { lt: cutoff } },
+        where: { ...ABANDONED_CREDENTIALS_SIGNUP, createdAt: { lt: cutoff } },
         select: {
             id: true,
             _count: { select: { tenantMemberships: true, orgMemberships: true } },
@@ -132,7 +167,9 @@ export async function runUnverifiedAccountSweep(
         const { count } = await db.user.deleteMany({
             where: {
                 id: { in: deletable.map((u) => u.id) },
-                emailVerified: null,
+                // Re-asserted at delete time, so a row that changed since the
+                // read (verified, linked, suspended) is not taken.
+                ...ABANDONED_CREDENTIALS_SIGNUP,
                 tenantMemberships: { none: {} },
                 orgMemberships: { none: {} },
             },

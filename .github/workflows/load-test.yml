@@ -33,6 +33,12 @@ on:
     # Doesn't block anything; alerts via the artifact diff if budgets drift.
     - cron: '30 3 * * *'
 
+# Least privilege (#3189): the job checks out and runs k6 against a
+# throwaway server, so it needs to read the repository and nothing else.
+# Without this block it ran with the repository's default token scope.
+permissions:
+  contents: read
+
 jobs:
   load:
     runs-on: ubuntu-latest
@@ -101,7 +107,7 @@ jobs:
           node-version: '22'
 
       - name: Setup k6
-        uses: grafana/setup-k6-action@v1
+        uses: grafana/setup-k6-action@c47136d33d365efbeb9ae7266908b5dcf98cdece # v1
 
       # FIRST, because everything scenario-gated below depends on it and it
       # depends on nothing: it reads `inputs` and `github.event_name` only.

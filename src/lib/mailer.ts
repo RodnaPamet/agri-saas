@@ -309,6 +309,39 @@ export function getEmailProvider(): EmailProvider {
     return provider;
 }
 
+/**
+ * Thrown by {@link sendEmailOrFail} when production has no mail transport and
+ * the message would only be discarded by the console sink.
+ */
+export class MailTransportMissingError extends Error {
+    constructor() {
+        super('No mail transport is configured; the message was not sent.');
+        this.name = 'MailTransportMissingError';
+    }
+}
+
+/**
+ * `sendEmail` for a caller that RECORDS delivery when the send resolves (#3181).
+ *
+ * In production with no transport, `ConsoleEmailProvider.send` logs a warning
+ * and RETURNS — correct for a caller that only fires and forgets, wrong for a
+ * queue drain that then stamps the row: `statement-dispatch` stamped
+ * `deliveredAt` on Art 17 statements nobody received, `notice-triage-alert`
+ * stamped `alertedAt` (so configuring mail later skipped every waiting
+ * notice), and the outbox marked rows SENT. This throws instead, so each
+ * drain's existing failure path leaves the row undelivered.
+ */
+export async function sendEmailOrFail(msg: OutboundEmail): Promise<void> {
+    if (!envInitAttempted && provider instanceof ConsoleEmailProvider) {
+        envInitAttempted = true;
+        initMailerFromEnv();
+    }
+    if (provider instanceof ConsoleEmailProvider && isProductionRuntime()) {
+        throw new MailTransportMissingError();
+    }
+    return sendEmail(msg);
+}
+
 export async function sendEmail(msg: OutboundEmail): Promise<void> {
     // Lazy, per-module-instance init from env. Next's bundler can load
     // mailer.ts in a DIFFERENT chunk for a route handler than the one

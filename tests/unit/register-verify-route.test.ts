@@ -44,6 +44,14 @@ jest.mock('@/lib/auth/email-verification-code', () => ({
     CODE_LENGTH: 6,
 }));
 
+// HIBP is an outbound call; it is the route's job to MAKE it, not this
+// suite's to reach the internet.
+const mockHibp = jest.fn(async () => ({ breached: false }));
+jest.mock('@/lib/security/password-check', () => ({
+    __esModule: true,
+    checkPasswordAgainstHIBP: (...a: unknown[]) => mockHibp(...(a as [])),
+}));
+
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/auth/register/verify/route';
 
@@ -178,5 +186,40 @@ describe('a malformed request is distinguishable from a bad code', () => {
         const res = await post(body as Record<string, unknown>);
         expect(res.status).toBe(400);
         await expect(res.json()).resolves.toEqual({ error: 'invalid_request' });
+    });
+});
+
+describe('#3206 — the person who proves the mailbox sets the password', () => {
+    beforeEach(() => {
+        mockVerify.mockResolvedValue({ ok: true });
+        mockUserUpdateMany.mockResolvedValue({ count: 1 });
+        mockHibp.mockResolvedValue({ breached: false });
+    });
+
+    it('stores a hash of the password sent WITH the code, replacing the first writer’s', async () => {
+        const res = await POST(verifyRequest({ email: 'owner@example.test', code: '123456', password: 'a-long-enough-passphrase' }), { params: Promise.resolve({}) }); // pragma: allowlist secret -- synthetic test input for the password policy, not a credential
+
+        expect(res.status).toBe(200);
+        const data = mockUserUpdateMany.mock.calls.at(-1)![0].data;
+        expect(data.emailVerified).toBeInstanceOf(Date);
+        expect(typeof data.passwordHash).toBe('string');
+        expect(data.passwordHash).not.toContain('a-long-enough-passphrase');
+        expect(mockHibp).toHaveBeenCalledWith('a-long-enough-passphrase');
+    });
+
+    it('refuses a breached password BEFORE spending the code', async () => {
+        mockHibp.mockResolvedValue({ breached: true });
+
+        const res = await POST(verifyRequest({ email: 'owner@example.test', code: '123456', password: 'a-long-enough-passphrase' }), { params: Promise.resolve({}) }); // pragma: allowlist secret -- synthetic test input for the password policy, not a credential
+
+        expect(res.status).toBe(400);
+        expect(mockVerify).not.toHaveBeenCalled();
+        expect(mockUserUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('control: a client that sends no password leaves the stored one alone', async () => {
+        await POST(verifyRequest({ email: 'owner@example.test', code: '123456' }), { params: Promise.resolve({}) });
+
+        expect(mockUserUpdateMany.mock.calls.at(-1)![0].data).not.toHaveProperty('passwordHash');
     });
 });

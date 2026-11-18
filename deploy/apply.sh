@@ -44,8 +44,15 @@ REMOTE_COMPOSE="${REMOTE_DIR}/${COMPOSE_BASENAME}"
 # copy drifted undetected: measured that day, the VM held a 2026-06-27 version
 # that predated the `Acquire::Check-Valid-Until` flags entirely, three months
 # behind the repo, with drift green throughout.
-LOCAL_DB_CTX="${SCRIPT_DIR}/postgres"
-REMOTE_DB_CTX="${REMOTE_DIR}/deploy/postgres"
+#
+# That fix named `deploy/postgres/Dockerfile` by hand, and the same drift then
+# happened to the next context (`deploy/zarnoborsa`) and to the `init-roles.sh`
+# bind mount (#3191). So the set is now DERIVED from the compose file by
+# `compose_repo_inputs` — every build-context file and `./deploy/…` mount — and
+# a new one is shipped the moment the compose file names it.
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=deploy/lib/compose-repo-inputs.sh
+. "${SCRIPT_DIR}/lib/compose-repo-inputs.sh"
 TS="$(date +%Y%m%d-%H%M%S)"
 
 log() { printf '\033[36m[apply]\033[0m %s\n' "$*"; }
@@ -106,6 +113,17 @@ probe() {
 # Helper: run a command on the VM.
 ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command "$1"; }
 
+# ── 0. Derive the repo inputs (#3191) ────────────────────────────────────
+# Before anything touches the VM, so a compose file naming a context the repo
+# lacks is refused with nothing changed.
+REPO_INPUTS=()
+if ! INPUT_LIST="$(compose_repo_inputs "$LOCAL_COMPOSE" "$REPO_ROOT")"; then
+    err "the compose file names a build context or mount the repo does not have — nothing changed"
+    exit 1
+fi
+while IFS= read -r rel; do [ -n "$rel" ] && REPO_INPUTS+=("$rel"); done <<<"$INPUT_LIST"
+log "repo inputs beyond the compose file: ${#REPO_INPUTS[@]} (${REPO_INPUTS[*]-})"
+
 if [ "${DRY_RUN:-0}" = "1" ]; then
     log "DRY_RUN — validating $LOCAL_COMPOSE locally with docker compose config"
     docker compose -f "$LOCAL_COMPOSE" config -q && log "compose config OK" || { err "compose config failed"; exit 1; }
@@ -122,15 +140,21 @@ log "copying ${LOCAL_COMPOSE} → VM"
 gcloud compute scp "$LOCAL_COMPOSE" "${VM_NAME}:/tmp/${COMPOSE_BASENAME}.new" --zone "$VM_ZONE"
 ssh_vm "sudo mv '/tmp/${COMPOSE_BASENAME}.new' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
 
-# …and the db build context, for the reason above. Backed up the same way the
-# compose file is, so the rollback command at the end restores a matched pair.
-log "backing up remote ${REMOTE_DB_CTX}/Dockerfile → .bak.${TS}"
-ssh_vm "sudo cp -a '${REMOTE_DB_CTX}/Dockerfile' '${REMOTE_DB_CTX}/Dockerfile.bak.${TS}' 2>/dev/null || true"
-log "copying ${LOCAL_DB_CTX}/Dockerfile → ${VM_NAME}:${REMOTE_DB_CTX}/Dockerfile"
-gcloud compute scp "${LOCAL_DB_CTX}/Dockerfile" "${VM_NAME}:/tmp/Dockerfile.db.new" --zone "$VM_ZONE"
-ssh_vm "sudo mkdir -p '${REMOTE_DB_CTX}' && sudo mv '/tmp/Dockerfile.db.new' '${REMOTE_DB_CTX}/Dockerfile' && sudo chown root:root '${REMOTE_DB_CTX}/Dockerfile'"
+# …and every repo file the compose file depends on, for the reason above. Each
+# is backed up the same way the compose file is, so the rollback command at the
+# end restores a matched set. A file new to the VM has no backup, and the
+# rollback skips it rather than failing.
+for rel in ${REPO_INPUTS[@]+"${REPO_INPUTS[@]}"}; do
+    remote="${REMOTE_DIR}/${rel}"
+    staged="/tmp/apply.$(printf '%s' "$rel" | tr '/' '_').new"
+    log "backing up remote ${remote} → .bak.${TS}"
+    ssh_vm "sudo cp -a '${remote}' '${remote}.bak.${TS}' 2>/dev/null || true"
+    log "copying ${rel} → ${VM_NAME}:${remote}"
+    gcloud compute scp "${REPO_ROOT}/${rel}" "${VM_NAME}:${staged}" --zone "$VM_ZONE"
+    ssh_vm "sudo mkdir -p '$(dirname "$remote")' && sudo mv '${staged}' '${remote}' && sudo chown root:root '${remote}'"
+done
 
-# NOTE: copying the Dockerfile does NOT rebuild the image. `docker compose up -d`
+# NOTE: copying a build context does NOT rebuild its image. `docker compose up -d`
 # below reuses `agrent-db:local` if it exists, so a base-image change needs an
 # explicit `docker compose -f <compose> build db` and a database cutover — see
 # docs/runbooks/postgis-trixie-cutover.md. That is deliberate: rebuilding a
@@ -220,7 +244,11 @@ for path in /manifest.webmanifest /sw.js; do
 done
 
 # ── 6. Rollback hint ─────────────────────────────────────────────────────
-ROLLBACK="gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --command \"sudo cp -a '${REMOTE_COMPOSE}.bak.${TS}' '${REMOTE_COMPOSE}' && cd '${REMOTE_DIR}' && sudo docker compose -f '${COMPOSE_BASENAME}' up -d\""
+RESTORE_INPUTS=""
+for rel in ${REPO_INPUTS[@]+"${REPO_INPUTS[@]}"}; do
+    RESTORE_INPUTS="${RESTORE_INPUTS}{ [ ! -f '${REMOTE_DIR}/${rel}.bak.${TS}' ] || sudo cp -a '${REMOTE_DIR}/${rel}.bak.${TS}' '${REMOTE_DIR}/${rel}'; } && "
+done
+ROLLBACK="gcloud compute ssh ${VM_NAME} --zone ${VM_ZONE} --command \"sudo cp -a '${REMOTE_COMPOSE}.bak.${TS}' '${REMOTE_COMPOSE}' && ${RESTORE_INPUTS}cd '${REMOTE_DIR}' && sudo docker compose -f '${COMPOSE_BASENAME}' up -d\""
 
 if [ "$HEALTH_FAILED" = "1" ]; then
     err "deploy applied but health checks FAILED. Roll back with:"
