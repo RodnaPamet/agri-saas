@@ -80,6 +80,10 @@ export const POST = withApiErrorHandling(
          */
         const caption = form.get('body');
         const body = typeof caption === 'string' ? caption : null;
+        // The client's key for this post: a retry whose first answer was lost
+        // returns the first post instead of publishing a second (#3195), as the
+        // text post and reply routes do.
+        const idempotencyKey = boundedKey(req.headers.get('Idempotency-Key'));
 
         if (photo instanceof File && !(voice instanceof File)) {
             // Checked BEFORE the bytes are read into memory: `file.size` is
@@ -92,6 +96,7 @@ export const POST = withApiErrorHandling(
             const posted = await postChannelPhoto(ctx, channelId, {
                 bytes: Buffer.from(await photo.arrayBuffer()),
                 body,
+                idempotencyKey,
             });
             return jsonResponse(posted, { status: 201, headers: { 'Cache-Control': 'no-store' } });
         }
@@ -121,6 +126,7 @@ export const POST = withApiErrorHandling(
                 bytes: Buffer.from(await voice.arrayBuffer()),
                 durationMs,
                 body,
+                idempotencyKey,
             });
             return jsonResponse(posted, { status: 201, headers: { 'Cache-Control': 'no-store' } });
         }
@@ -139,3 +145,9 @@ export const POST = withApiErrorHandling(
         );
     },
 );
+
+/** The `Idempotency-Key` header, or undefined when absent or not a sane key. */
+function boundedKey(raw: string | null): string | undefined {
+    const key = raw?.trim();
+    return key && key.length <= 128 ? key : undefined;
+}
