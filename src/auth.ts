@@ -125,6 +125,13 @@ declare module 'next-auth' {
             /** Org-layer memberships, for the org-route middleware gate. */
             orgMemberships?: OrgMembershipEntry[];
         };
+        /**
+         * The `jwt` callback's soft-error flag (`SessionRevoked`,
+         * `MfaDependencyFailure`, `EntraGroupGateDenied`), surfaced so `auth()`
+         * can refuse it in Node (#3200). Never sent to a client: `auth()`
+         * returns null instead of a session carrying it.
+         */
+        error?: string;
     }
 }
 
@@ -1138,6 +1145,9 @@ export const authOptions: NextAuthOptions = {
                 session.user.termsPending = token.termsPending ?? false;
                 session.user.memberships = token.memberships ?? [];
                 session.user.orgMemberships = token.orgMemberships ?? [];
+                if (typeof token.error === 'string' && token.error.length > 0) {
+                    session.error = token.error;
+                }
             }
             return session;
         },
@@ -1312,7 +1322,21 @@ export async function auth(): Promise<Session | null> {
     // Cookie FIRST, and if one resolves this returns exactly what it always
     // did — the web client's behaviour is bit-for-bit unchanged.
     const cookieSession = await getServerSession(authOptions);
-    if (cookieSession) return cookieSession;
+    // A revoked (or otherwise flagged) cookie session is NO session (#3200).
+    //
+    // The `jwt` callback runs on every `getServerSession` call and sets
+    // `error: 'SessionRevoked'` when the `UserSession` row is revoked or
+    // `sessionVersion` moved — but in the App Router a one-argument
+    // `getServerSession` DISCARDS the rewritten cookie, and the Edge, the only
+    // other reader, decodes the cookie as it stands. So the flag was computed
+    // and thrown away on every request, and a password change, an admin
+    // revoke or a concurrency eviction left a stolen cookie working until the
+    // JWT's own 14-day expiry. Refusing here covers every handler and server
+    // component, because they all reach `auth()`.
+    //
+    // It falls through to the bearer path rather than returning null, so a
+    // request that ALSO carries a live native credential is judged on that.
+    if (cookieSession && !cookieSession.error) return cookieSession;
 
     // Native bearer fallback.
     //
