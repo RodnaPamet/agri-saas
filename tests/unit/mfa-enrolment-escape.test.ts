@@ -24,6 +24,8 @@ jest.mock('@/lib/tenant-context', () => ({
 }));
 
 import { getTenantCtx } from '@/app-layer/context';
+import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const ENROL = 'src/app/api/t/[tenantSlug]/security/mfa/enroll';
@@ -48,17 +50,14 @@ describe('getTenantCtx — allowOwedSecondFactor (#3185)', () => {
 });
 
 describe('where the escape may be used (#3185)', () => {
-    function srcFiles(dir: string): string[] {
-        return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-            const p = path.join(dir, e.name);
-            return e.isDirectory() ? srcFiles(p) : /\.tsx?$/.test(e.name) ? [p] : [];
-        });
-    }
+    // The shared helpers: a collector that refuses an empty result, and
+    // comment blanking so a docblock naming the option is not read as a use.
+    const read = (f: string) => blankNonCode(fs.readFileSync(f, 'utf8'));
 
     it('is passed by exactly the three enrolment handlers', () => {
-        const users = srcFiles(path.join(ROOT, 'src'))
+        const users = collectSourceFiles({ roots: ['src'], extensions: ['.ts', '.tsx'] })
             .filter((f) => !f.endsWith(path.join('app-layer', 'context.ts')))
-            .filter((f) => fs.readFileSync(f, 'utf8').includes('allowOwedSecondFactor'))
+            .filter((f) => read(f).includes('allowOwedSecondFactor'))
             .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
             .sort();
         expect(users).toEqual([
@@ -69,7 +68,7 @@ describe('where the escape may be used (#3185)', () => {
     });
 
     it('is NOT passed by the handler that REMOVES an enrolment', () => {
-        const src = fs.readFileSync(path.join(ROOT, ENROL, 'route.ts'), 'utf8');
+        const src = read(path.join(ROOT, ENROL, 'route.ts'));
         const del = src.slice(src.indexOf('export const DELETE'));
         expect(src.indexOf('export const DELETE')).toBeGreaterThan(-1);
         expect(del).toContain('getTenantCtx(params, req)');

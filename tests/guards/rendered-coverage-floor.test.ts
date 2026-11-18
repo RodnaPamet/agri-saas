@@ -392,7 +392,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // traded. And the thousands-comma parse, where blind stripping would read a
 // European decimal comma as a HUNDREDFOLD larger price, silently, in a figure
 // the grain calculator uses.
-const RENDERED_TEST_FLOOR = 286;
+const RENDERED_TEST_FLOOR = 287;
+// Raised 286 → 287 for `mfa-challenge-remints-session.test.tsx` (#3186): a
+// correct web MFA challenge re-mints the session instead of looping back to
+// the challenge page.
 // Raised 285 → 286 for `channels-card-text.test.tsx` (#3063): a channel card's
 // `url` became a real anchor in the feed, and the extraction it is testing was
 // forced by a mutation — with the url logic inlined in the feed client,
