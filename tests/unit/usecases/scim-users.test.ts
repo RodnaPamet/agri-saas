@@ -51,6 +51,9 @@ jest.mock('@/lib/prisma', () => ({
             update: jest.fn(),
             count: jest.fn(),
         },
+        // `reachesBeyondTenant` (#3197) counts org memberships before a
+        // platform-wide rename.
+        orgMembership: { count: jest.fn() },
         $transaction: jest.fn(),
     },
 }));
@@ -271,32 +274,24 @@ describe('scimCreateUser — idempotency + reactivation', () => {
         expect(observedStatus).toBe('DEACTIVATED');
     });
 
-    it('attaches existing-user (e.g. cross-tenant member) with new membership in caller tenant', async () => {
+    it('REFUSES to attach an existing user from another tenant — 409 uniqueness, no membership written (#3197)', async () => {
+        // This case used to assert the OPPOSITE, as a regression test for
+        // consultants on several farms. Reversed deliberately: attaching an
+        // existing account to whichever farm minted the SCIM token, without
+        // asking the person, was half of an account takeover (#3196/#3197) —
+        // every self-serve sign-up owns a farm and can mint a token. A person
+        // joins a second farm through an invite they accept.
         mockUserFindUnique.mockResolvedValueOnce({
             id: 'shared-user', email: 'shared@b.com', name: 'Shared',
             createdAt: new Date(), updatedAt: new Date(),
         } as never);
-        // No existing membership in caller tenant.
         mockMembershipFindUnique.mockResolvedValueOnce(null);
-        mockMembershipCreate.mockResolvedValueOnce({
-            id: 'm-new', status: 'ACTIVE', role: 'READER',
-        } as never);
 
-        await scimCreateUser(scimCtx('tenant-A'), {
+        await expect(scimCreateUser(scimCtx('tenant-A'), {
             userName: 'shared@b.com',
-        }, 'https://x');
+        }, 'https://x')).rejects.toMatchObject({ status: 409, scimType: 'uniqueness' });
 
-        expect(mockMembershipCreate).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.objectContaining({
-                    tenantId: 'tenant-A',
-                    userId: 'shared-user',
-                }),
-            }),
-        );
-        // Regression: a refactor that bailed on "user already exists"
-        // would prevent shared users (e.g. consultants on multiple
-        // tenants) from being provisioned via SCIM into a new tenant.
+        expect(mockMembershipCreate).not.toHaveBeenCalled();
     });
 });
 
