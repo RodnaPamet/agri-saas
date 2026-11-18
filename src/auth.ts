@@ -56,6 +56,7 @@ import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryptio
 import { mintAppleClientSecret } from '@/lib/auth/apple-client-secret';
 import { secureCookiesEnabled } from '@/lib/auth/secure-cookies';
 import { redeemPendingInvites } from '@/lib/auth/invite-redemption';
+import { markEmailVerifiedByIdp } from '@/lib/auth/email-verified-by-idp';
 
 // ─── Type augmentation ──────────────────────────────────────────────
 //
@@ -736,6 +737,13 @@ export const authOptions: NextAuthOptions = {
                         // email_verified === false.
                         emailVerifiedByIdp: account.provider !== 'credentials',
                     });
+                }
+
+                // An OAuth sign-in confirms the address (#3178). Before the
+                // claims are read, so this very session carries the timestamp
+                // and is not held in slow mode for the age of its token.
+                if (account.provider !== 'credentials') {
+                    await markEmailVerifiedByIdp(user.id);
                 }
 
                 await applyMembershipClaims(token, user.id);

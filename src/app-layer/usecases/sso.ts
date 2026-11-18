@@ -8,6 +8,7 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { reachesBeyondTenant } from '@/lib/auth/tenant-reach';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
+import { markEmailVerifiedByIdp } from '@/lib/auth/email-verified-by-idp';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 
 /**
@@ -379,6 +380,8 @@ export async function linkExternalIdentity(
             return { status: 'rejected', reason: blocker };
         }
         await IdentityLinkRepo.updateLastLogin(existingLink.id);
+        // The tenant's IdP vouched for the address (#3178) — see the helper.
+        await markEmailVerifiedByIdp(existingLink.userId);
         logger.info('sso identity link resolved', { component: 'sso', status: 'linked', isNewLink: false });
         return { status: 'linked', userId: existingLink.userId, isNewLink: false };
     }
@@ -417,6 +420,7 @@ export async function linkExternalIdentity(
             emailAtLinkTimeHash: hashForLookup(normalizedEmail),
         });
 
+        await markEmailVerifiedByIdp(user.id);
         logger.info('sso identity link resolved', { component: 'sso', status: 'linked', isNewLink: true });
         return { status: 'linked', userId: user.id, isNewLink: true };
     }
@@ -441,6 +445,8 @@ export async function linkExternalIdentity(
                 email: normalizedEmail,
                 emailHash: hashForLookup(normalizedEmail),
                 name: normalizedEmail.split('@')[0],
+                // Asserted by the tenant's IdP on this sign-in (#3178).
+                emailVerified: new Date(),
             },
         });
 
