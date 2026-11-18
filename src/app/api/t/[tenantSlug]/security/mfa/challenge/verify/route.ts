@@ -10,6 +10,7 @@ import {
 import { verifyMfaChallenge } from '@/app-layer/usecases/mfa-challenge';
 import { env } from '@/env';
 import { jsonResponse } from '@/lib/api-response';
+import prisma from '@/lib/prisma';
 
 /**
  * POST /api/t/[tenantSlug]/security/mfa/challenge/verify
@@ -23,7 +24,9 @@ import { jsonResponse } from '@/lib/api-response';
  */
 export const POST = withApiErrorHandling(async (
     req: NextRequest,
+    { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> },
 ) => {
+    const { tenantSlug } = await paramsPromise;
     // Get current session
     // DELIBERATELY the raw `auth()`, and the one route under `src/app/api`
     // that still is. Owner ruling on #1652: this is part of SIGN-IN, so
@@ -42,11 +45,22 @@ export const POST = withApiErrorHandling(async (
     }
 
     const userId = session.user.id;
-    const tenantId = session.user.tenantId;
 
-    if (!tenantId) {
+    // The farm IN THE URL, not the session's primary one (#3186). Enrolments
+    // and the pending list are per (user, farm), but this read
+    // `session.user.tenantId` — so a person whose primary farm has no policy
+    // and whose other farm REQUIRES a factor could never clear the other one:
+    // every correct code was checked against, and stamped on, the wrong farm.
+    // An ACTIVE membership is required, so the slug cannot name a farm the
+    // caller does not belong to.
+    const membership = await prisma.tenantMembership.findFirst({
+        where: { userId, status: 'ACTIVE', tenant: { slug: tenantSlug, deletedAt: null } },
+        select: { tenantId: true },
+    });
+    if (!membership) {
         return jsonResponse({ error: 'No tenant context' }, { status: 400 });
     }
+    const tenantId = membership.tenantId;
 
     // ── Rate Limit Check ────────────────────────────────────────────
     const rateLimitKey = `mfa-challenge:${userId}`;
