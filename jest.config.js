@@ -31,7 +31,14 @@ const ESM_TRANSFORM_ALLOW_LIST =
     // the whole cluster must be transpiled by ts-jest or they fail to load
     // with "Cannot use import statement outside a module". Over-inclusion
     // is safe — ts-jest passes plain CJS through unchanged.
-    'sanitize-html|htmlparser2|domelementtype|domhandler|domutils|dom-serializer|entities';
+    'sanitize-html|htmlparser2|domelementtype|domhandler|domutils|dom-serializer|entities|' +
+    // web-push 4 is ESM-only ("type": "module", no default export), and so
+    // is the https-proxy-agent 9 line it imports, with that package's own
+    // two dependencies. Node 22 can `require` ESM but jest's CommonJS
+    // runtime cannot (it needs Node 24.9+), so every suite that loads the
+    // REAL module — the person-push integration suites, not the unit test,
+    // which mocks it — failed with "Must use import to load ES Module".
+    'web-push|https-proxy-agent|agent-base|proxy-agent-negotiate';
 
 // ─── Coverage thresholds ─────────────────────────────────────────────
 //

@@ -72,6 +72,17 @@ beforeEach(() => {
     })._resetDnsVerdictCache();
 });
 
+// The mock above is why a broken LOAD of the real package cannot show up in
+// the rest of this file: web-push 4 is ESM-only, and jest's CommonJS runtime
+// refused it ("Must use import to load ES Module") in every suite that did
+// not mock it, while this one stayed green. So load the real thing here too.
+it('the REAL web-push loads under jest and has the two exports we call', () => {
+    const real = jest.requireActual<Record<string, unknown>>('web-push');
+    expect(typeof real.setVapidDetails).toBe('function');
+    expect(typeof real.sendNotification).toBe('function');
+    expect(real.default).toBeUndefined();
+});
+
 describe('sendWebPushToUser', () => {
     it('sends one push per subscription with the JSON payload when configured', async () => {
         const wp = loadWithEnv({ VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv', VAPID_SUBJECT: 'mailto:x@y.z' });
