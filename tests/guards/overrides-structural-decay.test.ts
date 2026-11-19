@@ -224,6 +224,19 @@ const WAIVERS: Waiver[] = [
             'next release still builds on the root postcss line.',
         review: '2026-12-11',
     },
+    {
+        check: 'D',
+        target: '@prisma/config > effect',
+        reason:
+            '@prisma/config@7.10.1 (Prisma\'s latest) pins effect@3.20.0 EXACTLY, and ' +
+            'GHSA-7589-6fvf-x4pw (high, ReDoS in Schema.TemplateLiteral) covers <= 3.22.0, so ' +
+            'breaking that pin IS the purpose: no range bump here can reach the fix, and ' +
+            '`npm audit --omit=dev` failed the Security gate on main without it. The override ' +
+            'stays inside the major Prisma declared and 3.22.5 carries the same two ' +
+            'dependencies as 3.20.0. Recorded in docs/dependency-policy.md. On review: delete ' +
+            'the override once a Prisma release declares effect >= 3.22.1.',
+        review: '2026-12-19',
+    },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
