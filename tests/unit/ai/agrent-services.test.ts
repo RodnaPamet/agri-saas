@@ -23,6 +23,7 @@ import {
     AGRENT_SERVICE_NAMES,
     AGRENT_SERVICES,
     answerAgrentServices,
+    INSURANCE_PARTNER,
     listAgrentServices,
 } from '@/app-layer/ai/assistant/agrent-services';
 import { linkTemplateIsReal, linksFromPages } from '@/app-layer/ai/assistant/links';
@@ -83,6 +84,9 @@ describe('the guide matches the app', () => {
             expect(insurance!.what.toLocaleLowerCase('bg')).toContain(name.toLocaleLowerCase('bg'));
         }
         expect(insurance!.what).toMatch(/не е\s+застраховател/);
+        // The partner (owner, 2026-11-19), named AS Agrent's partner.
+        expect(INSURANCE_PARTNER).toBe('agrozastrahovane.bg');
+        expect(insurance!.what).toContain(`партньора на Agrent за застраховки, ${INSURANCE_PARTNER}`);
         // The control the button label is checked against: the screen's own words.
         expect(insurance!.where).toContain(bg.ag.risk.ask.open);
     });
