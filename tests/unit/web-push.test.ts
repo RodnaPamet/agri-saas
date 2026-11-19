@@ -22,12 +22,11 @@ import type { RequestContext } from '@/app-layer/types';
 
 const setVapidDetails = jest.fn();
 const sendNotification = jest.fn();
+// Named exports, as web-push 4 publishes them (ESM-only, no default).
 jest.mock('web-push', () => ({
     __esModule: true,
-    default: {
-        setVapidDetails: (...a: unknown[]) => setVapidDetails(...a),
-        sendNotification: (...a: unknown[]) => sendNotification(...a),
-    },
+    setVapidDetails: (...a: unknown[]) => setVapidDetails(...a),
+    sendNotification: (...a: unknown[]) => sendNotification(...a),
 }));
 
 const findMany = jest.fn();

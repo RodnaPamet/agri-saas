@@ -20,7 +20,10 @@
  * out OUTSIDE any tx, and pruning is a second short tx. Always awaited by
  * the caller so the push fires within the originating request/job.
  */
-import webpush from 'web-push';
+// web-push 4 is ESM-only, with NAMED exports and no default (4.0.0, "migrate
+// package to ESM"), so the v3 default import would bind to nothing. The
+// namespace import keeps every call site below exactly as it was.
+import * as webpush from 'web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { logger } from '@/lib/observability/logger';
