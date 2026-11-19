@@ -161,3 +161,32 @@ export function mergeLinks(groups: readonly AssistantLink[][]): AssistantLink[] 
     }
     return out;
 }
+
+/**
+ * Links to whole SCREENS — `/farm-risk`, never a record — from the
+ * `agrent_services` answer (the assistant's product guide).
+ *
+ * `linksFromRows` needs exactly one record parameter, so it cannot express a
+ * page with none. This is its sibling for that case and keeps the same two
+ * guarantees: the route comes from the server's own guide, never from the
+ * model, and it must be a page this app serves with no parameter left in it.
+ * Offered only when the tool was asked about specific services (`linked`), so
+ * an answer about insurance is not followed by every screen in the guide.
+ */
+export function linksFromPages(result: unknown): AssistantLink[] {
+    if (typeof result !== 'object' || result === null) return [];
+    const o = result as { linked?: unknown; rows?: unknown };
+    if (o.linked !== true || !Array.isArray(o.rows)) return [];
+    const out: AssistantLink[] = [];
+    for (const row of o.rows) {
+        if (typeof row !== 'object' || row === null) continue;
+        const r = row as Record<string, unknown>;
+        const route = r.route;
+        const label = r.name;
+        if (typeof route !== 'string' || !/^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/.test(route)) continue;
+        if (!linkTemplateIsReal(route)) continue;
+        if (typeof label !== 'string' || label.trim() === '') continue;
+        out.push({ route, label: label.trim().slice(0, MAX_LABEL_CHARS) });
+    }
+    return out;
+}
