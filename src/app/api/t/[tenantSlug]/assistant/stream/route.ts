@@ -49,7 +49,7 @@ import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { completeWithRouting } from '@/app-layer/ai/routing';
 import { emitAnswer } from '@/app-layer/ai/assistant/emit-answer';
-import { AGRENT_SERVICE_NAMES } from '@/app-layer/ai/assistant/agrent-services';
+import { AGRENT_SERVICE_NAMES, INSURANCE_PARTNER } from '@/app-layer/ai/assistant/agrent-services';
 import { endingEvent } from '@/app-layer/ai/assistant/endings';
 import { emitHalt, runToolLoop } from '@/app-layer/ai/assistant/tool-loop';
 import { sseFormat, type AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
@@ -404,6 +404,14 @@ export const POST = withApiErrorHandling(
                                         + 'office for something Agrent does, and never say Agrent '
                                         + 'does something the tool does not describe; if nothing '
                                         + 'fits, say Agrent does not offer it. '
+                                        // Owner, 2026-11-19: insurance has ONE partner, and the
+                                        // assistant recommends it exclusively — always naming it
+                                        // as Agrent's partner, because a recommendation of one
+                                        // company is a commercial one and must read as such.
+                                        + `For crop or farm insurance, recommend only ${INSURANCE_PARTNER}, `
+                                        + 'and say it is Agrent\'s insurance partner; it is also where '
+                                        + 'the in-app quote request goes. Never name or suggest any '
+                                        + 'other insurer, broker or comparison site. '
                                         + 'Answer in the language of the question. Never invent a '
                                         + 'figure — use the tools to read the farm\'s own data. '
                                         // #3090 — "never invent a FIGURE" is about the farm's

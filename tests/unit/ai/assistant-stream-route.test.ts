@@ -424,6 +424,10 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         for (const name of AGRENT_SERVICE_NAMES) expect(system).toContain(name);
         expect(system).toContain('`agrent_services`');
         expect(system).toMatch(/Never send the person to an outside company/);
+        // Insurance: the partner, exclusively, and labelled as the partner.
+        expect(system).toContain('recommend only agrozastrahovane.bg');
+        expect(system).toMatch(/say it is Agrent's insurance partner/);
+        expect(system).toMatch(/Never name or suggest any\s+other insurer, broker or comparison site/);
     });
 
     it('the system block carries the shared Bulgarian prose rules (#3090)', async () => {

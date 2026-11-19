@@ -61,6 +61,18 @@ export interface AgrentService {
     readonly gate?: (ctx: RequestContext) => Promise<boolean>;
 }
 
+/**
+ * Agrent's insurance partner (owner, 2026-11-19), who receives the in-app
+ * quote requests («Поискай застрахователна оферта»). The assistant
+ * recommends it and no other insurer, broker or comparison site — and always
+ * as AGRENT'S PARTNER, because recommending one company is a commercial
+ * communication, and a farmer is entitled to know it is one (the reasoning
+ * the promotions rule gives for DSA Art 26). Named by its domain, which is
+ * what a farmer types, rather than a Cyrillic brand spelling nobody has
+ * confirmed.
+ */
+export const INSURANCE_PARTNER = 'agrozastrahovane.bg';
+
 const moduleOn = (key: ModuleKey) => (ctx: RequestContext) => isModuleAvailable(ctx, key);
 
 export const AGRENT_SERVICES: readonly AgrentService[] = [
@@ -68,8 +80,8 @@ export const AGRENT_SERVICES: readonly AgrentService[] = [
         name: 'Застраховка на посев',
         what: 'Ориентировъчна премия по парцел — за посев (пшеница, ечемик, царевица, слънчоглед, '
             + 'рапица) или срещу риск (засушаване, градушка, измръзване). Заявката отива при '
-            + 'застраховател, който се свързва с Вас и потвърждава офертата. Agrent не е '
-            + 'застраховател и не сключва полици.',
+            + `партньора на Agrent за застраховки, ${INSURANCE_PARTNER}, който се свързва с Вас и `
+            + 'потвърждава офертата. Agrent не е застраховател и не сключва полици.',
         where: '«Риск» → «Поискай застрахователна оферта» до парцела',
         route: '/farm-risk',
     },
