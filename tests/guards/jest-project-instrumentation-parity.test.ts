@@ -110,7 +110,11 @@ describe('jest projects must instrument identically', () => {
         }));
 
         for (const t of targets) {
-            expect(t.target).toBeDefined();
+            // A real ScriptTarget NAME, not merely "defined": `toBeDefined()`
+            // passes on '' too, and every project agreeing on '' would then
+            // satisfy the equality below while comparing nothing
+            // (selector-teeth found exactly that).
+            expect(Object.keys(ts.ScriptTarget)).toContain(t.target);
         }
 
         const distinct = [...new Set(targets.map((t) => String(t.target).toUpperCase()))];
@@ -129,6 +133,6 @@ describe('jest projects must instrument identically', () => {
         if (!fs.existsSync(rendered)) return;
         const raw = fs.readFileSync(rendered, 'utf8');
         expect(raw).toMatch(/"extends"\s*:/);
-        expect(resolveTarget(rendered)).toBeDefined();
+        expect(Object.keys(ts.ScriptTarget)).toContain(resolveTarget(rendered));
     });
 });
