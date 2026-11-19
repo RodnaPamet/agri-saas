@@ -79,7 +79,8 @@ import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
 import { oneCropProblem, resolvePlace } from './place';
 import { buildDiaryOffer, DiaryDocumentOfferSchema, OfferDiaryDocumentArgs, type DiaryDocumentOffer } from './documents';
-import { linksFromRows, type AssistantLink, type LinkShape } from './links';
+import { linksFromPages, linksFromRows, type AssistantLink, type LinkShape } from './links';
+import { answerAgrentServices } from './agrent-services';
 import {
     ACTIVITY_KIND_VALUES,
     proposeDraft,
@@ -321,6 +322,12 @@ interface AssistantTool {
      * second kind meant editing the loop.
      */
     readonly proposes?: ProposalKind;
+    /**
+     * Links to whole screens rather than records (`agrent_services`), built by
+     * `linksFromPages` from the tool's own result. A tool declares this or
+     * `link`, never both.
+     */
+    readonly pageLinks?: boolean;
 }
 
 /**
@@ -563,6 +570,12 @@ const GrainCalculatorArgs = z.object({}).strict();
  * "what is today" and "when is the next good day for X"; past that the model
  * asks for a later window and `truncated` tells it that it must.
  */
+const AgrentServicesArgs = z
+    .object({
+        names: z.array(z.string().min(1).max(60)).max(6).optional(),
+    })
+    .strict();
+
 const LunarCalendarArgs = z
     .object({
         from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -642,6 +655,45 @@ const parseDay = (v: string | undefined): Date | undefined => {
 };
 
 export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
+    /*
+     * Agrent's own services — the product guide (`agrent-services.ts`).
+     *
+     * Every other tool reads the farm's DATA; this one describes the PRODUCT,
+     * which nothing did. Asked where to insure a crop, the assistant named
+     * outside routes while Agrent itself prices a policy per parcel and sends
+     * the request to an insurer. No `module`: the guide filters each service
+     * by its own gate, so a farm with a module off still learns about the
+     * rest.
+     */
+    agrent_services: {
+        def: {
+            name: 'agrent_services',
+            description:
+                'What Agrent itself offers, for THIS farm: each service with what it does, where it '
+                + 'is in the app, and what it does NOT do. Call it for any question about Agrent, '
+                + 'where or how to do something in Agrent, or a service such as insurance, '
+                + 'subsidies, selling produce, documents, prices or weather. Pass `names` — exact '
+                + 'service names from the list in your instructions — to get just those, with a link '
+                + 'to each screen for the person; call it with no `names` for the whole guide. '
+                + '`unavailableHere` lists services this farm has switched off, and `notOffered` '
+                + 'names that are not Agrent services at all: say so rather than inventing one.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    names: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        maxItems: 6,
+                        description: 'Exact service names from the list in your instructions.',
+                    },
+                },
+                additionalProperties: false,
+            },
+        },
+        args: AgrentServicesArgs,
+        pageLinks: true,
+        run: async (ctx, args) => answerAgrentServices(ctx, (args as z.infer<typeof AgrentServicesArgs>).names),
+    },
     /*
      * The ONE tool whose result is not tenant-scoped — #2665.
      *
@@ -1903,7 +1955,11 @@ export async function runTool(
         const document = offered?.success ? offered.data : undefined;
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
-        const links = tool.link ? linksFromRows(tool.link, result) : [];
+        const links = tool.link
+            ? linksFromRows(tool.link, result)
+            : tool.pageLinks
+                ? linksFromPages(result)
+                : [];
         /*
          * The PROMOTIONS block, joined to its disclosure here and nowhere else
          * (#2665). Built from the ROWS, before serialising, for `links`'

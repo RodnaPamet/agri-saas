@@ -400,6 +400,32 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(system).toMatch(/never print it in brackets/i);
     });
 
+    it('the system block keeps to farming and points Agrent questions at the guide (owner, 2026-11-19)', async () => {
+        /*
+         * Asked where a farmer can insure a crop, the assistant named outside
+         * routes while Agrent itself prices a policy. And nothing kept it to
+         * the agricultural domain. Asserted on the system message the route
+         * SENDS, so a rule that drifts out of the prompt fails here.
+         */
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(...ask({ question: 'какво' }));
+        const [, , opts] = completeWithRouting.mock.calls[0] as [unknown, unknown, { messages: { role: string; content: string }[] }];
+        const system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+        // The scope, with the owner's four areas and the refusal shape.
+        expect(system).toMatch(/SCOPE: you answer only about farming/);
+        for (const area of [/agronomy/, /weather as it affects field work/, /subsidies/, /insurance/]) {
+            expect(system).toMatch(area);
+        }
+        expect(system).toMatch(/say in one sentence that you help with\s+the farm and farming/);
+        // Every service name in the guide, and the tool to call for them.
+        const { AGRENT_SERVICE_NAMES } = await import('@/app-layer/ai/assistant/agrent-services');
+        expect(AGRENT_SERVICE_NAMES.length).toBeGreaterThanOrEqual(15);
+        for (const name of AGRENT_SERVICE_NAMES) expect(system).toContain(name);
+        expect(system).toContain('`agrent_services`');
+        expect(system).toMatch(/Never send the person to an outside company/);
+    });
+
     it('the system block carries the shared Bulgarian prose rules (#3090)', async () => {
         /*
          * This surface had NONE of them. It carried one line of its own —
