@@ -491,7 +491,7 @@ const ListExchangeArgs = z.object({
 }).strict();
 
 /**
- * Блокове facets. `q` is omitted for the reason it is omitted everywhere —
+ * «Карта» facets. `q` is omitted for the reason it is omitted everywhere —
  * free text into a query — and `kind`/`status` come from Prisma so the
  * JSON-Schema cannot offer a value the database does not have.
  *

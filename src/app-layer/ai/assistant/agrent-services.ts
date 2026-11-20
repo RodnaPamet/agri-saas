@@ -99,9 +99,9 @@ export const AGRENT_SERVICES: readonly AgrentService[] = [
         gate: moduleOn('JOURNAL'),
     },
     {
-        name: 'Блокове',
+        name: 'Карта',
         what: 'Блоковете и парцелите на стопанството на карта, със сателитни индекси.',
-        where: '«Блокове»',
+        where: '«Карта»',
         route: '/locations',
     },
     {

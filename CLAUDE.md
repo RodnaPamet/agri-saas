@@ -4778,9 +4778,12 @@ mechanism.
   what a farmer says for a field, and `assets.location` keeps
   «Местоположение», because where a machine physically sits is not a farm's
   block. A Location needs THREE rows because the table pins one value per row
-  and checks both catalogues exactly, and `sidebarNav.location` is
-  «Блокове»/`Location` — BG-plural with EN-singular being the house pattern
-  for nav items (`sidebarNav.asset` is «Активи»/`Asset`).
+  and checks both catalogues exactly, and the third is the DESTINATION's name:
+  «Карта»/`Map` since 2026-11-19 (owner) for `sidebarNav.location` — which is
+  also the bottom-bar tab — the page heading, its breadcrumb and the way back.
+  The screen is named for the map; the thing on it is still «блок», so every
+  field label keeps «Блок»/«Блокове», and the path stays `/locations` because
+  it is the bar order shared with iOS.
   The same file carries the load-bearing spellings that must NOT be renamed
   (the sidebar section `id`, the `/exchange` + `/trends` path strings shared
   with the iOS bottom-tab order, `complianceMailbox`), with the reason each
