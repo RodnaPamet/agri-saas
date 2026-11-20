@@ -13,6 +13,7 @@ import {
     INSURANCE_LEAD_RETENTION_DAYS,
 } from '@/app-layer/jobs/insurance-lead-retention';
 import { PROMOTION_LEAD_RETENTION_DAYS } from '@/app-layer/jobs/promotion-lead-retention';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 type Call = { op: string; args: unknown };
 
@@ -74,12 +75,16 @@ describe('insurance-lead retention sweep', () => {
         const path = require('node:path') as typeof import('node:path');
         const root = path.resolve(__dirname, '../..');
         const read = (p: string) => fs.readFileSync(path.join(root, p), 'utf8');
+        // Comments blanked: a docblock naming the job must not read as the
+        // job being scheduled (#1774). Strings stay, because the job name and
+        // the catalogue key ARE string literals.
+        const code = (p: string) => blankNonCode(read(p));
 
-        expect(read('src/app-layer/jobs/schedules.ts')).toMatch(/name: 'insurance-lead-retention'/);
-        expect(read('src/app-layer/jobs/executor-registry.ts')).toMatch(
+        expect(code('src/app-layer/jobs/schedules.ts')).toMatch(/name: 'insurance-lead-retention'/);
+        expect(code('src/app-layer/jobs/executor-registry.ts')).toMatch(
             /executorRegistry\.register\('insurance-lead-retention'/,
         );
-        const page = read('src/app/privacy/page.tsx');
+        const page = code('src/app/privacy/page.tsx');
         expect(page).toMatch(/t\('keepInsurance', \{ months: Math\.round\(INSURANCE_LEAD_RETENTION_DAYS \/ 30\) \}\)/);
         for (const loc of ['bg', 'en']) {
             const notice = JSON.parse(read(`messages/${loc}/app.json`)).privacy.keepInsurance as string;
