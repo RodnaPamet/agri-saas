@@ -496,15 +496,18 @@ describe('assistant tools (#2578)', () => {
         list_exchange_listings: 'EXCHANGE',
         propose_treatment: 'JOURNAL',
         propose_activity: 'JOURNAL',
+        propose_cost_entry: 'GRAIN',
     };
 
     it.each(Object.entries(TOOL_MODULE))(
         '%s asserts the %s module BEFORE reading anything (#2629)',
         async (tool, moduleKey) => {
             const args =
-                tool.startsWith('propose_')
-                    ? JSON.stringify({ kind: tool === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
-                    : '{}';
+                tool === 'propose_cost_entry'
+                    ? JSON.stringify({ category: 'FUEL', amount: 300 })
+                    : tool.startsWith('propose_')
+                      ? JSON.stringify({ kind: tool === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
+                      : '{}';
 
             // Refuse the module, then require that the USECASE was never
             // reached. Asserting only that the gate was called would pass for
@@ -759,9 +762,11 @@ describe('assistant tools (#2578)', () => {
                     ? '{"locationId":"loc-1"}'
                     : name === 'price_trends'
                       ? '{"commodity":"wheat"}'
-                      : name.startsWith('propose_')
-                        ? JSON.stringify({ kind: name === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
-                        : '{}';
+                      : name === 'propose_cost_entry'
+                        ? JSON.stringify({ category: 'FUEL', amount: 300 })
+                        : name.startsWith('propose_')
+                          ? JSON.stringify({ kind: name === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
+                          : '{}';
             const out = await runTool(denied, name, args);
             expect({ name, ok: out.ok }).toEqual({ name, ok: false });
         }
@@ -1025,5 +1030,54 @@ describe('assistant tools (#2578)', () => {
         expect(out.content.length).toBe(TOOL_RESULT_MAX_CHARS);
         // The flag is what makes the answer's incompleteness reportable as
         // ASSISTANT_TRUNCATED_RESULT instead of silent.
+    });
+});
+
+describe('propose_cost_entry (owner, 2026-11-20)', () => {
+    beforeEach(() => {
+        assertModuleEnabled.mockReset().mockResolvedValue(undefined);
+    });
+
+    it('a complete expense becomes a cost proposal, through the dispatcher', async () => {
+        const out = await runTool(ctx, 'propose_cost_entry', JSON.stringify({
+            category: 'FUEL', amount: 300, supplier: 'Петрол', crop: 'пшеница',
+        }));
+        expect(out.ok).toBe(true);
+        expect(out.proposal?.kind).toBe('cost');
+        expect(out.proposal?.draft).toEqual({
+            category: 'FUEL', amount: 300, supplier: 'Петрол', commodityCanonical: 'wheat',
+        });
+        expect(assertModuleEnabled).toHaveBeenCalledWith(ctx, 'GRAIN');
+    });
+
+    it('an incomplete one proposes nothing and tells the model what to ask', async () => {
+        const out = await runTool(ctx, 'propose_cost_entry', JSON.stringify({ category: 'FUEL' }));
+        expect(out.ok).toBe(true);
+        expect(out.proposal).toBeNull();
+        expect(out.content).toContain('"prepared":false');
+        expect(out.content).toContain('amount');
+    });
+
+    it('refuses an id the model reaches for', async () => {
+        const out = await runTool(ctx, 'propose_cost_entry', JSON.stringify({
+            category: 'FUEL', amount: 300, invoiceFileId: 'f1',
+        }));
+        expect(out.ok).toBe(false);
+        expect(out.proposal).toBeNull();
+    });
+});
+
+describe('a page link is for the app, not the reader (2026-11-20)', () => {
+    it('agrent_services keeps its links but gives the model no path to print', async () => {
+        // An ungated service, so this file's module mocks do not decide it.
+        const out = await runTool(ctx, 'agrent_services', JSON.stringify({ names: ['Застраховка на посев'] }));
+        expect(out.ok).toBe(true);
+        // The link under the answer is still built from the full rows...
+        expect(out.links).toEqual([{ route: '/farm-risk', label: 'Застраховка на посев' }]);
+        // ...while the model's copy carries no route, so a «(/grain/costs)»
+        // like the owner's screenshot cannot reach the answer.
+        expect(out.content).not.toContain('/farm-risk');
+        expect(out.content).not.toContain('"route"');
+        expect(out.content).toContain('Застраховка на посев');
     });
 });

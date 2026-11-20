@@ -83,7 +83,10 @@ import { linksFromPages, linksFromRows, type AssistantLink, type LinkShape } fro
 import { answerAgrentServices } from './agrent-services';
 import {
     ACTIVITY_KIND_VALUES,
+    COST_CATEGORY_VALUES,
+    missingCostItems,
     proposeDraft,
+    ProposeCostToolArgs,
     ProposeActivityArgs,
     ProposeTreatmentToolArgs,
     missingTreatmentItems,
@@ -96,6 +99,25 @@ import { LOG_ENTRY_TYPE_VALUES } from '@/lib/schemas';
 
 /** How much of one tool result may reach the model. */
 export const TOOL_RESULT_MAX_CHARS = 4000;
+
+/**
+ * A page-linking result as the MODEL sees it: each row's `route` removed.
+ * The links under the answer are built from the full result first, so the
+ * person still gets them; the model just has no web path to print.
+ */
+export function withoutRoutes(result: unknown): unknown {
+    if (!result || typeof result !== 'object') return result;
+    const r = result as { rows?: unknown };
+    if (!Array.isArray(r.rows)) return result;
+    return {
+        ...r,
+        rows: r.rows.map((row) => {
+            if (!row || typeof row !== 'object') return row;
+            const { route: _route, ...rest } = row as { route?: unknown } & Record<string, unknown>;
+            return rest;
+        }),
+    };
+}
 
 export interface ToolOutcome {
     readonly ok: boolean;
@@ -1828,6 +1850,56 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         },
         proposes: 'activity',
     },
+    propose_cost_entry: {
+        def: {
+            name: 'propose_cost_entry',
+            description:
+                'PREPARE an expense (разход) for the person to confirm — owner, 2026-11-20. Writes '
+                + 'NOTHING: when the category and the amount are known it returns a draft the app '
+                + 'opens as a filled expense line, which the person checks and saves. Use it whenever '
+                + 'the person asks to add, record or enter an expense, a cost or a payment. While the '
+                + 'result has `prepared: false` it lists `missing` items — ask for exactly those, in '
+                + 'one short question, then call again with everything. The amount is the TOTAL paid, '
+                + 'in the farm\'s currency. Name a crop in words («пшеница») only if the person tied '
+                + 'the expense to one; otherwise leave it out and it is booked for the whole farm. '
+                + 'Never invent a value the person did not say.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    category: {
+                        type: 'string',
+                        enum: [...COST_CATEGORY_VALUES],
+                        description:
+                            'PAYROLL заплати, RENT рента/наем, FERTILIZER торове, FUEL горива, SEED '
+                            + 'семена, PESTICIDE препарати, SERVICE услуги, CREDIT лихви по кредит, '
+                            + 'DEPRECIATION амортизация, OTHER друго.',
+                    },
+                    amount: { type: 'number', description: 'The total paid, a positive number.' },
+                    incurredOn: { type: 'string', description: 'The day it was paid, YYYY-MM-DD. Omit for today.' },
+                    supplier: { type: 'string', description: 'Who was paid, if said.' },
+                    description: { type: 'string', description: 'What it was, in the person\'s words, if said.' },
+                    crop: { type: 'string', description: 'The crop it was for, «пшеница», only if said.' },
+                },
+                additionalProperties: false,
+            },
+        },
+        module: 'GRAIN',
+        args: ProposeCostToolArgs,
+        run: async (_ctx, args) => {
+            // No read and no write: the draft is validated against the
+            // production body's own field types, and the PERSON posts it from
+            // the form, where the route's policy and checks apply.
+            const { crop, ...fields } = ProposeCostToolArgs.parse(args) as { crop?: string } & Record<string, unknown>;
+            const missing = missingCostItems(fields);
+            if (missing.length > 0) {
+                return { prepared: false, missing, understood: { ...fields, ...(crop ? { crop } : {}) } };
+            }
+            const outcome = proposeDraft('cost', { ...fields, ...(crop ? { commodityCanonical: crop } : {}) });
+            if (!outcome.ok) throw new Error(outcome.message);
+            return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
+        },
+        proposes: 'cost',
+    },
     offer_diary_document: {
         def: {
             name: 'offer_diary_document',
@@ -1989,7 +2061,12 @@ export async function runTool(
         // out of `content` would be the `a-detector-reads-the-serialised-form`
         // problem, and would additionally have to survive truncation.
         const partial = tool.isPartial?.(result) === true;
-        const full = JSON.stringify(result);
+        // A page link's PATH is for the app, not the reader (owner's
+        // screenshot, 2026-11-20: the answer read «Разходи (/grain/costs)»).
+        // `links` above was built from the full result; the model's copy
+        // drops each row's `route`, so there is no path for it to repeat.
+        const forModel = tool.pageLinks ? withoutRoutes(result) : result;
+        const full = JSON.stringify(forModel);
         if (full.length <= TOOL_RESULT_MAX_CHARS) {
             return {
                 ok: true,
