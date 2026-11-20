@@ -22,12 +22,11 @@ import type { RequestContext } from '@/app-layer/types';
 
 const setVapidDetails = jest.fn();
 const sendNotification = jest.fn();
+// Named exports, as web-push 4 publishes them (ESM-only, no default).
 jest.mock('web-push', () => ({
     __esModule: true,
-    default: {
-        setVapidDetails: (...a: unknown[]) => setVapidDetails(...a),
-        sendNotification: (...a: unknown[]) => sendNotification(...a),
-    },
+    setVapidDetails: (...a: unknown[]) => setVapidDetails(...a),
+    sendNotification: (...a: unknown[]) => sendNotification(...a),
 }));
 
 const findMany = jest.fn();
@@ -71,6 +70,17 @@ beforeEach(() => {
     (require('@/app-layer/automation/webhook-safety') as {
         _resetDnsVerdictCache: () => void;
     })._resetDnsVerdictCache();
+});
+
+// The mock above is why a broken LOAD of the real package cannot show up in
+// the rest of this file: web-push 4 is ESM-only, and jest's CommonJS runtime
+// refused it ("Must use import to load ES Module") in every suite that did
+// not mock it, while this one stayed green. So load the real thing here too.
+it('the REAL web-push loads under jest and has the two exports we call', () => {
+    const real = jest.requireActual<Record<string, unknown>>('web-push');
+    expect(typeof real.setVapidDetails).toBe('function');
+    expect(typeof real.sendNotification).toBe('function');
+    expect(real.default).toBeUndefined();
 });
 
 describe('sendWebPushToUser', () => {
