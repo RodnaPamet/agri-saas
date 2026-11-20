@@ -115,8 +115,13 @@ describe('the assistant proposes but never writes (#2578)', () => {
         // helper's rule is `strings: true` when the subject is a call or a
         // structure, and plain when the subject is the text itself.
         const code = blankNonCode(readFileSync(path.join(REPO_ROOT, PROPOSE), 'utf8'));
+        // Both homes of a production body schema (CLAUDE.md: shared ones in
+        // `@/lib/schemas`, backend ones under `@/app-layer/schemas/`). The
+        // `cost` kind (owner, 2026-11-20) derives from `CreateCostEntrySchema`,
+        // which lives in the second; counting only the first made a properly
+        // derived kind read as one with no production schema.
         const fromSchemas = namedImportsOf(PROPOSE)
-            .filter((g) => g.module === '@/lib/schemas')
+            .filter((g) => g.module === '@/lib/schemas' || g.module.startsWith('@/app-layer/schemas/'))
             .flatMap((g) => g.names);
         const kinds = (code.match(/PROPOSAL_KINDS = \[([^\]]*)\]/)?.[1] ?? '')
             .split(',')
@@ -153,6 +158,9 @@ describe('the assistant proposes but never writes (#2578)', () => {
         const KIND_ROUTE: Record<string, string> = {
             treatment: 'journal/treatments',
             activity: 'journal/activities',
+            // The body `CreateCostEntrySchema` validates; the phone books a
+            // proposed expense through its batch twin, `grain/costs/batch`.
+            cost: 'grain/costs',
         };
         /**
          * Kinds with NO web form, each with the reason — this repo can only

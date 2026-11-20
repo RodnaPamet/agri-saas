@@ -19,12 +19,14 @@ import {
     PROPOSAL_KINDS,
     PROPOSAL_SCHEMAS,
     DRAFT_STAND_INS,
+    missingCostItems,
     missingTreatmentItems,
     ProposeTreatmentToolArgs,
     proposeDraft,
     TREATMENT_KIND_VALUES,
 } from '@/app-layer/ai/assistant/propose';
 import { RecordDiaryTreatmentSchema, RecordFarmActivitySchema } from '@/lib/schemas';
+import { CreateCostEntrySchema } from '@/app-layer/schemas/grain.schemas';
 
 describe('proposeDraft — treatment (#2632)', () => {
     it('prepares a partial draft with no id anywhere in it', () => {
@@ -146,7 +148,7 @@ describe('proposeDraft — activity (#2632)', () => {
 
 describe('the proposal registry', () => {
     it('the kind set is closed and every kind has a schema', () => {
-        expect([...PROPOSAL_KINDS]).toEqual(['treatment', 'activity']);
+        expect([...PROPOSAL_KINDS]).toEqual(['treatment', 'activity', 'cost']);
         for (const kind of PROPOSAL_KINDS) {
             expect(PROPOSAL_SCHEMAS[kind]).toBeDefined();
         }
@@ -167,6 +169,11 @@ describe('the proposal registry', () => {
                 'activity',
                 (PROPOSAL_SCHEMAS.activity as unknown as { shape: Record<string, unknown> }).shape,
                 RecordFarmActivitySchema.shape as unknown as Record<string, unknown>,
+            ],
+            [
+                'cost',
+                (PROPOSAL_SCHEMAS.cost as unknown as { shape: Record<string, unknown> }).shape,
+                CreateCostEntrySchema.shape as unknown as Record<string, unknown>,
             ],
         ];
         for (const [kind, draftShape, prodShape] of pairs) {
@@ -225,5 +232,38 @@ describe('a complete treatment, and what is still missing (#3162)', () => {
         expect(ProposeTreatmentToolArgs.safeParse({ chosenParcels: complete.chosenParcels }).success).toBe(false);
         expect(ProposeTreatmentToolArgs.safeParse({ parcelIds: ['p1'] }).success).toBe(false);
         expect(ProposeTreatmentToolArgs.safeParse({ blockName: 'Север', doseUnit: 'л/дка' }).success).toBe(true);
+    });
+});
+
+describe('an expense (owner, 2026-11-20: «the assistant should also be able to add expenses»)', () => {
+    it('a draft with what and how much proposes the cost kind, crop words resolved', () => {
+        const out = proposeDraft('cost', {
+            category: 'FUEL',
+            amount: 300,
+            incurredOn: '2026-11-20',
+            supplier: 'Петрол',
+            commodityCanonical: 'пшеница',
+        });
+        expect(out.ok).toBe(true);
+        expect(out.proposal?.kind).toBe('cost');
+        // The production transform resolved the farmer's word.
+        expect(out.proposal?.draft.commodityCanonical).toBe('wheat');
+    });
+
+    it('refuses an id, a currency and a word that is not a crop', () => {
+        // `.strict()`: a model reaching for an id is refused, not stripped.
+        expect(proposeDraft('cost', { category: 'FUEL', amount: 1, invoiceFileId: 'x' }).ok).toBe(false);
+        expect(proposeDraft('cost', { category: 'FUEL', amount: 1, currency: 'EUR' }).ok).toBe(false);
+        expect(proposeDraft('cost', { category: 'FUEL', amount: 1, commodityCanonical: 'трактор' }).ok).toBe(false);
+        // And a category the enum does not hold.
+        expect(proposeDraft('cost', { category: 'LUNCH', amount: 1 }).ok).toBe(false);
+        // A non-positive amount, as the route would refuse it.
+        expect(proposeDraft('cost', { category: 'FUEL', amount: 0 }).ok).toBe(false);
+    });
+
+    it('lists what is still missing, so the model asks instead of opening a half form', () => {
+        expect(missingCostItems({})).toEqual(['category (what the expense was for)', 'amount']);
+        expect(missingCostItems({ category: 'FUEL' })).toEqual(['amount']);
+        expect(missingCostItems({ category: 'FUEL', amount: 300 })).toEqual([]);
     });
 });

@@ -53,6 +53,7 @@
 import { z } from 'zod';
 
 import { RecordDiaryTreatmentSchema, RecordFarmActivitySchema } from '@/lib/schemas';
+import { CostCategorySchema, CreateCostEntrySchema } from '@/app-layer/schemas/grain.schemas';
 
 /**
  * The kinds of thing the assistant may propose. A closed set, and every member
@@ -63,7 +64,7 @@ import { RecordDiaryTreatmentSchema, RecordFarmActivitySchema } from '@/lib/sche
  * so the next reader does not take the web gap for one. The web shows such a
  * proposal as text until it grows a form.
  */
-export const PROPOSAL_KINDS = ['treatment', 'activity'] as const;
+export const PROPOSAL_KINDS = ['treatment', 'activity', 'cost'] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
 export interface AssistantProposal {
@@ -114,6 +115,31 @@ const TREATMENT_DRAFT_FIELDS = [
 
 /** The activity fields. `harvestKg` only means anything for a HARVEST. */
 const ACTIVITY_DRAFT_FIELDS = ['kind', 'occurredOn', 'harvestKg'] as const;
+
+/**
+ * The expense fields a conversation can determine (owner, 2026-11-20: «the
+ * assistant should also be able to add expenses»), picked from
+ * `CreateCostEntrySchema`, the body `POST /grain/costs` and its batch take.
+ *
+ * Omitted, each a decision:
+ *   - every id — `invoiceFileId`, `plantingId`, `seasonId`, `locationId`,
+ *     `parcelId`, `leaseId`, `itemId`, `allocationParcelIds`. A model cannot
+ *     know a cuid, and an invoice is a file the person attaches.
+ *   - `currency` — the form books in the farm's currency; a model guessing it
+ *     is how a 1 000 лв cost becomes 1 000 €.
+ *   - `allocationBasis` — a CONSEQUENCE of `commodityCanonical`: a crop means
+ *     `CROP`, no crop means the whole farm. The form decides it from that, in
+ *     front of the person, rather than taking a second field that could
+ *     disagree with the first.
+ *   - `amountPerDca` and the payroll pair — input aids of the calculator's
+ *     per-decare sheet. A conversation states a TOTAL ("платих 300 лв за
+ *     нафта"), which is what `amount` is.
+ *
+ * `commodityCanonical` goes through the production transform, so «пшеница»
+ * arrives as `wheat` and a word that is not a crop is refused for the model
+ * to fix, exactly as the route would refuse it.
+ */
+const COST_DRAFT_FIELDS = ['category', 'amount', 'incurredOn', 'supplier', 'description', 'commodityCanonical'] as const;
 
 /**
  * Lift named fields off a production schema's shape, refusing an unknown one.
@@ -188,6 +214,44 @@ export const ProposeActivityArgs = z
         { message: 'harvestKg belongs to a HARVEST' },
     );
 
+/** An expense draft. Every field optional; `missingCostItems` says what is still needed. */
+export const ProposeCostArgs = z
+    .object(
+        fieldsFrom(
+            CreateCostEntrySchema.shape as unknown as Record<string, z.ZodTypeAny>,
+            COST_DRAFT_FIELDS,
+            'CreateCostEntrySchema',
+        ),
+    )
+    .partial()
+    .strict();
+
+/**
+ * What the MODEL may send to `propose_cost_entry`: the draft fields, with the
+ * crop as the person SAID it (`crop`, «пшеница») rather than the canonical
+ * slug the body stores. The tool hands it to `commodityCanonical`, whose
+ * production transform resolves it in either language.
+ */
+export const ProposeCostToolArgs = ProposeCostArgs.omit({ commodityCanonical: true })
+    .extend({ crop: z.string().min(1).max(64).optional() })
+    .strict();
+
+/** The categories a cost may carry, from the production enum — never retyped. */
+export const COST_CATEGORY_VALUES = CostCategorySchema.options;
+
+/**
+ * What an expense draft still LACKS — the treatment rule (#3162) applied to a
+ * cost: while anything is listed, the tool proposes nothing and the model
+ * asks. Only what the route needs and a conversation can give: what it was
+ * for and how much. The day defaults to today in the form, so it is not asked.
+ */
+export function missingCostItems(draft: { category?: unknown; amount?: unknown }): string[] {
+    const missing: string[] = [];
+    if (!draft.category) missing.push('category (what the expense was for)');
+    if (draft.amount === undefined) missing.push('amount');
+    return missing;
+}
+
 /**
  * What the MODEL may send to `propose_treatment` — agri-saas#3162.
  *
@@ -238,6 +302,7 @@ export const TreatmentDraftSchema = ProposeTreatmentArgs.extend({
 export const PROPOSAL_SCHEMAS: Readonly<Record<ProposalKind, z.ZodType<unknown>>> = {
     treatment: TreatmentDraftSchema,
     activity: ProposeActivityArgs,
+    cost: ProposeCostArgs,
 };
 
 /**
