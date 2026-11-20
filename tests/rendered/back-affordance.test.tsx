@@ -34,7 +34,7 @@ describe('BackAffordance', () => {
         render(<BackAffordance />);
         const link = await screen.findByTestId('page-header-back');
         expect(link).toHaveAttribute('href', '/t/acme/locations');
-        expect(link).toHaveTextContent('Locations');
+        expect(link).toHaveTextContent('Map');
     });
 
     it('prefers the in-tab referrer over the canonical parent', async () => {

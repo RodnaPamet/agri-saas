@@ -1299,7 +1299,7 @@ const PARCEL_COMMENT_ROWS = 1_000;
 /**
  * A parcel's comments and closing notes, newest first (#2474, agrent-ios).
  *
- * The history under «Блокове» → a parcel, for a MECHANISATOR whose whole app
+ * The history under «Карта» → a parcel, for a MECHANISATOR whose whole app
  * is one screen. One read per parcel rather than one per task: a sprayer on
  * rural LTE opening a field with a season of work on it would otherwise make
  * dozens of requests.
@@ -1520,7 +1520,7 @@ export async function attachParcelIds<T extends { id: string }>(
 }
 
 /**
- * Every task that touches one parcel, newest first — what «Блокове» → a parcel
+ * Every task that touches one parcel, newest first — what «Карта» → a parcel
  * shows beneath its risk (#2463, agrent-ios).
  *
  * ## Deliberately NOT cached, unlike `listTasks`

@@ -68,7 +68,7 @@ test.describe('mobile responsive — agriculture @mobile', () => {
         // The list renders a DataTable once data resolves; the page
         // heading is the stable anchor that proves the page painted.
         await expect(
-            main.getByRole('heading', { name: 'Locations', level: 1 }),
+            main.getByRole('heading', { name: 'Map', level: 1 }),
         ).toBeVisible({ timeout: 30_000 });
 
         // The seeded field is listed (link into the detail page).

@@ -144,7 +144,7 @@ export function oneCropProblem(parcels: readonly ResolvedParcel[]): Unresolved |
     const bare = parcels.filter((p) => !p.crop?.trim());
     if (bare.length > 0) {
         return {
-            said: 'field has no crop recorded — set the crop in Блокове, or name other parcels',
+            said: 'field has no crop recorded — set the crop in «Карта», or name other parcels',
             candidates: bare.slice(0, 5).map((p) => p.label),
         };
     }

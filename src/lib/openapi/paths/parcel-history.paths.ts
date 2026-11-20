@@ -403,7 +403,7 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
         operationId: 'listParcelTasks',
         summary: 'Every task that touches this parcel',
         description:
-            'What «Блокове» → a parcel shows beneath its risk: the parcel\'s whole task '
+            'What «Карта» → a parcel shows beneath its risk: the parcel\'s whole task '
             + 'history, newest first, in the same row shape as `/tasks`.\n\n'
             + '**Use this rather than `GET /tasks?linkedEntityType=PARCEL`.** That filter '
             + 'returns the scouting and hand-made tasks and silently OMITS every planned spray '
@@ -451,7 +451,7 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
         operationId: 'listParcelComments',
         summary: 'A parcel’s comments and closing notes',
         description:
-            'The history under «Блокове» → a parcel: every task comment and every closing '
+            'The history under «Карта» → a parcel: every task comment and every closing '
             + 'note on the tasks that touched this parcel, newest first, in ONE read.\n\n'
             + 'Over the same task set as `listParcelTasks` — both resolve it the same way — so '
             + 'the history and the task list on one screen cannot disagree about which tasks '

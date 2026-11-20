@@ -42,8 +42,8 @@ The guard reads this table. Keep the column order and one row per concept.
 | trends | Тенденции | Trends | sidebarNav.trends, trends.title | Тренд, Трендове, Трендът | sidebarNav., trends. |
 | market | Пазар | Market | sidebarNav.sectionMarket, trends.news.filters.market, trends.news.categories.market | Борса, Борсата | sidebarNav. |
 | location | Блок | Location | journal.colLocation, locations.detail.fallbackTitle, planning.newPlan.location | Локация, Локации, Обект, Обекти, Нива, Ниви, Землище, землище | locations., journal., myWork., backNav., farmTasks., planning., sidebarNav., grain.costs.form.linkKind. |
-| locations | Блокове | Locations | backNav.locations, farmTasks.fieldLocations, journal.detail.locations, journal.entryModal.fieldLocations, locations.bcLocations, locations.title, myWork.locations |  |  |
-| locationNav | Блокове | Location | sidebarNav.location |  |  |
+| locations | Блокове | Locations | farmTasks.fieldLocations, journal.detail.locations, journal.entryModal.fieldLocations, myWork.locations |  |  |
+| locationNav | Карта | Map | sidebarNav.location, locations.title, locations.bcLocations, backNav.locations |  |  |
 | parcel | Парцел | Parcel | ag.map.parcel, ag.rent.colParcel, ag.rent.fieldParcel, notificationEmail.insuranceLead.parcelLabel, offline.parcelDefault, planning.board.colParcel, planning.detail.parcel, planning.newPlan.parcel | Имот, Имоти | ag.map., ag.rent., ag.parcelHistory., locations., planning., grain.costs.form.linkKind., offline. |
 | parcels | Парцели | Parcels | ag.parcelHistory.breadcrumbParcels, locations.colParcels, locations.detail.overviewParcels, locations.detail.parcelsAccordion |  |  |
 | channel | Канал | Channel | channels.breadcrumbChannel | Общност, Група, Форум, Разговор | channels., sidebarNav. |
@@ -167,15 +167,25 @@ means deciding that the cadastre must spell its own noun differently.
 
 ### Why five rows
 
+(The third of them is the destination's name, «Карта», since 2026-11-19 — see
+below.)
+
 The table pins one canonical value per row and checks BOTH catalogues exactly,
 so singular and plural need separate rows: «Блок»/`Location` and
 «Блокове»/`Locations`.
 
-`sidebarNav.location` gets a third row because it is «Блокове» in Bulgarian and
-`Location` in English — and that is the **house pattern** for nav items, not a
-defect: `sidebarNav.asset` is «Активи»/`Asset` and `sidebarNav.rent` is
-«Ренти»/`Rent`. Pinning it to the plural English row would have meant changing
-the English to match a rule the sidebar does not follow.
+The destination gets a third row, **«Карта»/`Map`** (owner, 2026-11-19): the
+sidebar item — which is also the bottom-bar tab, since `BottomTabBar` takes its
+label from the nav item — the page heading, its breadcrumb and the way back to
+it. The screen is the farm on a map, so it is named for that; the THING on it is
+still «блок», and every field label, picker and fact keeps «Блок»/«Блокове».
+The phone's tab follows (agrent-ios `AppSurface.locations`), and the path stays
+`/locations` because it is the bar order both clients save.
+
+Until then that row was «Блокове»/`Location`, BG-plural with EN-singular, which
+is the **house pattern** for nav items rather than a defect:
+`sidebarNav.asset` is «Активи»/`Asset` and `sidebarNav.rent` is «Ренти»/`Rent`.
+«Карта»/`Map` needs no such split.
 
 ### What is NOT a Location
 
