@@ -933,6 +933,20 @@ executorRegistry.register('promotion-lead-retention', async (payload) => {
     );
 });
 
+// ── insurance-lead-retention ─────────────────────────────────────────
+
+executorRegistry.register('insurance-lead-retention', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runInsuranceLeadRetentionSweep } = await import('./insurance-lead-retention');
+    const r = await runInsuranceLeadRetentionSweep({ dryRun: payload.dryRun });
+    return makeResult(
+        'insurance-lead-retention', startedAt, startMs,
+        r.deleted, r.deleted, 0,
+        { deleted: r.deleted, dryRun: r.dryRun },
+    );
+});
+
 // ── lease-expiry-sweep (land administration) ─────────────────────────
 
 executorRegistry.register('lease-expiry-sweep', async (payload) => {

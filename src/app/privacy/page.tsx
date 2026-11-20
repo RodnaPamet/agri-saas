@@ -9,6 +9,7 @@ import { Heading } from '@/components/ui/typography';
 import { DELETION_GRACE_DAYS } from '@/app-layer/usecases/account-erasure';
 import { USAGE_EVENT_RETENTION_DAYS } from '@/app-layer/telemetry/usage-events';
 import { RAW_POSITION_RETENTION_DAYS } from '@/lib/machines/fleet-view';
+import { INSURANCE_LEAD_RETENTION_DAYS } from '@/app-layer/jobs/insurance-lead-retention';
 
 /**
  * Privacy notice — a PUBLIC route (no tenant, no auth), because the promotions
@@ -166,6 +167,13 @@ export default async function PrivacyPage() {
                         months: retentionMonths,
                         graceDays: PROMOTION_LEAD_PURGE_GRACE_DAYS,
                     })}
+                </p>
+                {/* Owner, 2026-11-20: insurance quote requests keep the same
+                    24 months, and `insurance-lead-retention` deletes them
+                    outright with no grace. INTERPOLATED from the constant that
+                    job reads, for the reason given below for usage events. */}
+                <p className="text-content-muted">
+                    {t('keepInsurance', { months: Math.round(INSURANCE_LEAD_RETENTION_DAYS / 30) })}
                 </p>
                 {/* INTERPOLATED from the same constant the sweep reads, never
                     written as a literal. The notice promising one period while

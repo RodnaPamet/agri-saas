@@ -397,7 +397,8 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
         action: 'PSEUDONYMISE_COLUMN',
         reason:
             'An insurance quote this person requested, carrying figures they supplied. '
-            + 'Theirs on both counts.',
+            + 'Theirs on both counts. Deleted outright 24 months after the request '
+            + '(`insurance-lead-retention`), as the privacy notice states.',
     },
     {
         model: 'OrgAuditLog',
