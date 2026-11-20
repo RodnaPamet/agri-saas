@@ -69,13 +69,18 @@ export default async function PrivacyPage() {
         // and it still shows where a person was if they were on it. A notice
         // that only said "we record machine positions" would be true and would
         // leave the reader to work that out.
-        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectUsage', 'collectPositions'] },
+        // `collectInsurance` / `useInsurance` (owner, 2026-11-20): an insurance
+        // quote request goes first to the operator, a registered insurance
+        // agent, who passes it to the partner insurer. The notice named
+        // neither the request nor the hand-over until then, while the screen
+        // said it went straight to "an insurer".
+        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectInsurance', 'collectUsage', 'collectPositions'] },
         // `useExchange` added with #1348: the exchange now shares a name with
         // the other farm, exactly as an offer request does. The notice said so
         // for offer requests only, and a document that describes one of two
         // identical disclosures is worse than one that describes neither —
         // a reader would reasonably infer the other does not happen.
-        { key: 'use', body: ['useOperate', 'useSuppliers', 'useExchange'] },
+        { key: 'use', body: ['useOperate', 'useSuppliers', 'useInsurance', 'useExchange'] },
         { key: 'protect', body: ['protectEncryption', 'protectIsolation', 'protectConsent'] },
         // Google user data — required by Google's OAuth consent-screen review
         // for the `drive.file` and `calendar.app.created` scopes (#3070).

@@ -62,8 +62,11 @@ export interface AgrentService {
 }
 
 /**
- * Agrent's insurance partner (owner, 2026-11-19), who receives the in-app
- * quote requests («Поискай застрахователна оферта»). The assistant
+ * Agrent's insurance partner (owner, 2026-11-19). An in-app quote request
+ * («Поискай застрахователна оферта») goes FIRST to Agrent, which is a
+ * registered insurance agent, and Agrent passes it to this partner (owner,
+ * 2026-11-20): the code mails only the operator's address
+ * (`INSURANCE_LEAD_NOTIFY_EMAIL`), so the hand-over is Agrent's. The assistant
  * recommends it and no other insurer, broker or comparison site — and always
  * as AGRENT'S PARTNER, because recommending one company is a commercial
  * communication, and a farmer is entitled to know it is one (the reasoning
@@ -79,9 +82,10 @@ export const AGRENT_SERVICES: readonly AgrentService[] = [
     {
         name: 'Застраховка на посев',
         what: 'Ориентировъчна премия по парцел — за посев (пшеница, ечемик, царевица, слънчоглед, '
-            + 'рапица) или срещу риск (засушаване, градушка, измръзване). Заявката отива при '
+            + 'рапица) или срещу риск (засушаване, градушка, измръзване). Заявката отива първо '
+            + 'при Agrent като регистриран застрахователен агент, а оттам при '
             + `партньора на Agrent за застраховки, ${INSURANCE_PARTNER}, който се свързва с Вас и `
-            + 'потвърждава офертата. Agrent не е застраховател и не сключва полици.',
+            + 'потвърждава офертата. Agrent не е застраховател — полицата е при застрахователя.',
         where: '«Риск» → «Поискай застрахователна оферта» до парцела',
         route: '/farm-risk',
     },

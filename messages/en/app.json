@@ -610,7 +610,7 @@
         },
         "insuranceQuote": {
             "title": "Insurance quote request sent",
-            "body": "An insurer will get back to you about this parcel."
+            "body": "Agrent will pass your request to our partner agrozastrahovane.bg, who will get back to you about this parcel."
         },
         "bulkTask": {
             "assigned": {
@@ -2576,7 +2576,7 @@
                 "sent": "Request sent",
                 "sentToast": "Quote request sent. You will find it in your notifications.",
                 "title": "Request an insurance quote",
-                "description": "Send an insurer a quote request for this parcel; they'll get back to you.",
+                "description": "Your quote request for this parcel goes first to Agrent, as a registered insurance agent, and from us to our partner agrozastrahovane.bg, who will get back to you.",
                 "message": "Message",
                 "messagePlaceholder": "Describe your cover needs…",
                 "cancel": "Cancel",
@@ -6347,11 +6347,13 @@
         "collectAccount": "Account details: your name, email address and the language you chose for the interface.",
         "collectFarm": "Farm records you enter: fields and parcels, crops, field operations, journal entries, documents, photographs you attach to them, and the other operational data the application exists to keep.",
         "collectRequests": "Offer requests: when you ask a supplier for an offer, the message you write and the promotion it refers to, together with the moment you gave consent.",
+        "collectInsurance": "Insurance quote requests: the parcel (name, crop, area), its satellite risk reading at that moment, the quote we showed you, and the message you wrote.",
         "collectUsage": "How the application is used: which screens you open and which actions you take — saving a treatment, downloading a diary. It is linked to your account. We do not record what you typed, where you were, or anything about a specific field or crop, and it is never used to track you across other services or shared with an advertising network.",
         "collectPositions": "Machine positions: if the farm fits a tracker to a vehicle, its location, speed and whether the engine is running are recorded. The record belongs to the MACHINE rather than to you — but if you were on it, it shows where you were. The farm is required to tell you which of its machines are tracked.",
         "useTitle": "What we use it for",
         "useOperate": "Running the application for your farm — showing your records back to you, and producing the reports and exports you ask for.",
         "useSuppliers": "When you tick the consent box on an offer request, your name and your message are shared with that supplier so they can contact you about it. Nothing is shared with a supplier unless you tick that box, and no offer request is stored without it.",
+        "useInsurance": "An insurance quote request comes to us first — we act as a registered insurance agent — and we pass it to our partner agrozastrahovane.bg, with the contact details they need to reach you and confirm the offer. We do not share it with any other insurer.",
         "useExchange": "When you open a conversation on the exchange, the farm you write to sees your name alongside your messages — the same as an offer request, and for the same reason: they need to know who they are talking to. Your phone number and email are NOT shared by writing; those stay behind the contact-reveal step, which both sides have to take deliberately.",
         "protectTitle": "How it is protected",
         "protectEncryption": "Sensitive free-text and contact fields are encrypted before they are written to the database, so they are not readable in a database dump.",

@@ -87,6 +87,11 @@ describe('the guide matches the app', () => {
         // The partner (owner, 2026-11-19), named AS Agrent's partner.
         expect(INSURANCE_PARTNER).toBe('agrozastrahovane.bg');
         expect(insurance!.what).toContain(`партньора на Agrent за застраховки, ${INSURANCE_PARTNER}`);
+        // The order (owner, 2026-11-20): the request reaches Agrent, a
+        // registered insurance agent, BEFORE the partner — the code mails only
+        // the operator's address, so a guide saying it goes straight to the
+        // insurer would describe a hand-over nobody makes.
+        expect(insurance!.what).toMatch(/първо\s+при\s+Agrent\s+като\s+регистриран\s+застрахователен\s+агент/);
         // The control the button label is checked against: the screen's own words.
         expect(insurance!.where).toContain(bg.ag.risk.ask.open);
     });

@@ -409,8 +409,9 @@ export const POST = withApiErrorHandling(
                                         // as Agrent's partner, because a recommendation of one
                                         // company is a commercial one and must read as such.
                                         + `For crop or farm insurance, recommend only ${INSURANCE_PARTNER}, `
-                                        + 'and say it is Agrent\'s insurance partner; it is also where '
-                                        + 'the in-app quote request goes. Never name or suggest any '
+                                        + 'and say it is Agrent\'s insurance partner. The in-app quote '
+                                        + 'request goes first to Agrent, a registered insurance agent, '
+                                        + 'which passes it to that partner. Never name or suggest any '
                                         + 'other insurer, broker or comparison site. '
                                         + 'Answer in the language of the question. Never invent a '
                                         + 'figure — use the tools to read the farm\'s own data. '
