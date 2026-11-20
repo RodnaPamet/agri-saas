@@ -82,6 +82,9 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // policy-news slice of MarketNewsItem and writes GLOBAL
             // NewsDerivedEvent rows — no tenantId on either model, same shape
             // as market-news-pull above.
+            // insurance-lead-retention sweeps InsuranceLead for the same reason
+            // as promotion-lead-retention below: CROSS-tenant (inquirerTenantId),
+            // decided from createdAt alone, the encrypted message never read.
             // promotion-lead-retention sweeps PromotionLead, which is CROSS-tenant
             // (keyed on inquirerTenantId, not tenantId) and must be swept in one
             // pass: no single tenant context can see every tenant's leads. It
@@ -213,7 +216,7 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // farm. The job's population comes from the committed calendar
             // dataset rather than from any farm's rows, so there is no tenant
             // it could have forgotten and a payload one would be invented.
-            if (['person-push-send', 'person-push-summary', 'channel-cards', 'channel-digest', 'zarnoborsa-pull', 'mzh-prices-pull', 'source-document-watch', 'source-document-discovery', 'channel-auto-hide', 'usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
+            if (['person-push-send', 'person-push-summary', 'channel-cards', 'channel-digest', 'zarnoborsa-pull', 'mzh-prices-pull', 'source-document-watch', 'source-document-discovery', 'channel-auto-hide', 'usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'insurance-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

@@ -257,6 +257,8 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // PromotionLead is CROSS-tenant (inquirerTenantId, not tenantId) and is
         // swept globally in one pass — see job-scope-audit for the full reason.
         'promotion-lead-retention',
+        // InsuranceLead is cross-tenant in the same way and swept the same way.
+        'insurance-lead-retention',
         // The outbox holds every tenant's queued mail in one table and must be
         // drained in one pass; a per-tenant sweep would need a schedule per
         // tenant to reach them all. The tenant axis is PER ROW, not per
@@ -404,6 +406,7 @@ describe('Payload Type Contract — tenantId field audit', () => {
     const EXEMPT_PAYLOADS = ['UsageEventRetentionPayload', 'MachinePositionSweepPayload', 'MailCanaryPayload', 'UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
         'PromotionLeadRetentionPayload',
+        'InsuranceLeadRetentionPayload',
         // Drains the whole outbox; each ROW carries the tenantId, so a
         // payload-level tenantId would be a narrower claim than the job makes.
         'ProcessOutboxPayload',

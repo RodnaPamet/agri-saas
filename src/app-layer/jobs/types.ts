@@ -418,6 +418,14 @@ export interface PromotionLeadRetentionPayload {
     dryRun?: boolean;
 }
 
+/**
+ * Insurance-lead retention sweep. No tenantId, for the promotion-lead reason:
+ * leads span every tenant and the decision is `createdAt` alone.
+ */
+export interface InsuranceLeadRetentionPayload {
+    dryRun?: boolean;
+}
+
 /** Vendor renewal/review deadline monitor */
 export interface VendorRenewalCheckPayload {
     tenantId?: string;
@@ -1154,6 +1162,7 @@ export interface JobPayloadMap {
     'data-lifecycle': DataLifecyclePayload;
     'retention-sweep': RetentionSweepPayload;
     'promotion-lead-retention': PromotionLeadRetentionPayload;
+    'insurance-lead-retention': InsuranceLeadRetentionPayload;
     'deadline-monitor': DeadlineMonitorPayload;
     'evidence-expiry-monitor': EvidenceExpiryMonitorPayload;
     'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
@@ -1623,6 +1632,13 @@ export const JOB_DEFAULTS: Record<JobName, {
     // Same shape as retention-sweep: idempotent, so a retry is safe — expiry
     // only touches rows still live and purge only rows already past the grace.
     'promotion-lead-retention': {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    // Idempotent: a second pass deletes nothing the first did not.
+    'insurance-lead-retention': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,

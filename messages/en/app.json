@@ -6373,6 +6373,7 @@
         "controllerContact": "Contact:",
         "keepTitle": "How long we keep it",
         "keepRequests": "An offer request is kept for {months} months from the day you send it, then marked for deletion and permanently removed {graceDays} days later. Farm records and account details are kept while your account is active.",
+        "keepInsurance": "An insurance quote request is kept for {months} months from the day you send it, then permanently deleted.",
         "keepUsage": "Usage data is kept for {usageDays} days and then deleted.",
         "keepPositions": "Raw machine tracks are kept for {positionDays} days and then deleted. What remains is the derived record of which parcels were worked on which day, which is the farm’s own production record.",
         "deleteFiles": "Files you uploaded stay with the farm — a photograph attached to a journal entry, a document attached to a task — for the same reason its journal entries do: they are the farm’s record of what was done in its fields, and some of them it is required to keep. After deletion they are no longer attributable to you, because the account that uploaded them no longer carries your name or your address."

@@ -254,7 +254,10 @@ describe('Infrastructure Regression Guards', () => {
             // 05:40 so it does not share a minute with `mzh-prices-pull`: both
             // hit mzh.government.bg, and separating them keeps either job's
             // failure readable as its own rather than as contention.
-            expect(SCHEDULED_JOBS).toHaveLength(43);
+            // 43 -> 44: `insurance-lead-retention` (owner, 2026-11-20) deletes
+            // insurance quote requests 24 months after the request, which is
+            // the period the privacy notice now states.
+            expect(SCHEDULED_JOBS).toHaveLength(44);
         });
 
         test('scheduled job names match expected set', () => {
@@ -321,6 +324,10 @@ describe('Infrastructure Regression Guards', () => {
                 // makes a HEALTHY idle worker report unhealthy, because the
                 // beat hangs off a job completing.
                 'health-check',
+                // Retention for insurance quote requests: deleted 24 months
+                // after the request (owner, 2026-11-20). Scheduled because the
+                // privacy notice states that period.
+                'insurance-lead-retention',
                 // Land administration (roadmap 3/3) — daily cross-tenant
                 // sweep firing LEASE_EXPIRING alerts for parcel leases
                 // (аренда/наем) ending within 30 days.

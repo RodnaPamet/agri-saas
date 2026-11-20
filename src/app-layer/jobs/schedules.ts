@@ -477,6 +477,14 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        // The privacy notice states the window from INSURANCE_LEAD_RETENTION_DAYS,
+        // so this schedule is what makes that sentence true (owner, 2026-11-20).
+        name: 'insurance-lead-retention',
+        pattern: '40 3 * * *',    // daily at 03:40 UTC
+        description: 'Delete insurance quote requests older than the retention window',
+        defaultPayload: {},
+    },
+    {
         name: 'sla-monitor',
         pattern: '*/5 * * * *',   // every 5 minutes
         description: 'Detect automation executions that breached their rule SLA window and fire the breach action',
