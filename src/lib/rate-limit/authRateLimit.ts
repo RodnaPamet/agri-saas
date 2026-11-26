@@ -96,7 +96,8 @@ function classifyEndpoint(pathname: string): EndpointTier {
     // arguably the same class and are deliberately NOT included: they carry no
     // misleading declaration, `mfa` has real retry behaviour a tightening
     // would affect, and widening past the ruling is not this change's to make.
-    // Tracked separately.
+    // Tracked in #3259, which carries the measurement and the reason `mfa` is
+    // the one to think about before tightening.
     if (NATIVE_HANDOFF_GETS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
         return 'high';
     }
