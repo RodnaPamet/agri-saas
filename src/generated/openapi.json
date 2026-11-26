@@ -40495,6 +40495,545 @@
         }
       }
     },
+    "/api/t/{tenantSlug}/tasks/bulk/assign": {
+      "post": {
+        "operationId": "bulkAssignTasks",
+        "summary": "Assign or unassign several tasks at once",
+        "description": "Backs the tasks table's multi-select, beside its three siblings. Live since the bulk actions shipped and **undocumented until now** (#3080).\n\n**`assigneeUserId: null` UNASSIGNS.** The field is nullable rather than optional on purpose: omitting it is a validation error, so a client cannot clear twenty assignees with a malformed body the way a missing key would.\n\n**The assignee must be an ACTIVE member of this farm.** An invited, suspended or removed person is refused — as a 404 rather than a 403, because a 403 would confirm the id names a real person somewhere.\n\nOnly the tasks that actually CARRY the new assignee are notified, read back after the write rather than assumed from the request — so a stale id in the selection cannot tell somebody they were given a task they were not.\n\n**`count` is what was WRITTEN, not what was asked for.** All four bulk routes are an `updateMany` filtered on `{ id: { in: taskIds }, tenantId }`, so an id that does not exist or belongs to another farm drops out silently. A `count` below `taskIds.length` is therefore normal and not an error — #2103 is the issue filed because a summary saying twenty tasks when three were written misreports the one thing it exists to report. Render the number the server returns, never the size of your own selection.\n\n**At most 100 ids**, the same cap as the other three: all four back one multi-select on one screen, so a farmer who could assign a hundred rows and not re-date a hundred would be meeting an arbitrary edge.\n\n**All-or-nothing.** The whole operation runs in one transaction, so a refusal part-way through writes NOTHING — every selected row keeps the value it had. Do not design a client around partial results.",
+        "tags": [
+          "Tasks"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "assigneeUserId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "taskIds",
+                  "assigneeUserId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The number of tasks whose assignee was written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`TARGET_USER_NOT_IN_TENANT` — the `assigneeUserId` is not an ACTIVE member of this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/tasks/bulk/status": {
+      "post": {
+        "operationId": "bulkSetTaskStatus",
+        "summary": "Move several tasks to a status at once",
+        "description": "Live since the bulk actions shipped and **undocumented until now** (#3080).\n\n**The same transition rules as the single-task route, per task.** A bulk operation is an admin convenience, not an escape hatch: every selected row is checked before anything is written, and the refusal names WHICH task could not move.\n\n**A terminal status needs a `resolution`.** It is sanitised BEFORE the emptiness check, so a resolution consisting only of markup is refused as missing rather than stored as a non-empty string that renders as nothing.\n\n`resolution` is an encrypted column, so it is never echoed back — the response is a count.\n\n**`count` is what was WRITTEN, not what was asked for.** All four bulk routes are an `updateMany` filtered on `{ id: { in: taskIds }, tenantId }`, so an id that does not exist or belongs to another farm drops out silently. A `count` below `taskIds.length` is therefore normal and not an error — #2103 is the issue filed because a summary saying twenty tasks when three were written misreports the one thing it exists to report. Render the number the server returns, never the size of your own selection.\n\n**At most 100 ids**, the same cap as the other three: all four back one multi-select on one screen, so a farmer who could assign a hundred rows and not re-date a hundred would be meeting an arbitrary edge.\n\n**All-or-nothing.** The whole operation runs in one transaction, so a refusal part-way through writes NOTHING — every selected row keeps the value it had. Do not design a client around partial results.",
+        "tags": [
+          "Tasks"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "OPEN",
+                      "TRIAGED",
+                      "IN_PROGRESS",
+                      "BLOCKED",
+                      "RESOLVED",
+                      "CLOSED",
+                      "CANCELED"
+                    ]
+                  },
+                  "resolution": {
+                    "type": "string",
+                    "maxLength": 5000
+                  }
+                },
+                "required": [
+                  "taskIds",
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The number of tasks whose status was written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`TASK_NOT_FOUND` — one of the selected ids is not a task of this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/tasks/bulk/due": {
+      "post": {
+        "operationId": "bulkSetTaskDueDate",
+        "summary": "Set or clear the due date on several tasks at once",
+        "description": "Live since the bulk actions shipped and **undocumented until now** (#3080).\n\n**`dueAt: null` CLEARS the due date**, and the field is nullable rather than optional for its sibling's reason: omitting it is a validation error, so a client cannot wipe twenty due dates with a malformed body.\n\n`dueAt` is an INSTANT, not a calendar day. A date picked in the farm's own timezone must be sent as the instant that day begins there, or a task due tomorrow morning locally can read as due today.\n\n**`count` is what was WRITTEN, not what was asked for.** All four bulk routes are an `updateMany` filtered on `{ id: { in: taskIds }, tenantId }`, so an id that does not exist or belongs to another farm drops out silently. A `count` below `taskIds.length` is therefore normal and not an error — #2103 is the issue filed because a summary saying twenty tasks when three were written misreports the one thing it exists to report. Render the number the server returns, never the size of your own selection.\n\n**At most 100 ids**, the same cap as the other three: all four back one multi-select on one screen, so a farmer who could assign a hundred rows and not re-date a hundred would be meeting an arbitrary edge.\n\n**All-or-nothing.** The whole operation runs in one transaction, so a refusal part-way through writes NOTHING — every selected row keeps the value it had. Do not design a client around partial results.",
+        "tags": [
+          "Tasks"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "taskIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "dueAt": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "taskIds",
+                  "dueAt"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The number of tasks whose due date was written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/t/{tenantSlug}/tasks/bulk/delete": {
       "post": {
         "operationId": "bulkDeleteTasks",
