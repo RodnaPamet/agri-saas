@@ -7651,6 +7651,20 @@
             "agraren-doklad": "Agrarian report",
             "coupled-support": "Coupled support",
             "integrated-production": "Integrated production"
+        },
+        "analysis": {
+            "new": "New",
+            "suggestions": "Suggestions for Agrent",
+            "none": "Nothing to add to the app.",
+            "area": {
+                "calendar": "Calendar",
+                "benchmarks": "Yields",
+                "thresholds": "Thresholds",
+                "prices": "Prices",
+                "progress": "Dashboard",
+                "support": "Support",
+                "other": "Other"
+            }
         }
     },
     "soilGuide": {
