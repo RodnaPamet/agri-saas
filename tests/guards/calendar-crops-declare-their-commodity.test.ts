@@ -32,12 +32,19 @@
  *
  * ## What is deliberately NOT required
  *
- * That every FIELD crop declare one. `dry-bean`, `broad-bean`, `vetch` and
- * `triticale` have no canonical commodity at all — the vocabulary does not
- * know them, and `reference-slugs` says a slug it does not know "passes: it
- * has no canonical spelling to disagree with". Inventing a value for them
- * would put a non-canonical slug in the field whose whole purpose is to carry
- * a canonical one.
+ * That every FIELD crop declare one. `dry-bean`, `broad-bean` and `vetch` have
+ * no canonical commodity at all — the vocabulary does not know them, and
+ * `reference-slugs` says a slug it does not know "passes: it has no canonical
+ * spelling to disagree with". Inventing a value for them would put a
+ * non-canonical slug in the field whose whole purpose is to carry a canonical
+ * one.
+ *
+ * An earlier draft of this list also named `triticale`, which was wrong twice
+ * over: it was never a calendar crop, so it was never in this population —
+ * and it has since been removed from the product entirely by the owner's
+ * 2026-11-26 ruling (#3253, #3256). An example that is not a member of the
+ * population it illustrates is the kind of thing a reader trusts and should
+ * not.
  */
 import { CALENDAR } from '@/lib/agro/calendar/load';
 import {
