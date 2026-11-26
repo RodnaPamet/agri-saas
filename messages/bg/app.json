@@ -7651,6 +7651,20 @@
             "agraren-doklad": "Аграрен доклад",
             "coupled-support": "Обвързано подпомагане",
             "integrated-production": "Интегрирано производство"
+        },
+        "analysis": {
+            "new": "Ново",
+            "suggestions": "Предложения за Agrent",
+            "none": "Няма какво да се добави в приложението.",
+            "area": {
+                "calendar": "Календар",
+                "benchmarks": "Добиви",
+                "thresholds": "Прагове",
+                "prices": "Цени",
+                "progress": "Табло",
+                "support": "Подпомагане",
+                "other": "Друго"
+            }
         }
     },
     "soilGuide": {
