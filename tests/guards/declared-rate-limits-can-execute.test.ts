@@ -47,6 +47,69 @@ import { join } from 'node:path';
 
 import { ROOT, routeFiles } from '../../scripts/lib/api-routes';
 
+/**
+ * Platform-admin GETs that are deliberately throttled at NO layer — #3260.
+ *
+ * `/api/admin/*` is excluded from the Edge read tier and the wrapper cannot
+ * limit a GET, so an admin GET is throttled only if its handler does it
+ * itself. Six are deliberately not, and the reason is the same one
+ * `publicReadRateLimit` already gives for the health probes:
+ *
+ *   > An operator needs these to answer WHILE an attacker hammers the API;
+ *   > throttling them makes the monitoring fail together with the thing it
+ *   > monitors.
+ *
+ * These are the surfaces somebody reaches for *because* something is already
+ * going wrong, and several are ones they may legitimately hammer — a rotation
+ * sweep polled to completion, a flag console during an incident. A
+ * ten-per-fifteen-minutes lockout there could turn a bad hour into a worse
+ * one. They are platform-key gated, so this is a decision about a key-holder's
+ * ceiling, not an open door.
+ *
+ * Shrink-only in spirit: an entry here is a decision, and the existence test
+ * below removes its cover the moment the route is deleted or renamed.
+ */
+const DELIBERATELY_UNTHROTTLED: ReadonlyArray<readonly [string, string]> = [
+    [
+        'src/app/api/admin/diagnostics/route.ts',
+        'The diagnostics read itself — the probe-shaped case the exclusion '
+            + 'comment in `publicReadRateLimit` is written about. Throttling it '
+            + 'makes the instrument fail with the thing it measures.',
+    ],
+    [
+        'src/app/api/admin/key-rotation/route.ts',
+        'Master-KEK rotation: the sweep is polled to completion, so the read is '
+            + 'expected to be called repeatedly and fast, by the one person '
+            + 'holding the key, during an operation that must not stall.',
+    ],
+    [
+        'src/app/api/admin/key-rotation/repair-v2/route.ts',
+        'Repairs misplaced `v2:` ciphertext. Same polling shape as its parent, '
+            + 'and it runs when rows are already encrypted under the wrong key — '
+            + 'the worst moment to meet a 15-minute lockout.',
+    ],
+    [
+        'src/app/api/admin/lookup-rehash/route.ts',
+        'The P1.3 rehash sweep, inspected while it runs. A migration surface, '
+            + 'polled, and not reachable without the platform key.',
+    ],
+    [
+        'src/app/api/admin/feature-flags/route.ts',
+        'The kill-switch console. `FEATURE_FLAGS_FORCE_OFF` exists for the case '
+            + 'where the application is the thing going wrong, and this is the '
+            + 'screen an operator reads to find out which flag to flip. Throttling '
+            + 'the way out of an incident is the shape `slow-mode-escape-is-not-'
+            + 'throttled` refuses one level over.',
+    ],
+    [
+        'src/app/api/admin/feature-flags/cohorts/route.ts',
+        'Cohort membership behind the same console, read in the same breath as '
+            + 'the flag table — a flag naming a cohort with zero members reads as '
+            + 'a live rollout and is off for everyone, so this is part of the same '
+            + 'diagnosis.',
+    ],
+];
+
 /** Methods the wrapper's rate limiter structurally cannot act on. */
 const UNLIMITABLE = ['GET', 'HEAD'] as const;
 
@@ -122,6 +185,48 @@ describe('a declared rate limit can execute', () => {
         expect(offenders).toEqual([]);
     });
 
+    it('every platform-admin GET limits itself, or is listed as deliberately not', () => {
+        // The other half of #3155. That issue fixed the GETs that CLAIMED a
+        // limit; this covers the ones that never did, and the Edge covers
+        // neither — `apiReadRateLimit` reaches `/api/t/**` plus person paths,
+        // and `/api/admin/*` is excluded from the public read tier. So an
+        // admin GET is throttled only if its handler does it.
+        const exempt = new Set(DELIBERATELY_UNTHROTTLED.map(([f]) => f));
+        const unprotected: string[] = [];
+        let limited = 0;
+        for (const rel of files) {
+            if (!rel.startsWith('src/app/api/admin/')) continue;
+            const src = readFileSync(join(ROOT, rel), 'utf8');
+            for (const { method, body } of unlimitableHandlerBlocks(src)) {
+                // The HANDLER's body, never the whole file. A file whose POST
+                // calls `enforceRateLimit` while its GET does not would
+                // otherwise read as protected — and that is the exact shape
+                // here: five of these routes carry a GET and a POST, and the
+                // POST's limit works because the wrapper enforces it.
+                if (/\benforceRateLimit\s*\(/.test(body)) limited += 1;
+                else if (!exempt.has(rel)) unprotected.push(`${rel}  [${method}]`);
+            }
+        }
+        console.log(
+            `[declared-rate-limits] admin GETs limited inline=${limited} `
+                + `deliberately unthrottled=${exempt.size}`,
+        );
+        expect(unprotected).toEqual([]);
+        // A floor, so an admin tree that stopped being walked fails here.
+        expect(limited).toBeGreaterThanOrEqual(8);
+    });
+
+    it('every deliberately-unthrottled entry names a route that EXISTS', () => {
+        // Removes the exemption's cover as soon as the route is deleted or
+        // renamed, which is what stops this list becoming a place old
+        // decisions hide. Same rule as every other exemption map here.
+        const known = new Set(files);
+        for (const [file, reason] of DELIBERATELY_UNTHROTTLED) {
+            expect(known.has(file)).toBe(true);
+            expect(reason.length).toBeGreaterThan(60);
+        }
+    });
+
     describe('the detector, proved against crafted sources', () => {
         const wrap = (method: string, options: string) =>
             `export const ${method} = withApiErrorHandling(\n`
@@ -153,6 +258,22 @@ describe('a declared rate limit can execute', () => {
             );
             const [block] = unlimitableHandlerBlocks(src);
             expect(declaresUnreachableLimit(block!.body)).toBe(false);
+        });
+
+        it('reads the HANDLER body, not the file — a POST\'s call does not cover a GET', () => {
+            // The flaw this replaced: scanning the whole file for
+            // `enforceRateLimit` marks an unprotected GET as protected
+            // whenever a sibling POST happens to call it.
+            const src =
+                'export const GET = withApiErrorHandling(async (req) => jsonResponse({}));\n'
+                + 'export const POST = withApiErrorHandling(async (req) => {\n'
+                + '    const limited = await enforceRateLimit(req, { scope: "x", config: C });\n'
+                + '    return jsonResponse({});\n'
+                + '});\n';
+            const blocks = unlimitableHandlerBlocks(src);
+            expect(blocks).toHaveLength(1);
+            expect(blocks[0]!.method).toBe('GET');
+            expect(/\benforceRateLimit\s*\(/.test(blocks[0]!.body)).toBe(false);
         });
 
         it('does NOT flag a POST, where the wrapper does enforce it', () => {
