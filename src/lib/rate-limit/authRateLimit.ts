@@ -46,6 +46,17 @@ function initUpstash() {
  * Endpoint classification logic.
  * The strictness depends on the risk of the endpoint to abuse.
  */
+/**
+ * The native handoff legs served as GET — #3155. Listed rather than matched by
+ * the `/api/auth/native/` prefix so the four POSTs in the same directory keep
+ * the tier they have until somebody rules on them.
+ */
+const NATIVE_HANDOFF_GETS = [
+    '/api/auth/native/start',
+    '/api/auth/native/complete',
+    '/api/auth/native/adopt',
+] as const;
+
 function classifyEndpoint(pathname: string): EndpointTier {
     // Native token issue + refresh. Classified explicitly because the DEFAULT
     // below is 'low' (60/min) — the tier meant for /csrf and /providers, i.e.
@@ -58,6 +69,36 @@ function classifyEndpoint(pathname: string): EndpointTier {
     // over an order of magnitude of headroom for legitimate traffic while
     // capping guessing at 10 attempts a minute against a 256-bit token.
     if (pathname.startsWith('/api/auth/token')) {
+        return 'high';
+    }
+
+    // The native sign-in handoff's three GET legs — #3155.
+    //
+    // Same argument as `/api/auth/token` directly above, and they used to make
+    // it in a place that could not act on it: each declared
+    // `rateLimit: { config: LOGIN_LIMIT }` in `withApiErrorHandling`, which
+    // `resolveRateLimitScope` discards for any non-mutation method. So the
+    // intent was recorded, the control never ran, and the effective limit was
+    // the DEFAULT 'low' tier below — 60/min, the tier meant for `/csrf` and
+    // `/providers`, i.e. for getters that leak nothing. `complete` and `adopt`
+    // consume single-use server-held tokens, so they are not that.
+    //
+    // Enforced HERE rather than inline in the handlers, which is where the
+    // five platform-key admin GETs in the same issue got theirs. The split is
+    // the keying: these three are UNAUTHENTICATED, so a handler-level
+    // `LOGIN_LIMIT` would key on IP alone and lock a whole CGNAT egress out of
+    // signing in for 15 minutes after 10 attempts. The Edge tier keys on
+    // (IP, ua-hash) at 10/min with no lockout, so a shared egress recovers in
+    // a minute and distinct devices mostly get distinct keys. Owner ruling
+    // 2026-11-26.
+    //
+    // The four POSTs in this family (`apple`, `exchange`, `mfa`, `revoke`) are
+    // arguably the same class and are deliberately NOT included: they carry no
+    // misleading declaration, `mfa` has real retry behaviour a tightening
+    // would affect, and widening past the ruling is not this change's to make.
+    // Tracked in #3259, which carries the measurement and the reason `mfa` is
+    // the one to think about before tightening.
+    if (NATIVE_HANDOFF_GETS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
         return 'high';
     }
 

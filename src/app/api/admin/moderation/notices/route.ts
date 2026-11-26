@@ -34,6 +34,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
+import { enforceRateLimit } from '@/lib/security/rate-limit-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
@@ -74,6 +75,19 @@ export const GET = withApiErrorHandling(
         const gate = platformGate(req);
         if ('refused' in gate) return gate.refused;
 
+        // Enforced HERE, not by the wrapper — #3155. `resolveRateLimitScope`
+        // returns null for any non-mutation method, so the
+        // `rateLimit: { config }` this route used to declare was a control
+        // that could not execute. The Edge covers neither: `apiReadRateLimit`
+        // reaches `/api/t/**` plus person paths, and `/api/admin/*` is
+        // excluded from the public read tier. AFTER the gate, so an
+        // unauthenticated caller cannot spend the budget.
+        const limited = await enforceRateLimit(req, {
+            scope: 'platform-moderation-notices',
+            config: LOGIN_LIMIT,
+        });
+        if (limited.response) return limited.response;
+
         const parsed = Query.safeParse({
             status: req.nextUrl.searchParams.get('status') ?? undefined,
         });
@@ -90,9 +104,12 @@ export const GET = withApiErrorHandling(
         return jsonResponse({ notices: await listNotices({ ...parsed.data, limit }) });
     },
     {
-        // Same pre-auth tier as the other platform surfaces: the header IS the
-        // credential, so this sits in the same abuse position as sign-in.
-        rateLimit: { config: LOGIN_LIMIT, scope: 'platform-moderation-notices' },
+        // The wrapper cannot do this one: `resolveRateLimitScope` discards a
+        // declared config for any non-mutation method, so the preset that used
+        // to sit here never ran (#3155). The same tier is enforced inline in
+        // the handler above — the header IS the credential, so this sits in the
+        // same abuse position as sign-in.
+        rateLimit: false,
     },
 );
 

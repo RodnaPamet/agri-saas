@@ -101,4 +101,47 @@ describe('Auth Rate Limit Module', () => {
         expect(result.ok).toBe(true);
         expect(result.headers).toBeUndefined();
     });
+
+    /**
+     * The native handoff GETs sit in the 'high' tier — #3155.
+     *
+     * They used to declare `rateLimit: { config: LOGIN_LIMIT }` in
+     * `withApiErrorHandling`, which `resolveRateLimitScope` discards for any
+     * non-mutation method, so the control never ran and the effective limit
+     * was this module's DEFAULT 'low' tier — 60/min, the tier whose own
+     * comment says it is meant for `/csrf` and `/providers`, "getters that
+     * leak nothing". `complete` and `adopt` consume single-use server-held
+     * tokens, so they are not that.
+     *
+     * Asserted through the LIMIT HEADER rather than by exhausting the bucket:
+     * the header is what the tier decides, and a test that spent 10 requests
+     * per path would be slow and would couple to the window.
+     */
+    describe('the native handoff GETs are high-tier (#3155)', () => {
+        it.each([
+            ['/api/auth/native/start', '2.0.0.1'],
+            ['/api/auth/native/complete', '2.0.0.2'],
+            ['/api/auth/native/adopt', '2.0.0.3'],
+        ])('%s is capped at 10/min', async (path, ip) => {
+            const result = await checkAuthRateLimit(createMockRequest(path, ip));
+            expect(result.headers?.get('X-RateLimit-Limit')).toBe('10');
+        });
+
+        it('CONTROL — a leak-nothing getter is still 60/min, so the tier is not global', async () => {
+            // Without this, classifying EVERYTHING as high would satisfy the
+            // three cases above.
+            const result = await checkAuthRateLimit(createMockRequest('/api/auth/csrf', '2.0.0.9'));
+            expect(result.headers?.get('X-RateLimit-Limit')).toBe('60');
+        });
+
+        it('CONTROL — the four POSTs in the same directory are deliberately NOT included', async () => {
+            // `apple`, `exchange`, `mfa` and `revoke` are arguably the same
+            // class, and widening past the owner's 2026-11-26 ruling is not
+            // #3155's to do — `mfa` in particular has real retry behaviour a
+            // tightening would affect. Pinned so the omission is a recorded
+            // decision rather than something that looks forgotten.
+            const result = await checkAuthRateLimit(createMockRequest('/api/auth/native/mfa', '2.0.0.8'));
+            expect(result.headers?.get('X-RateLimit-Limit')).toBe('60');
+        });
+    });
 });

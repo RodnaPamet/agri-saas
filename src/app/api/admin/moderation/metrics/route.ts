@@ -51,6 +51,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { enforceRateLimit } from '@/lib/security/rate-limit-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { parseModerationWindow, withWindowVerdict } from '@/lib/validation/query-params';
 import { jsonResponse } from '@/lib/api-response';
@@ -85,9 +86,22 @@ export const GET = withApiErrorHandling(
         const refused = platformGate(req);
         if (refused) return refused;
 
+        // Enforced HERE, not by the wrapper — #3155. `resolveRateLimitScope`
+        // returns null for any non-mutation method, so the
+        // `rateLimit: { config }` this route used to declare was a control
+        // that could not execute. The Edge covers neither: `apiReadRateLimit`
+        // reaches `/api/t/**` plus person paths, and `/api/admin/*` is
+        // excluded from the public read tier. AFTER the gate, so an
+        // unauthenticated caller cannot spend the budget.
+        const limited = await enforceRateLimit(req, {
+            scope: 'platform-moderation-metrics',
+            config: LOGIN_LIMIT,
+        });
+        if (limited.response) return limited.response;
+
         const resolved = parseModerationWindow(req.nextUrl.searchParams.get('windowDays'));
         const stats = await moderationHandlingStats(resolved.windowDays);
         return jsonResponse(withWindowVerdict(stats, resolved));
     },
-    { rateLimit: { config: LOGIN_LIMIT, scope: 'platform-moderation-metrics' } },
+    { rateLimit: false },
 );
