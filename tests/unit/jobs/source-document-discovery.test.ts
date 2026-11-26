@@ -204,3 +204,45 @@ it('a listing that fails or parses to nothing is named, and the others are still
     // back, its first good read baselines rather than announcing everything.
     expect([...store.values()].some((row) => row.series === 'technology-card')).toBe(false);
 });
+
+describe('the analysis of each new document (owner, 2026-11-26)', () => {
+    const analysis = {
+        summary: 'Технологична карта за домати, пипер и краставици, 2026.',
+        whatsNew: 'Нови срокове за засаждане на пипер в Южна България.',
+        suggestions: [{ area: 'calendar' as const, title: 'Пипер, засаждане', detail: 'Срок 1–20 май за юг, стр. 12.' }],
+        model: 'test',
+    };
+
+    async function laterRun(opts: Parameters<typeof runSourceDocumentDiscovery>[0]) {
+        await runSourceDocumentDiscovery({ fetchImpl });
+        site[TK] += pdf('2026/11/17/tk_zelenchuci_2026', 'Технологични карти — зеленчуци 2026');
+        site['/media/filer_public/2026/11/17/tk_zelenchuci_2026.pdf'] = '%PDF-1.5 fake';
+        return runSourceDocumentDiscovery({ fetchImpl, ...opts });
+    }
+
+    it('puts the summary, what is new and the suggestions under the document', async () => {
+        const analyse = jest.fn(async () => analysis);
+        await laterRun({ extractText: async () => 'текст на картата', analyse });
+        expect(analyse).toHaveBeenCalledWith(expect.objectContaining({ series: 'technology-card', text: 'текст на картата' }));
+        const text = (sendEmail.mock.calls[0][0] as { text: string }).text;
+        expect(text).toContain('Технологична карта за домати, пипер и краставици, 2026.');
+        expect(text).toContain('Ново: Нови срокове за засаждане на пипер в Южна България.');
+        expect(text).toContain('Предложения за Agrent:');
+        expect(text).toContain('– [Календар] Пипер, засаждане: Срок 1–20 май за юг, стр. 12.');
+    });
+
+    it('says so when the document holds nothing for the app', async () => {
+        await laterRun({ extractText: async () => 'x', analyse: async () => ({ ...analysis, whatsNew: '', suggestions: [] }) });
+        expect((sendEmail.mock.calls[0][0] as { text: string }).text).toContain('Няма какво да се добави в приложението.');
+    });
+
+    it('still sends and stamps the email when the analysis fails or the document cannot be read', async () => {
+        const r = await laterRun({ extractText: async () => { throw new Error('pdftotext missing'); }, analyse: async () => analysis });
+        expect(r.mail).toBe('sent');
+        expect(r.notified).toBe(1);
+        const text = (sendEmail.mock.calls[0][0] as { text: string }).text;
+        expect(text).toContain('Технологична карта: Технологични карти — зеленчуци 2026');
+        expect(text).not.toContain('Предложения за Agrent');
+        expect(warn).toHaveBeenCalledWith('mzh-discovery.document_unreadable', expect.anything());
+    });
+});
