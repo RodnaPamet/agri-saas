@@ -29,7 +29,13 @@
  * changed page, not a quiet day. "Nothing new" is said only beside the count
  * of listings that were actually read.
  */
+import {
+    analyseMzhDocument,
+    type MzhDocumentAnalysis,
+    type MzhDocumentToAnalyse,
+} from '@/app-layer/ai/mzh-document-analyst';
 import { env } from '@/env';
+import { extractPdfText } from '@/lib/market/mzh-client';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { sendEmail } from '@/lib/mailer';
@@ -53,10 +59,20 @@ const FETCH_TIMEOUT_MS = 30_000;
 const NAMED_LIMIT = 40;
 /** Bound on the per-listing read of known URLs (`take:`, D2). */
 const KNOWN_URLS_TAKE = 5_000;
+/**
+ * Documents ANALYSED per email (owner, 2026-11-26: "analyze the content and
+ * ping me with suggested integrations"). МЗХ publishes a handful a week, so
+ * this binds only on a burst; the rest are still named, without analysis.
+ */
+export const MZH_ANALYSE_PER_RUN = 5;
+const MAX_DOC_BYTES = 20 * 1024 * 1024;
 
 export interface DiscoveryOptions {
     fetchImpl?: typeof fetchPublicUrl;
     now?: Date;
+    /** Injected in tests; defaults to `pdftotext` and the model. */
+    extractText?: (pdf: Buffer) => Promise<string>;
+    analyse?: (doc: MzhDocumentToAnalyse) => Promise<MzhDocumentAnalysis | null>;
 }
 
 export interface ListingOutcome {
@@ -202,6 +218,7 @@ export async function runSourceDocumentDiscovery(opts: DiscoveryOptions = {}): P
 
     let mail: DiscoveryResult['mail'] = 'nothing-new';
     let notified = 0;
+    let analysedCount = 0;
     const to = env.MZH_WATCH_NOTIFY_EMAIL;
     if (pending.length > 0 && !to) {
         mail = 'no-address';
@@ -215,10 +232,20 @@ export async function runSourceDocumentDiscovery(opts: DiscoveryOptions = {}): P
         const subject = await translateFor(locale, 'mzhDiscovery.subject', { count: pending.length });
         const intro = await translateFor(locale, 'mzhDiscovery.intro', { count: pending.length });
         const lines: string[] = [];
-        for (const row of pending.slice(0, NAMED_LIMIT)) {
+        let analysed = 0;
+        for (const [i, row] of pending.slice(0, NAMED_LIMIT).entries()) {
             const series = await translateFor(locale, `mzhDiscovery.series.${row.series}`);
             lines.push(`• ${series}: ${row.title ?? row.url}`, `  ${row.url}`);
+            if (i < MZH_ANALYSE_PER_RUN) {
+                const analysis = await analyseDocument(row, opts);
+                if (analysis) {
+                    analysed += 1;
+                    lines.push(...(await analysisLines(locale, analysis)));
+                }
+                lines.push('');
+            }
         }
+        analysedCount = analysed;
         const more = pending.length > NAMED_LIMIT
             ? [await translateFor(locale, 'mzhDiscovery.more', { count: pending.length - NAMED_LIMIT })]
             : [];
@@ -257,8 +284,80 @@ export async function runSourceDocumentDiscovery(opts: DiscoveryOptions = {}): P
         baselined: listings.reduce((n, l) => n + l.baselined, 0),
         found,
         notified,
+        analysed: analysedCount,
         mail,
     });
 
     return { listings, found, notified, mail };
+}
+
+/**
+ * The document's text for the analysis: a PDF through `pdftotext`, a news
+ * item's page stripped to its words. Best-effort — any failure is logged and
+ * the email names the document without an analysis.
+ */
+async function documentText(url: string, opts: DiscoveryOptions): Promise<string | null> {
+    try {
+        const res = await (opts.fetchImpl ?? fetchPublicUrl)(url, {
+            method: 'GET',
+            timeoutMs: FETCH_TIMEOUT_MS,
+            headers: { Accept: 'application/pdf,text/html' },
+        });
+        if (!res.ok) return null;
+        const bytes = Buffer.from(await res.arrayBuffer());
+        if (bytes.byteLength > MAX_DOC_BYTES) return null;
+        if (url.toLowerCase().endsWith('.pdf') || bytes.subarray(0, 4).toString('latin1') === '%PDF') {
+            return await (opts.extractText ?? extractPdfText)(bytes);
+        }
+        return htmlToText(bytes.toString('utf8'));
+    } catch (err) {
+        logger.warn('mzh-discovery.document_unreadable', {
+            component: 'mzh-discovery',
+            url,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+    }
+}
+
+/** A page's visible words: scripts, styles and tags dropped, entities decoded. */
+export function htmlToText(html: string): string {
+    return html
+        .replace(/<(script|style|nav|header|footer)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+        .replace(/<br\s*\/?>|<\/(p|div|li|h\d|tr)>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n\s*\n+/g, '\n')
+        .trim();
+}
+
+async function analyseDocument(
+    row: { url: string; series: string; title: string | null },
+    opts: DiscoveryOptions,
+): Promise<MzhDocumentAnalysis | null> {
+    const text = await documentText(row.url, opts);
+    if (!text) return null;
+    return (opts.analyse ?? analyseMzhDocument)({ series: row.series, title: row.title, url: row.url, text });
+}
+
+/** The analysis under its document, in the email's language. */
+async function analysisLines(locale: typeof RECIPIENT_FALLBACK_LOCALE, a: MzhDocumentAnalysis): Promise<string[]> {
+    const out = [`  ${a.summary}`];
+    if (a.whatsNew) out.push(`  ${await translateFor(locale, 'mzhDiscovery.analysis.new')}: ${a.whatsNew}`);
+    if (a.suggestions.length === 0) {
+        out.push(`  ${await translateFor(locale, 'mzhDiscovery.analysis.none')}`);
+    } else {
+        out.push(`  ${await translateFor(locale, 'mzhDiscovery.analysis.suggestions')}:`);
+        for (const s of a.suggestions) {
+            const area = await translateFor(locale, `mzhDiscovery.analysis.area.${s.area}`);
+            out.push(`   – [${area}] ${s.title}: ${s.detail}`);
+        }
+    }
+    return out;
 }

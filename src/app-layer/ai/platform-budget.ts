@@ -87,6 +87,11 @@ export const PLATFORM_AI_JOBS = [
     // expensive call shape here (a whole PDF on every attempt), so it is the
     // one where a few repeats cost the most.
     'promotion-leaflet-read',
+    // Owner, 2026-11-26 — reading each newly published МЗХ document and
+    // suggesting what Agrent could take from it, inside the daily discovery
+    // email (#3146). Scheduled, and bounded per run (MZH_ANALYSE_PER_RUN), so
+    // its volume is МЗХ's publishing rate: a handful of documents a week.
+    'mzh-document-analysis',
 ] as const;
 
 export type PlatformAiJob = (typeof PLATFORM_AI_JOBS)[number];
