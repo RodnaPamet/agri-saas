@@ -296,6 +296,7 @@ describe('what gets recorded', () => {
             'support-scheme-extraction',
             'notice-score',
             'promotion-leaflet-read',
+            'mzh-document-analysis',
         ]);
     });
 });

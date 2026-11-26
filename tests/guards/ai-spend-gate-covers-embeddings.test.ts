@@ -160,6 +160,11 @@ const PLATFORM_GATED: Readonly<Record<string, string>> = {
     // what its four siblings do.
     'src/app-layer/ai/promotion-leaflet-reader.ts':
         'GLOBAL leaflet read for the platform-curated promotions feed (#2664). `Promotion` is tenant-less, so there is no tenant RequestContext to assert against — a signed-in operator starts it, but the work is for every farm. Gated by the platform AI budget and records to the platform ledger, both in this file. Records on an UNUSABLE read (the tokens were spent) and not on a refused one (they were not).',
+    // Owner, 2026-11-26 — reading each newly published МЗХ document for the
+    // daily discovery email. The sixth of the family: scheduled, bounded per
+    // run, and for no tenant.
+    'src/app-layer/ai/mzh-document-analyst.ts':
+        'GLOBAL read of a public МЗХ document for the platform owner\'s discovery email. No farm and no tenant RequestContext exists — the job runs for the platform. Gated by the platform AI budget and records to the platform ledger, both in this file; records on an unusable answer (the tokens were spent) and not on a refused call.',
 };
 
 /** The platform gate being CALLED, and the ledger write beside it. */
