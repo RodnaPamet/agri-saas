@@ -7652,5 +7652,14 @@
             "coupled-support": "Coupled support",
             "integrated-production": "Integrated production"
         }
+    },
+    "soilGuide": {
+        "title": "Soil",
+        "breadcrumbParent": "Knowledge",
+        "intro": "What the official rules and trusted guides say about fertilising, erosion, soil analysis and soil life — arranged by topic, with the source for each.",
+        "disclaimer": "These are summaries written by Agrent. Before acting on a date, distance or rate, check the full document and the current year's requirements.",
+        "tocLabel": "Topics",
+        "sources": "Sources",
+        "sourceMeta": " — {publisher}, {year}"
     }
 }

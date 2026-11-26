@@ -45,6 +45,11 @@ const MIGRATED_PAGES = [
     // raw-colour and legacy-class assertions from day one — the stronger
     // position: the cap stays at 94 and the allowlist grows.
     'admin/public-profile/page.tsx',
+    // «Почва» soil guide (owner, 2026-11-26) — semantic tokens, Heading,
+    // TextLink and PageBreadcrumbs only, no raw colours and no legacy classes.
+    // Promoted on arrival for the same reason as the two above: the cap stays
+    // put and this page carries the assertions from day one.
+    'knowledge/soil/page.tsx',
     'admin/public-profile/PublicProfileClient.tsx',
     // #12 platform-support console — design-system-native from birth
     // (ListPageShell / DataTable / Modal / Combobox / DatePicker / FormField /

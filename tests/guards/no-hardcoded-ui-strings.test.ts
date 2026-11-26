@@ -42,7 +42,7 @@ const ROOTS = ['src/app', 'src/components', 'src/lib'].map((d) => path.resolve(_
  * Files that legitimately hard-code copy because next-intl is unavailable
  * or inappropriate there. Each entry carries a reason; a new entry needs one.
  */
-// THE EXCLUSIONS BELOW ARE TWO DIFFERENT KINDS, and a reader working out why
+// THE EXCLUSIONS BELOW ARE OF DIFFERENT KINDS, and a reader working out why
 // the baseline is 407 will want to know which is which:
 //
 //   ENGLISH BY CONVENTION — `openapi`, `dto`, `scim`. These strings ARE copy,
@@ -80,6 +80,20 @@ const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
         reason:
             'SCIM type definitions. The protocol fixes these names and an IdP '
             + 'reads them; they are not shown to a farmer at all.',
+    },
+    {
+        pattern: /^src\/lib\/knowledge\/soil-guide\.ts$/,
+        reason:
+            'BILINGUAL BY CONSTRUCTION, plus CITATIONS — a third kind. The «Почва» '
+            + 'guide is long-form knowledge content, not chrome: every topic string '
+            + 'is a `{ bg, en }` pair beside its other language, and '
+            + '`tests/unit/soil-guide.test.ts` holds the pairing (same topics, same '
+            + 'number of points, Cyrillic in every `bg` point). What this scan '
+            + 'counts there is the `title:` of each SOURCE document — the '
+            + 'document\'s own Bulgarian title, shown verbatim in both languages '
+            + 'because it is the name a farmer searches for, not a sentence to '
+            + 'translate. Routing either through next-intl would split one '
+            + 'citation or one topic across two catalogues and a module.',
     },
     {
         pattern: /^src\/lib\/agriculture\/weed-options\.ts$/,

@@ -9,6 +9,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeRichTextHtml } from '@/lib/security/sanitize';
 import { enqueue } from '../jobs/queue';
 import { logger } from '@/lib/observability/logger';
+import { soilGuide, soilSection, type SoilLanguage, type SoilSectionId, type SoilSectionView } from '@/lib/knowledge/soil-guide';
 
 /**
  * Knowledge Base usecases — versioned SOPs + growing guides, repurposing
@@ -615,4 +616,24 @@ export async function getSatelliteGuideArticles(ctx: RequestContext, language: s
     return runInTenantContext(ctx, (db) =>
         KnowledgeRepository.listGlobalByCategory(db, SATELLITE_ARTICLE_CATEGORY, language),
     );
+}
+
+// ─── Soil guide «Почва» (owner, 2026-11-26) ───
+
+/**
+ * The soil section, in one language — powers `/knowledge/soil`, the phone's
+ * «Почва» screen and the assistant's `soil_guide` tool. The content is a
+ * code module (`@/lib/knowledge/soil-guide`), not seeded rows, so there is no
+ * database read; the policy check stays so this surface answers to the same
+ * read gate as every other knowledge read.
+ */
+export function getSoilGuide(ctx: RequestContext, language: SoilLanguage): readonly SoilSectionView[] {
+    assertCanRead(ctx);
+    return soilGuide(language);
+}
+
+/** One soil topic — the assistant's tool reads one at a time to fit its budget. */
+export function getSoilSection(ctx: RequestContext, id: SoilSectionId, language: SoilLanguage): SoilSectionView {
+    assertCanRead(ctx);
+    return soilSection(id, language);
 }

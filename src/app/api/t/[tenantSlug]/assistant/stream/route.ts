@@ -416,6 +416,13 @@ export const POST = withApiErrorHandling(
                                         + 'request goes first to Agrent, a registered insurance agent, '
                                         + 'which passes it to that partner. Never name or suggest any '
                                         + 'other insurer, broker or comparison site. '
+                                        // Owner, 2026-11-26: soil questions are answered
+                                        // from the «Почва» guide, which names its sources.
+                                        + 'For questions about soil or fertilising — when and how '
+                                        + 'much nitrogen, manure, distances from water, slopes, '
+                                        + 'soil analysis, pH, erosion, soil cover, rotation, '
+                                        + 'earthworms — call `soil_guide` with the topic that fits '
+                                        + 'and answer from it, naming the document it comes from. '
                                         + 'Answer in the language of the question. Never invent a '
                                         + 'figure — use the tools to read the farm\'s own data. '
                                         // #3090 — "never invent a FIGURE" is about the farm's

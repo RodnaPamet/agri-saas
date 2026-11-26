@@ -75,6 +75,8 @@ import {
 } from '@/app-layer/usecases/assistant-conversations-control';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
+import { getSoilSection } from '@/app-layer/usecases/knowledge';
+import { SOIL_SECTION_IDS, soilLanguage } from '@/lib/knowledge/soil-guide';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
 import { oneCropProblem, resolvePlace } from './place';
@@ -598,6 +600,20 @@ const AgrentServicesArgs = z
     })
     .strict();
 
+/**
+ * One soil topic per call: a topic fills most of a tool result
+ * (`TOOL_RESULT_MAX_CHARS`), and `soil-guide.test.ts` holds each one under it
+ * in both languages, so a call can never come back truncated mid-rule.
+ */
+const SoilGuideArgs = z
+    .object({
+        topic: z.enum(SOIL_SECTION_IDS),
+    })
+    .strict();
+
+/** The soil section's page — the link under an answer drawn from it. */
+export const SOIL_GUIDE_ROUTE = '/knowledge/soil';
+
 const LunarCalendarArgs = z
     .object({
         from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -715,6 +731,71 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         args: AgrentServicesArgs,
         pageLinks: true,
         run: async (ctx, args) => answerAgrentServices(ctx, (args as z.infer<typeof AgrentServicesArgs>).names),
+    },
+    /*
+     * «Почва» — the soil section of the knowledge base (owner, 2026-11-26:
+     * "train the assistant to be able to respond to soil questions based on
+     * these books").
+     *
+     * Grounding, not retrieval: the guide is seven fixed topics, so the model
+     * picks one by id and gets the whole topic — no embeddings, no ranking,
+     * nothing that can come back empty on a phrasing it did not expect. The
+     * topic carries its SOURCES so the answer can say which document a rule
+     * comes from, and a page link so the person can read the full topic.
+     * No `module`: soil rules apply to every farm.
+     */
+    soil_guide: {
+        def: {
+            name: 'soil_guide',
+            description:
+                '«Почва» — Agrent\'s soil guide, summarising Bulgarian official rules and two free '
+                + 'guides. Call it for any question about soil or fertilising and answer FROM it, '
+                + 'naming the source document. Pass ONE `topic`: `nitrogen` (closed periods for '
+                + 'nitrogen fertilisers, the 17 kg N per decare ceiling, splitting the rate, storing '
+                + 'fertiliser), `slopes-water` (distances from water, buffer strips, fertilising on '
+                + 'slopes), `manure` (manure stores, nitrogen per tonne of manure, how much may be '
+                + 'spread, silage), `analysis` (soil analysis, nitrogen/phosphorus balance, pH and '
+                + 'liming, the integrated-production plan, sewage sludge), `erosion-cover` (tillage '
+                + 'on slopes, required winter/summer soil cover, green manure, mulch), '
+                + '`organic-matter` (stubble burning ban, crop rotation rule, wetlands and peat, '
+                + 'keeping fertility), `soil-life` (earthworms: what helps and harms them, how to '
+                + 'count them). Call it again with another topic if the question spans two. If the '
+                + 'guide does not cover the question, say so and do not fill the gap with a rule of '
+                + 'your own — and never give a pesticide rate.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    topic: { type: 'string', enum: [...SOIL_SECTION_IDS] },
+                },
+                required: ['topic'],
+                additionalProperties: false,
+            },
+        },
+        args: SoilGuideArgs,
+        pageLinks: true,
+        run: async (ctx, args) => {
+            const { topic } = args as z.infer<typeof SoilGuideArgs>;
+            const section = getSoilSection(ctx, topic, soilLanguage(resolveRequestLocale()));
+            return {
+                linked: true,
+                rows: [
+                    {
+                        name: section.title,
+                        route: SOIL_GUIDE_ROUTE,
+                        summary: section.summary,
+                        points: section.points,
+                        // Title, publisher and year — what the answer names. The
+                        // URL stays on the page: the link under the answer goes
+                        // there, and a model has no business printing addresses.
+                        sources: section.sources.map((src) => ({
+                            title: src.title,
+                            publisher: src.publisher,
+                            year: src.year,
+                        })),
+                    },
+                ],
+            };
+        },
     },
     /*
      * The ONE tool whose result is not tenant-scoped — #2665.
