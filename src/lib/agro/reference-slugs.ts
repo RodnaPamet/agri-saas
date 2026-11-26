@@ -9,7 +9,7 @@
  * loads, serves, and is found by no crop: a figure that exists and is never
  * shown. The first compile of the benchmarks did exactly that.
  *
- * A slug the vocabulary does not know at all (triticale, chickpeas) passes:
+ * A slug the vocabulary does not know at all (chickpeas) passes:
  * it has no canonical spelling to disagree with.
  */
 import { normalizeCommodity } from '@/lib/market/commodity-vocabulary';

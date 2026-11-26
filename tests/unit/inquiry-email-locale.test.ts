@@ -118,11 +118,11 @@ describe('inquiry email — commodity name, not slug', () => {
     it('title-cases a slug the catalogue does not know, never a key path', async () => {
         // `commodity` is a plain string column, so a row can hold a value in
         // no catalogue. `translateFor` returns the KEY PATH on a miss, and
-        // putting `trends.commodities.triticale` in a seller's inbox would be
+        // putting `trends.commodities.spelt` in a seller's inbox would be
         // worse than the slug it replaced.
-        await sendInquiryEmail({ ...base, commodity: 'triticale', locale: 'bg' });
+        await sendInquiryEmail({ ...base, commodity: 'spelt', locale: 'bg' });
         const { subject, text } = lastSend();
-        expect(subject).toContain('Triticale');
+        expect(subject).toContain('Spelt');
         expect(text).not.toContain('trends.commodities');
     });
 });

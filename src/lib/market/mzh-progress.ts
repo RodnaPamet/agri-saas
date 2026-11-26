@@ -109,15 +109,23 @@ export const PROGRESS_COMMODITY_BY_LABEL: Readonly<Record<string, string>> = {
     царевица: 'maize',
     'царевица за зърно': 'maize',
     ръж: 'rye',
-    тритикале: 'triticale',
     овес: 'oats',
 };
 
 /**
  * Rows the sowing tables print that are not field crops the line speaks
  * about. Skipped by decision, not by failure, so they are not reported.
+ *
+ * `тритикале` joined this list on the owner's ruling of 2026-11-26 ("remove
+ * triticale everywhere"). It is a SKIP rather than a deleted map entry on
+ * purpose: `commodityOf` reports anything it cannot place in
+ * `unmappedLabels`, and МЗХ prints a тритикале row in every bulletin (5 980 ha
+ * sown in the 2026-11-11 issue), so merely dropping the mapping would raise
+ * "the bulletin changed and somebody must look" on every single run. The two
+ * lists exist to keep those apart — see `mzh-parse.ts`: an unmapped label
+ * means the bulletin changed, a skipped label means the owner decided.
  */
-const SKIPPED_PREFIXES = ['тютюн'];
+const SKIPPED_PREFIXES = ['тютюн', 'тритикале'];
 
 const TITLE = /^\s*((?:Реколта от|Засети площи с) .+?) към (\d{2})\.(\d{2})\.(\d{4}) г\./;
 const DATE_ROW = /\d{2}\.\d{2}\.(\d{4})\s+\d{2}\.\d{2}\.\d{4}/;

@@ -71,13 +71,13 @@ describe('commodityLabel', () => {
 
     describe('fallback for a slug in no catalogue', () => {
         it('title-cases rather than rendering the key path (has-aware)', () => {
-            expect(commodityLabel(translator(BG), 'triticale')).toBe('Triticale');
+            expect(commodityLabel(translator(BG), 'spelt')).toBe('Spelt');
         });
 
         it('title-cases when the translator returns the key path instead', () => {
             // No `has`; next-intl's default miss behaviour.
-            expect(commodityLabel(pathReturningTranslator(BG), 'triticale')).toBe(
-                'Triticale',
+            expect(commodityLabel(pathReturningTranslator(BG), 'spelt')).toBe(
+                'Spelt',
             );
         });
 

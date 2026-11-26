@@ -281,8 +281,7 @@
       "crops": [
         "wheat",
         "barley",
-        "rye",
-        "triticale"
+        "rye"
       ],
       "levels": [
         {
@@ -435,8 +434,7 @@
         "wheat",
         "barley",
         "rye",
-        "oats",
-        "triticale"
+        "oats"
       ],
       "levels": [
         {

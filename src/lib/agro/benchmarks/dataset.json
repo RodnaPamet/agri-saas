@@ -91,18 +91,6 @@
       }
     },
     {
-      "commodity": "triticale",
-      "label": {
-        "bg": "Тритикале"
-      },
-      "harvest": 2024,
-      "kgPerHa": 3054,
-      "cite": {
-        "source": "mzh-ra460-2024",
-        "page": 1
-      }
-    },
-    {
       "commodity": "peas",
       "label": {
         "bg": "Грах за зърно"
