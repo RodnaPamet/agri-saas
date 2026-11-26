@@ -231,7 +231,10 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted — the instruction this block gives
 // after #2578, and the reason the previous value was once one too high.
-const UNDOCUMENTED_CEILING = 200;
+const UNDOCUMENTED_CEILING = 197;
+// Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
+// are described now, beside the `bulk/delete` sibling that was documented first.
+// COUNTED from the file as the block above instructs, not subtracted.
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

@@ -49,7 +49,10 @@ import {
     AssignTaskSchema,
     AddTaskCommentSchema,
     AddTaskLinkSchema,
+    BulkTaskAssignSchema,
     BulkTaskDeleteSchema,
+    BulkTaskDueDateSchema,
+    BulkTaskStatusSchema,
 } from '@/lib/schemas';
 import { CreateTaskWeedObservationSchema } from '@/app-layer/schemas/parcel-history.schemas';
 
@@ -98,6 +101,28 @@ const LIST_SHAPE_WARNING =
     '`{ items, pageInfo }` instead, so a client that decoded `rows` and later added `?limit` ' +
     'read an absent key and rendered an empty list with no error. If you are reading an older ' +
     'client, check which key it expects before trusting it.';
+
+/**
+ * Three facts that govern ALL FOUR `tasks/bulk/*` routes (#3080). Shared so the
+ * four descriptions cannot drift into disagreeing about the cap or about what
+ * `count` means — which is the drift this file exists to prevent.
+ */
+const BULK_COUNT_AND_CAP =
+    '\n\n**`count` is what was WRITTEN, not what was asked for.** All four bulk '
+    + 'routes are an `updateMany` filtered on `{ id: { in: taskIds }, tenantId }`, so an '
+    + 'id that does not exist or belongs to another farm drops out silently. A `count` '
+    + 'below `taskIds.length` is therefore normal and not an error — #2103 is the issue '
+    + 'filed because a summary saying twenty tasks when three were written misreports '
+    + 'the one thing it exists to report. Render the number the server returns, never '
+    + 'the size of your own selection.'
+    + '\n\n**At most 100 ids**, the same cap as the other three: all four back one '
+    + 'multi-select on one screen, so a farmer who could assign a hundred rows and not '
+    + 're-date a hundred would be meeting an arbitrary edge.';
+
+const BULK_ALL_OR_NOTHING =
+    '\n\n**All-or-nothing.** The whole operation runs in one transaction, so a refusal '
+    + 'part-way through writes NOTHING — every selected row keeps the value it had. Do '
+    + 'not design a client around partial results.';
 
 export function registerTaskPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -456,6 +481,101 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The task\'s links, newest first.',
             schema: z.array(TaskLinkDTOSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/bulk/assign',
+        operationId: 'bulkAssignTasks',
+        summary: 'Assign or unassign several tasks at once',
+        description:
+            'Backs the tasks table\'s multi-select, beside its three siblings. Live since '
+            + 'the bulk actions shipped and **undocumented until now** (#3080).'
+            + '\n\n**`assigneeUserId: null` UNASSIGNS.** The field is nullable rather than '
+            + 'optional on purpose: omitting it is a validation error, so a client cannot '
+            + 'clear twenty assignees with a malformed body the way a missing key would.'
+            + '\n\n**The assignee must be an ACTIVE member of this farm.** An invited, '
+            + 'suspended or removed person is refused — as a 404 rather than a 403, because '
+            + 'a 403 would confirm the id names a real person somewhere.'
+            + '\n\nOnly the tasks that actually CARRY the new assignee are notified, read '
+            + 'back after the write rather than assumed from the request — so a stale id in '
+            + 'the selection cannot tell somebody they were given a task they were not.'
+            + BULK_COUNT_AND_CAP
+            + BULK_ALL_OR_NOTHING,
+        tags: ['Tasks'],
+        params: TenantParams,
+        body: BulkTaskAssignSchema,
+        extraResponses: codedErrorResponses({
+            403: '`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            404:
+                '`TARGET_USER_NOT_IN_TENANT` — the `assigneeUserId` is not an ACTIVE member '
+                + 'of this farm.',
+        }),
+        success: {
+            status: 200,
+            description: 'The number of tasks whose assignee was written.',
+            schema: z.object({ count: z.number().int() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/bulk/status',
+        operationId: 'bulkSetTaskStatus',
+        summary: 'Move several tasks to a status at once',
+        description:
+            'Live since the bulk actions shipped and **undocumented until now** (#3080).'
+            + '\n\n**The same transition rules as the single-task route, per task.** A bulk '
+            + 'operation is an admin convenience, not an escape hatch: every selected row is '
+            + 'checked before anything is written, and the refusal names WHICH task could '
+            + 'not move.'
+            + '\n\n**A terminal status needs a `resolution`.** It is sanitised BEFORE the '
+            + 'emptiness check, so a resolution consisting only of markup is refused as '
+            + 'missing rather than stored as a non-empty string that renders as nothing.'
+            + '\n\n`resolution` is an encrypted column, so it is never echoed back — the '
+            + 'response is a count.'
+            + BULK_COUNT_AND_CAP
+            + BULK_ALL_OR_NOTHING,
+        tags: ['Tasks'],
+        params: TenantParams,
+        body: BulkTaskStatusSchema,
+        extraResponses: codedErrorResponses({
+            403: '`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            404: '`TASK_NOT_FOUND` — one of the selected ids is not a task of this farm.',
+        }),
+        success: {
+            status: 200,
+            description: 'The number of tasks whose status was written.',
+            schema: z.object({ count: z.number().int() }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/bulk/due',
+        operationId: 'bulkSetTaskDueDate',
+        summary: 'Set or clear the due date on several tasks at once',
+        description:
+            'Live since the bulk actions shipped and **undocumented until now** (#3080).'
+            + '\n\n**`dueAt: null` CLEARS the due date**, and the field is nullable rather '
+            + 'than optional for its sibling\'s reason: omitting it is a validation error, '
+            + 'so a client cannot wipe twenty due dates with a malformed body.'
+            + '\n\n`dueAt` is an INSTANT, not a calendar day. A date picked in the farm\'s '
+            + 'own timezone must be sent as the instant that day begins there, or a task due '
+            + 'tomorrow morning locally can read as due today.'
+            + BULK_COUNT_AND_CAP
+            + BULK_ALL_OR_NOTHING,
+        tags: ['Tasks'],
+        params: TenantParams,
+        body: BulkTaskDueDateSchema,
+        extraResponses: codedErrorResponses({
+            403: '`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+        }),
+        success: {
+            status: 200,
+            description: 'The number of tasks whose due date was written.',
+            schema: z.object({ count: z.number().int() }),
         },
     });
 
