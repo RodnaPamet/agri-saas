@@ -67,15 +67,28 @@ import {
  *                        per IP). A 60/min cap would break provisioning runs.
  *   /api/staging/seed    POST, and 403s in production.
  *   /api/admin/*         Platform-key gated, and rate-limited INLINE in each
- *                        handler (#3155). That second clause was false until
- *                        2026-11-26: it read "LOGIN_LIMIT'd at the handler",
- *                        and the handlers declared their preset through
- *                        `withApiErrorHandling`, which discards it for any
- *                        non-mutation method. So this exclusion waived one
- *                        layer citing another that never ran, and those GETs
- *                        were throttled nowhere. If you move a platform route
- *                        off the inline call, this line stops being true
- *                        again — the five that carry it say so at the call.
+ *                        handler except six operator surfaces that are
+ *                        deliberately unthrottled (#3155, #3260): the KEK
+ *                        rotation and repair reads, the lookup-rehash sweep,
+ *                        diagnostics, and the two flag-console reads. Those
+ *                        are the screens somebody reaches for BECAUSE
+ *                        something is already wrong, and several are polled to
+ *                        completion — so a 15-minute lockout there would be
+ *                        the same mistake this list avoids for the probes
+ *                        above. The set is held with a written reason each in
+ *                        `tests/guards/declared-rate-limits-can-execute.ts`,
+ *                        which also refuses a NEW admin GET that neither
+ *                        limits itself nor joins them.
+ *
+ *                        This line read "LOGIN_LIMIT'd at the handler" until
+ *                        2026-11-26 and was HALF FALSE: the handlers declared
+ *                        their preset through `withApiErrorHandling`, which
+ *                        discards it for any non-mutation method. So the
+ *                        exclusion waived one layer citing another that never
+ *                        ran, and those GETs were throttled nowhere. Kept as
+ *                        history because the failure shape is the point — a
+ *                        reason that names another control is only as true as
+ *                        that control, and nothing checked it.
  *   page routes          `/login`, `/register`, `/invite/`, `/privacy`, … are
  *                        HTML. One reload fetches a page plus its assets, so a
  *                        60/min page budget would lock a real person out of
