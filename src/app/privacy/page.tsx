@@ -75,7 +75,12 @@ export default async function PrivacyPage() {
         // agent, who passes it to the partner insurer. The notice named
         // neither the request nor the hand-over until then, while the screen
         // said it went straight to "an insurer".
-        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectInsurance', 'collectUsage', 'collectPositions'] },
+        // `collectWeatherPlace` and `collectDiagnostics` added for the iPhone
+        // app's App Store submission (2026-11-26): the App Privacy answers
+        // declare Location (Табло's weather, rounded to ~5 km, agrent-ios#671)
+        // and Sentry's crash/performance diagnostics (agrent-ios#494), and the
+        // notice must say what the label says.
+        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectInsurance', 'collectUsage', 'collectPositions', 'collectWeatherPlace', 'collectDiagnostics'] },
         // `useExchange` added with #1348: the exchange now shares a name with
         // the other farm, exactly as an offer request does. The notice said so
         // for offer requests only, and a document that describes one of two
