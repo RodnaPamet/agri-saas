@@ -20404,6 +20404,23 @@ exports[`API contract — per-schema snapshots schema: SetUiLanguageResponse 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: SoilGuide 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/SoilSection"
+      }
+    }
+  },
+  "required": [
+    "sections"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: SoilProfile 1`] = `
 "{
   "type": [
@@ -20528,6 +20545,106 @@ exports[`API contract — per-schema snapshots schema: SoilReason 1`] = `
       "params"
     ]
   }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SoilSection 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": [
+        "nitrogen",
+        "slopes-water",
+        "manure",
+        "analysis",
+        "erosion-cover",
+        "organic-matter",
+        "soil-life"
+      ],
+      "description": "Stable id, also the anchor on the web page. Show a topic you do not know rather than dropping it: the list grows."
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string",
+      "description": "One or two sentences for the topic list."
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The topic, one self-contained point per entry, in display order. Plain text — no markup."
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/SoilSource"
+      },
+      "description": "The documents this topic summarises. Never empty."
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "summary",
+    "points",
+    "sources"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SoilSource 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": [
+        "nitrates-rules",
+        "ziu-guide",
+        "dzes-handbook",
+        "ordinance-9",
+        "earthworms",
+        "organic-handbook"
+      ],
+      "description": "Stable id. Treat one you do not know as an ordinary source: the list grows."
+    },
+    "title": {
+      "type": "string",
+      "description": "The document's own title, always Bulgarian."
+    },
+    "publisher": {
+      "type": "string",
+      "description": "In the requested language."
+    },
+    "year": {
+      "type": "integer"
+    },
+    "url": {
+      "type": "string",
+      "description": "Where the document can be read in full."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "official",
+        "free-guide"
+      ],
+      "description": "\`official\` is a Bulgarian normative act or ministry document; \`free-guide\` is a freely published guide. Every topic is written in Agrent's own words either way — this says what kind of document to go and check."
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "publisher",
+    "year",
+    "url",
+    "kind"
+  ]
 }"
 `;
 

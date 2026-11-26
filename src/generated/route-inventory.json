@@ -2031,6 +2031,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/knowledge/soil-guide",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/knowledge/{id}",
       "status": "live",
       "documented": false

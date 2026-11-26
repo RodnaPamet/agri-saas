@@ -2,6 +2,8 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { buttonVariants } from '@/components/ui/button-variants';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { Button } from '@/components/ui/button';
 import { Plus, Sparkle3 } from '@/components/ui/icons/nucleo';
@@ -104,6 +106,7 @@ function KnowledgePageInner({
     const t = useTranslations('knowledge');
     const tFilters = useTranslations('knowledge.filters');
     const tStatus = useTranslations('knowledge.status');
+    const tSoil = useTranslations('soilGuide');
     // Memoised because the `createColumns` memo below takes it as a
     // dependency: declared inline it was a new function every render, so
     // the column definitions were rebuilt every render.
@@ -266,6 +269,16 @@ function KnowledgePageInner({
                 description: t('description'),
                 actions: (
                     <div className="flex items-center gap-compact">
+                        {/* «Почва» (owner, 2026-11-26) — the soil section,
+                            platform-written and the same for every farm, so it
+                            sits beside the list rather than in it. */}
+                        <Link
+                            href={tenantHref('/knowledge/soil')}
+                            className={buttonVariants({ variant: 'secondary' })}
+                            id="knowledge-soil-link"
+                        >
+                            {tSoil('title')}
+                        </Link>
                         {/* W4/#92 — ask the knowledge base. Available to every
                             role that can see this page (gated server-side by
                             `knowledge.view` on the /knowledge/ask route). */}
