@@ -66,7 +66,16 @@ import {
  *   /api/scim/           Its own, far higher tier (300/min per bearer, 600/min
  *                        per IP). A 60/min cap would break provisioning runs.
  *   /api/staging/seed    POST, and 403s in production.
- *   /api/admin/*         Platform-key gated and LOGIN_LIMIT'd at the handler.
+ *   /api/admin/*         Platform-key gated, and rate-limited INLINE in each
+ *                        handler (#3155). That second clause was false until
+ *                        2026-11-26: it read "LOGIN_LIMIT'd at the handler",
+ *                        and the handlers declared their preset through
+ *                        `withApiErrorHandling`, which discards it for any
+ *                        non-mutation method. So this exclusion waived one
+ *                        layer citing another that never ran, and those GETs
+ *                        were throttled nowhere. If you move a platform route
+ *                        off the inline call, this line stops being true
+ *                        again — the five that carry it say so at the call.
  *   page routes          `/login`, `/register`, `/invite/`, `/privacy`, … are
  *                        HTML. One reload fetches a page plus its assets, so a
  *                        60/min page budget would lock a real person out of

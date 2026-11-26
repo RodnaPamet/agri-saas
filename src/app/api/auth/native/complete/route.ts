@@ -30,7 +30,6 @@ import { env } from '@/env';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import {
     HANDOFF_COOKIE,
     classifyRedirect,
@@ -179,7 +178,16 @@ async function handleComplete(req: NextRequest): Promise<NextResponse> {
 }
 
 export const GET = withApiErrorHandling(handleComplete, {
-    rateLimit: { config: LOGIN_LIMIT, scope: 'native-auth-complete' },
+    // NOT the wrapper's job, and this is not an omission — #3155.
+    //
+    // This line read `rateLimit: { config: LOGIN_LIMIT, scope: … }`, which
+    // `resolveRateLimitScope` discards for any non-mutation method: the
+    // control was declared and never ran. It is enforced at the EDGE instead,
+    // where `classifyEndpoint` puts the three native handoff GETs in the
+    // 'high' tier — 10/min per (IP, ua-hash). Keyed there rather than here
+    // because the route is unauthenticated, so a handler-level LOGIN_LIMIT
+    // would key on IP alone and lock a whole shared egress out of signing in.
+    rateLimit: false,
 });
 
 /**

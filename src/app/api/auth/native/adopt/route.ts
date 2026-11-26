@@ -63,7 +63,6 @@ import { cookies } from 'next/headers';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import { buildSessionClaims } from '@/auth';
 import { resolveBearerToken } from '@/lib/auth/native/bearer-principal';
 import { SESSION_MAX_AGE_SECONDS } from '@/lib/auth/session-lifetime';
@@ -155,5 +154,14 @@ async function handleAdopt(req: NextRequest): Promise<NextResponse> {
 }
 
 export const GET = withApiErrorHandling(handleAdopt, {
-    rateLimit: { config: LOGIN_LIMIT, scope: 'native-adopt' },
+    // NOT the wrapper's job, and this is not an omission — #3155.
+    //
+    // This line read `rateLimit: { config: LOGIN_LIMIT, scope: … }`, which
+    // `resolveRateLimitScope` discards for any non-mutation method: the
+    // control was declared and never ran. It is enforced at the EDGE instead,
+    // where `classifyEndpoint` puts the three native handoff GETs in the
+    // 'high' tier — 10/min per (IP, ua-hash). Keyed there rather than here
+    // because the route is unauthenticated, so a handler-level LOGIN_LIMIT
+    // would key on IP alone and lock a whole shared egress out of signing in.
+    rateLimit: false,
 });
