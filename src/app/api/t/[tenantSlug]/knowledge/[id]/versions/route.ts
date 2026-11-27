@@ -4,14 +4,8 @@ import { createArticleVersion } from '@/app-layer/usecases/knowledge';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { CreateKnowledgeVersionSchema } from '@/lib/schemas';
 
-const CreateKnowledgeVersionSchema = z
-    .object({
-        contentType: z.enum(['HTML', 'MARKDOWN']).default('HTML'),
-        contentText: z.string().min(1, 'Content is required').max(100000),
-        changeSummary: z.string().max(500).nullable().optional(),
-    })
-    .strip();
 
 export const POST = withApiErrorHandling(
     withValidatedBody(

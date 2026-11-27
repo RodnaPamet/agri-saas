@@ -8,6 +8,7 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { parseCsvEnumParam, parseCsvIdParam } from '@/lib/validation/query-params';
+import { CreateKnowledgeArticleSchema } from '@/lib/schemas';
 
 /**
  * `status`, `category`, `crop`, and `region` are MULTI-value: the list
@@ -21,27 +22,7 @@ import { parseCsvEnumParam, parseCsvIdParam } from '@/lib/validation/query-param
  */
 const StatusMember = z.nativeEnum(KnowledgeArticleStatus);
 
-/** BBCH is a 00-99 ordinal growth-stage scale — both-or-neither, in
- *  range, min <= max is enforced at the usecase layer (`knowledge.ts`'s
- *  `assertValidBbchRange`); this schema only bounds the wire shape. */
-const BbchStage = z.number().int().min(0).max(99).nullable().optional();
 
-const CreateKnowledgeArticleSchema = z
-    .object({
-        title: z.string().min(1, 'Title is required').max(500),
-        summary: z.string().max(2000).nullable().optional(),
-        category: z.string().max(120).nullable().optional(),
-        ownerUserId: z.string().nullable().optional(),
-        language: z.string().max(8).nullable().optional(),
-        source: z.string().max(120).nullable().optional(),
-        cropTags: z.array(z.string().max(60)).max(20).optional(),
-        regions: z.array(z.string().max(60)).max(20).optional(),
-        bbchStageMin: BbchStage,
-        bbchStageMax: BbchStage,
-        contentType: z.enum(['HTML', 'MARKDOWN']).optional(),
-        content: z.string().max(100000).nullable().optional(),
-    })
-    .strip();
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {

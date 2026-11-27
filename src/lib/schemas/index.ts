@@ -299,6 +299,90 @@ export const EvidenceReviewSchema = z.object({
  * so documenting their paths would have put a second hand-written
  * declaration of each in `evidence-retention.paths.ts`.
  */
+/**
+ * Knowledge-base article bodies, declared HERE rather than in their routes
+ * (#1555, #3080).
+ *
+ * Four route-local `z.object`s became dual declarations the moment their
+ * paths were documented, which `request-body-declared-once` caps at zero.
+ *
+ * BBCH is a 00-99 ordinal growth-stage scale. These schemas bound the WIRE
+ * shape only: both-or-neither and `min <= max` are enforced at the usecase
+ * (`assertValidBbchRange`), because a cross-field rule belongs where the
+ * stored row is known rather than in a shape that cannot see it.
+ */
+const BbchStageField = z.number().int().min(0).max(99).nullable().optional().openapi({
+    description:
+        'A BBCH growth stage, 0-99. Both `bbchStageMin` and `bbchStageMax` must be given '
+        + 'together and min must not exceed max — enforced at the usecase, so a violation '
+        + 'is a 400 from there rather than a schema error.',
+});
+
+export const CreateKnowledgeArticleSchema = z.object({
+    title: z.string().min(1, 'Title is required').max(500),
+    summary: z.string().max(2000).nullable().optional(),
+    category: z.string().max(120).nullable().optional().openapi({
+        description:
+            'FREE TEXT, not an enum — `GET /knowledge/categories` returns the distinct '
+            + 'values in use rather than a fixed list, so a new category is created by '
+            + 'typing one.',
+    }),
+    ownerUserId: z.string().nullable().optional(),
+    language: z.string().max(8).nullable().optional(),
+    source: z.string().max(120).nullable().optional(),
+    cropTags: z.array(z.string().max(60)).max(20).optional(),
+    regions: z.array(z.string().max(60)).max(20).optional(),
+    bbchStageMin: BbchStageField,
+    bbchStageMax: BbchStageField,
+    contentType: z.enum(['HTML', 'MARKDOWN']).optional(),
+    content: z.string().max(100000).nullable().optional().openapi({
+        description:
+            'Optional. Supplying it creates the article AND its first version in one call; '
+            + 'omitting it creates an article with no version, which cannot be published '
+            + 'until `POST /{id}/versions` gives it one.',
+    }),
+}).strip().openapi('KnowledgeArticleCreateRequest', {
+    description: 'Create a knowledge-base article. Only `title` is required.',
+});
+
+export const UpdateKnowledgeArticleSchema = z.object({
+    title: z.string().min(1, 'Title is required').max(500).optional(),
+    summary: z.string().max(2000).nullable().optional(),
+    category: z.string().max(120).nullable().optional(),
+    ownerUserId: z.string().nullable().optional(),
+    language: z.string().max(8).nullable().optional(),
+    cropTags: z.array(z.string().max(60)).max(20).optional(),
+    regions: z.array(z.string().max(60)).max(20).optional(),
+    bbchStageMin: BbchStageField,
+    bbchStageMax: BbchStageField,
+}).strip().openapi('KnowledgeArticleUpdateRequest', {
+    description:
+        'METADATA only — it carries no `content` and no `contentType`. Article text is '
+        + 'versioned, so changing it means creating a new version rather than editing the '
+        + 'article, which is why `source` is absent here too.',
+});
+
+export const PublishKnowledgeArticleSchema = z.object({
+    versionId: z.string().min(1, 'versionId is required').openapi({
+        description:
+            'WHICH version to publish — required, and deliberately not defaulted to the '
+            + 'latest. Publishing is the act that makes text visible to a farm, so the '
+            + 'caller names the text rather than inheriting whatever was written last.',
+    }),
+}).strip().openapi('KnowledgeArticlePublishRequest');
+
+export const CreateKnowledgeVersionSchema = z.object({
+    contentType: z.enum(['HTML', 'MARKDOWN']).default('HTML'),
+    contentText: z.string().min(1, 'Content is required').max(100000),
+    changeSummary: z.string().max(500).nullable().optional().openapi({
+        description: 'An optional note about what changed, for the version list.',
+    }),
+}).strip().openapi('KnowledgeVersionCreateRequest', {
+    description:
+        'Add a version to an article. Creating a version does NOT publish it — see '
+        + '`POST /{id}/publish`.',
+});
+
 export const EvidenceRetentionSchema = z.object({
     retentionUntil: z.string().datetime().nullable().optional().openapi({
         description:

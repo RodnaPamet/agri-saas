@@ -13971,6 +13971,446 @@ exports[`API contract — per-schema snapshots schema: JournalFoldedRow 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: KnowledgeAcknowledgement 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "created": {
+      "type": "boolean",
+      "description": "TRUE when this call recorded a new receipt, FALSE when one already existed. The STATUS says the same thing — 201 or 200 — so a client can branch on either."
+    },
+    "articleId": {
+      "type": "string"
+    },
+    "versionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The version acknowledged — the article's CURRENT one at the moment of the call. A later publish does not carry the receipt forward, which is the point: a worker has read a specific text, not an article."
+    }
+  },
+  "required": [
+    "created",
+    "articleId",
+    "versionId"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: KnowledgeArticle 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "NULL for a GLOBAL article — seeded content that belongs to no farm and is returned by every tenant's read. A client that assumes this matches the farm in the path will be wrong for exactly those rows."
+    },
+    "slug": {
+      "type": "string",
+      "description": "Unique per farm, and used in readable URLs. Uniqueness among GLOBAL rows is held by a hand-written partial index rather than by the Prisma constraint, because Postgres treats NULLs as distinct."
+    },
+    "title": {
+      "type": "string"
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "PUBLISHED",
+        "ARCHIVED"
+      ],
+      "description": "ARCHIVED is reached from either of the others and reversed by \`unarchive\`. It is NOT deletion — an archived article keeps its versions and its acknowledgements."
+    },
+    "currentVersionId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The version a farm actually SEES, set by \`publish\`. Null on an article that has never been published — including one with versions, since writing a version does not release it."
+    },
+    "ownerUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "language": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Defaults to \`en\`."
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Provenance for seeded content — \`\\"OpenFarm\\"\` for the CC0 growing guides, for instance. Null for a farm's own authoring, and settable only at create: it is absent from the update body because provenance is not something an editor revises."
+    },
+    "cropTags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Crops this applies to. **EMPTY means EVERY crop**, not none — the array NARROWS, so no entries is the widest applicability. Free-text slugs in an array rather than a join table, deliberately."
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Regions this applies to. EMPTY means every region. See \`cropTags\`."
+    },
+    "bbchStageMin": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "bbchStageMax": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "With \`bbchStageMin\`, a RANGE on the 00-99 BBCH scale — an SOP applies across a phase, not to a discrete set of stages. Both null means not stage-specific."
+    },
+    "lifecycleVersion": {
+      "type": "integer",
+      "description": "Starts at 1 and increments on each PUBLISH — so it counts releases, not edits. A farm on \`lifecycleVersion\` 3 has been shown three different texts, however many versions were written between them."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "slug",
+    "title",
+    "summary",
+    "category",
+    "status",
+    "currentVersionId",
+    "ownerUserId",
+    "language",
+    "source",
+    "cropTags",
+    "regions",
+    "bbchStageMin",
+    "bbchStageMax",
+    "lifecycleVersion",
+    "createdAt",
+    "updatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: KnowledgeArticleCreateRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120,
+      "description": "FREE TEXT, not an enum — \`GET /knowledge/categories\` returns the distinct values in use rather than a fixed list, so a new category is created by typing one."
+    },
+    "ownerUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "language": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 8
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
+    },
+    "cropTags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "maxItems": 20
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "maxItems": 20
+    },
+    "bbchStageMin": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 99,
+      "description": "A BBCH growth stage, 0-99. Both \`bbchStageMin\` and \`bbchStageMax\` must be given together and min must not exceed max — enforced at the usecase, so a violation is a 400 from there rather than a schema error."
+    },
+    "bbchStageMax": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 99,
+      "description": "A BBCH growth stage, 0-99. Both \`bbchStageMin\` and \`bbchStageMax\` must be given together and min must not exceed max — enforced at the usecase, so a violation is a 400 from there rather than a schema error."
+    },
+    "contentType": {
+      "type": "string",
+      "enum": [
+        "HTML",
+        "MARKDOWN"
+      ]
+    },
+    "content": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 100000,
+      "description": "Optional. Supplying it creates the article AND its first version in one call; omitting it creates an article with no version, which cannot be published until \`POST /{id}/versions\` gives it one."
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "description": "Create a knowledge-base article. Only \`title\` is required."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: KnowledgeArticlePublishRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "versionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "WHICH version to publish — required, and deliberately not defaulted to the latest. Publishing is the act that makes text visible to a farm, so the caller names the text rather than inheriting whatever was written last."
+    }
+  },
+  "required": [
+    "versionId"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: KnowledgeArticleUpdateRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
+    },
+    "ownerUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "language": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 8
+    },
+    "cropTags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "maxItems": 20
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      },
+      "maxItems": 20
+    },
+    "bbchStageMin": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 99,
+      "description": "A BBCH growth stage, 0-99. Both \`bbchStageMin\` and \`bbchStageMax\` must be given together and min must not exceed max — enforced at the usecase, so a violation is a 400 from there rather than a schema error."
+    },
+    "bbchStageMax": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 99,
+      "description": "A BBCH growth stage, 0-99. Both \`bbchStageMin\` and \`bbchStageMax\` must be given together and min must not exceed max — enforced at the usecase, so a violation is a 400 from there rather than a schema error."
+    }
+  },
+  "description": "METADATA only — it carries no \`content\` and no \`contentType\`. Article text is versioned, so changing it means creating a new version rather than editing the article, which is why \`source\` is absent here too."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: KnowledgeArticleVersion 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "articleId": {
+      "type": "string"
+    },
+    "versionNumber": {
+      "type": "integer",
+      "description": "Increments per version. Monotonic within one article."
+    },
+    "contentType": {
+      "type": "string",
+      "enum": [
+        "HTML",
+        "MARKDOWN"
+      ],
+      "description": "HTML is the editor's default; MARKDOWN exists for plain-text imports such as the CC0 guides."
+    },
+    "contentText": {
+      "type": "string"
+    },
+    "changeSummary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "articleId",
+    "versionNumber",
+    "contentType",
+    "contentText",
+    "changeSummary",
+    "createdAt",
+    "createdByUserId"
+  ],
+  "description": "An IMMUTABLE content snapshot. Editing text means adding one of these, never changing an existing one — which is what makes \`publish\` a meaningful act and what lets an acknowledgement refer to a fixed text."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: KnowledgeVersionCreateRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "contentType": {
+      "type": "string",
+      "enum": [
+        "HTML",
+        "MARKDOWN"
+      ],
+      "default": "HTML"
+    },
+    "contentText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100000
+    },
+    "changeSummary": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 500,
+      "description": "An optional note about what changed, for the version list."
+    }
+  },
+  "required": [
+    "contentText"
+  ],
+  "description": "Add a version to an article. Creating a version does NOT publish it — see \`POST /{id}/publish\`."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: LeasePayment 1`] = `
 "{
   "type": "object",
