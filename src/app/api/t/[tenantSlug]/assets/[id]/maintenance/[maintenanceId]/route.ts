@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
-import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     closeAssetMaintenance,
     deleteAssetMaintenance,
 } from '@/app-layer/usecases/asset-maintenance';
 import { withValidatedBody } from '@/lib/validation/route';
+import { CloseAssetMaintenanceSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -20,13 +20,10 @@ import { jsonResponse } from '@/lib/api-response';
  * flipping the asset's status as a side effect.
  */
 
-const CloseMaintenanceSchema = z.object({
-    closedAt: z.string().datetime().nullable().optional(),
-});
 
 export const PATCH = withApiErrorHandling(
     withValidatedBody(
-        CloseMaintenanceSchema,
+        CloseAssetMaintenanceSchema,
         async (
             req,
             {

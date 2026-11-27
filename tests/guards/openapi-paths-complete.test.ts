@@ -231,7 +231,22 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted — the instruction this block gives
 // after #2578, and the reason the previous value was once one too high.
-const UNDOCUMENTED_CEILING = 189;
+// 192 → 189 (#3270, on main): the three session-revocation paths.
+// 189 → 178 (#3080, this branch): the eleven asset-register paths are
+// documented now (`assets.paths.ts`), so they leave the baseline in the same
+// diff that describes them — eighteen operations, the whole domain rather than
+// a slice, because `GET /assets` serves three different bodies and documenting
+// one branch would have been less honest than the baseline entry it replaces.
+//
+// THIS IS THE MERGE THE BLOCK ABOVE WARNS ABOUT, and it happened exactly as
+// written: both branches lowered this constant from 192 — main to 189, this
+// one to 181 — and git offered one number over a baseline that had lost BOTH
+// sets of rows. Neither side's value was right, which is the off-by-N the
+// `toBe` below exists to refuse.
+//
+// So: COUNTED from the merged `openapi-undocumented-baseline.json`, which
+// holds 178 entries. Not subtracted from either side.
+const UNDOCUMENTED_CEILING = 178;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that
