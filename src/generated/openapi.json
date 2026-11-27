@@ -2760,7 +2760,7 @@
               "name",
               "email"
             ],
-            "description": "Resolved from `ownerUserId`. **Present on the flat read ONLY** — the paginated and `includeDeleted` branches omit it, which is #3272. Absent here never means unassigned; read `ownerUserId` for that."
+            "description": "Resolved from `ownerUserId`, so the Owner column can prefer a real name over the free-text keeper. Present on EVERY branch since #3272; the paginated read omitted it before that. Null means `ownerUserId` is null — nobody is assigned."
           },
           "externalRef": {
             "type": [
@@ -3412,7 +3412,7 @@
             "properties": {
               "taskTotal": {
                 "type": "integer",
-                "description": "Linked work items, all states. 0 when none, never absent on this branch."
+                "description": "Linked work items, all states. 0 when none, never absent."
               },
               "taskDone": {
                 "type": "integer",
@@ -3657,9 +3657,9 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Asset"
+              "$ref": "#/components/schemas/AssetListRow"
             },
-            "description": "Ordered `createdAt` DESC then `id` DESC — a TOTAL order, so the cursor cannot skip or repeat a row when two assets share a creation timestamp. Rows on this branch carry neither `ownerUser` nor the task counts (#3272)."
+            "description": "Ordered `createdAt` DESC then `id` DESC — a TOTAL order, so the cursor cannot skip or repeat a row when two assets share a creation timestamp. Since #3272 these are the SAME enriched rows the flat read returns, `ownerUser` and task counts included; paging no longer costs you fields."
           },
           "pageInfo": {
             "$ref": "#/components/schemas/AssetPageInfo"
@@ -88366,7 +88366,7 @@
       "get": {
         "operationId": "listAssets",
         "summary": "List the asset register",
-        "description": "Reads the farm’s machines, buildings, storage and tools.\n\n**This operation returns one of THREE different bodies, chosen by query parameters, and the row shape changes with the envelope.** The divergence is a defect rather than a design — tracked as #3272 — and is documented because a client has to survive it today:\n\n1. **No `limit`, `cursor` or `includeDeleted`** → a BARE ARRAY of `AssetListRow`, newest first, capped at **1,000 rows with no flag in the body**. Rows carry the resolved `ownerUser` and the `taskTotal` / `taskDone` counts. Compare the array length against `total` from `GET /assets/kpi` to find out whether you are seeing everything.\n\n2. **`limit` or `cursor` present** → an `AssetPage` envelope (`{items, pageInfo}`). Rows have NEITHER `ownerUser` NOR the task counts, so paging silently costs you the assignee name and the work-item counts you had while unpaged.\n\n3. **`includeDeleted=true`** → a BARE ARRAY including soft-deleted rows, requiring ADMIN, **unbounded**, with no `ownerUser` and no task counts, and with every filter, `q`, `limit` and `cursor` SILENTLY IGNORED. Send it alone.\n\nSo this one path carries two permission tiers: READ, and ADMIN as soon as `includeDeleted=true` is sent. That is not discoverable from the path, which is why it is stated here.",
+        "description": "Reads the farm’s machines, buildings, storage and tools.\n\n**Two envelopes over one row shape.** Every query parameter applies on both:\n\n1. **No `limit` and no `cursor`** → a BARE ARRAY of `AssetListRow`, newest first, capped at **1,000 rows with no flag in the body**. Compare the array length against `total` from `GET /assets/kpi` to learn whether you are seeing everything — that cross-endpoint comparison is the intended signal, and it is the one thing about this read that is not self-describing.\n\n2. **`limit` or `cursor` present** → an `AssetPage` envelope (`{items, pageInfo}`) over the same `AssetListRow`.\n\nIt served THREE bodies with three different row shapes until #3272, and a client written against that may still be working around it: paging dropped `ownerUser` and the task counts, and `includeDeleted=true` was an early return that discarded every filter, `q`, `limit` and `cursor` it was sent, and returned an unbounded bare array. All of that is gone.\n\nOne thing is still NOT discoverable from the path: this operation carries two permission tiers. READ, and **ADMIN** as soon as `includeDeleted=true` is sent, which answers 403 rather than a narrower list.",
         "tags": [
           "Assets"
         ],
@@ -88438,10 +88438,10 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
-              "description": "Page size. PRESENCE of this or `cursor` switches the response to the paginated envelope — see the operation description, because the row shape changes with it. Clamped to 1–100; absent means 20 once paginating."
+              "description": "Page size. PRESENCE of this or `cursor` switches the response to the paginated envelope. The ROW shape is unchanged either way since #3272. Clamped to 1–100; absent means 20 once paginating."
             },
             "required": false,
-            "description": "Page size. PRESENCE of this or `cursor` switches the response to the paginated envelope — see the operation description, because the row shape changes with it. Clamped to 1–100; absent means 20 once paginating.",
+            "description": "Page size. PRESENCE of this or `cursor` switches the response to the paginated envelope. The ROW shape is unchanged either way since #3272. Clamped to 1–100; absent means 20 once paginating.",
             "name": "limit",
             "in": "query"
           },
@@ -88462,17 +88462,17 @@
                 "true",
                 "false"
               ],
-              "description": "ADMIN only, and it REPLACES the read rather than widening it. `true` returns live and soft-deleted rows as a bare array, and — this is a defect, tracked as #3272, not a contract to rely on — every other parameter on this operation is silently ignored: the filters above, `q`, `limit` and `cursor` alike. The rows also arrive WITHOUT `ownerUser` and without the task counts. Treat it as a separate trash-can endpoint that happens to share a path, send it alone, and filter client-side, which is what the web UI does."
+              "description": "Include soft-deleted rows. **ADMIN**, unlike the rest of this operation, which needs only READ — so the same path carries two permission tiers and a READER sending this gets a 403 rather than a narrower list.\n\nIt is an ordinary FILTER and composes with everything else here: the facets, `q`, `limit` and `cursor` all still apply, and the rows carry `ownerUser` and the task counts like any other. That was NOT true before #3272 — the flag was an early return that discarded every other parameter and served a thinner row — so a client written against the old behaviour may be sending it alone and filtering locally, which still works.\n\nOne caveat the fix introduces, stated because it is the kind that looks like an empty trash can: the flat read is now CAPPED at 1,000 rows and ordered newest-first over live AND deleted rows together, so on a farm with more than 1,000 assets an OLD deleted row can fall outside the page. The flag composes with `limit` and `cursor` now, so paging is the remedy. It was previously unbounded, which is the trade: a bounded response that can be paged, instead of an unbounded one that cannot."
             },
             "required": false,
-            "description": "ADMIN only, and it REPLACES the read rather than widening it. `true` returns live and soft-deleted rows as a bare array, and — this is a defect, tracked as #3272, not a contract to rely on — every other parameter on this operation is silently ignored: the filters above, `q`, `limit` and `cursor` alike. The rows also arrive WITHOUT `ownerUser` and without the task counts. Treat it as a separate trash-can endpoint that happens to share a path, send it alone, and filter client-side, which is what the web UI does.",
+            "description": "Include soft-deleted rows. **ADMIN**, unlike the rest of this operation, which needs only READ — so the same path carries two permission tiers and a READER sending this gets a 403 rather than a narrower list.\n\nIt is an ordinary FILTER and composes with everything else here: the facets, `q`, `limit` and `cursor` all still apply, and the rows carry `ownerUser` and the task counts like any other. That was NOT true before #3272 — the flag was an early return that discarded every other parameter and served a thinner row — so a client written against the old behaviour may be sending it alone and filtering locally, which still works.\n\nOne caveat the fix introduces, stated because it is the kind that looks like an empty trash can: the flat read is now CAPPED at 1,000 rows and ordered newest-first over live AND deleted rows together, so on a farm with more than 1,000 assets an OLD deleted row can fall outside the page. The flag composes with `limit` and `cursor` now, so paging is the remedy. It was previously unbounded, which is the trade: a bounded response that can be paged, instead of an unbounded one that cannot.",
             "name": "includeDeleted",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "One of the three shapes above. `AssetListRow[]` for branch 1, `AssetPage` for branch 2, `Asset[]` for branch 3.",
+            "description": "`AssetListRow[]` with no pagination parameters, `AssetPage` with them. The row shape is the same either way.",
             "content": {
               "application/json": {
                 "schema": {
@@ -88485,12 +88485,6 @@
                     },
                     {
                       "$ref": "#/components/schemas/AssetPage"
-                    },
-                    {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Asset"
-                      }
                     }
                   ]
                 }
