@@ -2,7 +2,7 @@
  * Task (Work Item) DTOs
  */
 import { z } from '@/lib/openapi/zod';
-import { UserRefSchema } from './common';
+import { UserRefSchema, UserRefShortSchema } from './common';
 import { MultiPolygonGeometrySchema } from '@/app-layer/schemas/geo.schemas';
 
 /**
@@ -320,3 +320,57 @@ export const TaskParcelDTOSchema = z
         description:
             'A parcel linked to a task, for a display-only map. Deliberately status-free: per-parcel operation status lives on the field-operation detail route, so this shape means the same thing whatever the task type is.',
     });
+
+/**
+ * One row of a task's activity list — #3264.
+ *
+ * Deliberately NARROW. The read behind it used to `include` the whole
+ * `AuditLog` row plus `user.email`, and the route returned it unmapped — so
+ * every caller that could read a task also got the actor's email address,
+ * `diffJson` (before and after of an encrypted column, at values since edited
+ * away), the other json blobs, and the hash chain's `entryHash` /
+ * `previousHash`. This schema is the field list the query now selects, so the
+ * contract and the query cannot drift: adding a field here without adding it
+ * to `getTaskActivity`'s `select` makes it `undefined`, which the strict
+ * shape below refuses.
+ *
+ * The actor reuses `UserRefShortSchema` rather than an inline `{ id, name }`,
+ * and that schema is worth noticing: it already existed, and its own
+ * description already said it is "used in audit-log entries and other places
+ * where leaking the email would be inappropriate". So the right shape was
+ * written, named for exactly this case, and this route never reached for it —
+ * `UserRefSchema`, the one WITH the email, is what the surrounding code uses.
+ * The defect was not a missing abstraction; it was an unmounted one.
+ */
+export const TaskActivityDTOSchema = z
+    .object({
+        id: z.string(),
+        action: z.string().openapi({
+            description:
+                'The audit verb — `UPDATE`, `TASK_ASSIGNED`, `SOFT_DELETE` and so on. '
+                + 'A bare string rather than an enum, because `AuditEventPayload.action` is '
+                + 'one too: two thirds of this codebase\'s audit writes use a domain verb, '
+                + 'and the list is not closed.',
+        }),
+        createdAt: z.string().datetime({ offset: true }),
+        user: UserRefShortSchema
+            .nullable()
+            .openapi({
+                description:
+                    'The actor, or NULL for a system action — `AuditLog.userId` is nullable, '
+                    + 'and the web renders its own fallback label when it is absent. '
+                    + '`name` is `User.name` and NOT a published `PersonProfile.displayName`: '
+                    + 'this is a tenant surface whose readers already see each other by that '
+                    + 'name in the member list and the assignee picker, while a profile is an '
+                    + 'opt-in publication for the public social surfaces that almost nobody '
+                    + 'has made. The email is deliberately absent.',
+            }),
+    })
+    .openapi('TaskActivity', {
+        description:
+            'One audit entry for a task, narrowed to what the activity list renders. '
+            + 'Never carries `diffJson`, `detailsJson`, `metadataJson`, `recordIds`, '
+            + '`details`, the hash-chain links, or the actor\'s email — see #3264.',
+    });
+
+export type TaskActivityDTO = z.infer<typeof TaskActivityDTOSchema>;

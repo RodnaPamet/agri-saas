@@ -37,6 +37,7 @@ import { codedErrorResponses, op } from './helpers';
 import {
     TaskDTOSchema,
     TaskListItemDTOSchema,
+    TaskActivityDTOSchema,
     TaskDetailDTOSchema,
     TaskCommentDTOSchema,
     TaskLinkDTOSchema,
@@ -481,6 +482,49 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The task\'s links, newest first.',
             schema: z.array(TaskLinkDTOSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/activity',
+        operationId: 'getTaskActivity',
+        summary: 'The task\'s activity list',
+        description:
+            'The 50 most recent audit entries for this task, newest first. Live and '
+            + '**undocumented until now** (#3080), and deliberately documented only once its '
+            + 'shape was narrowed (#3264).'
+            + '\n\n**It used to return much more than this.** The read `include`d the whole '
+            + '`AuditLog` row plus `user.email`, and the route returned it unmapped — so '
+            + 'anything passing `assertCanReadTasks`, which includes READER and the '
+            + 'deliberately-confined MECHANISATOR persona, received the actor\'s email '
+            + 'address, `diffJson` (before and after of a Task, whose `description` and '
+            + '`resolution` are encrypted columns, at values since edited away), '
+            + '`detailsJson`, `metadataJson`, `recordIds`, `details`, and the hash chain\'s '
+            + '`entryHash` / `previousHash`. None of it was rendered by anything.'
+            + '\n\nThe fix is in the QUERY, not a mapper: `email` is an `ENCRYPTED_FIELDS` '
+            + 'column, so not selecting it means it is never decrypted. A client must not '
+            + 'expect any of those fields to come back.'
+            + '\n\n**`user` is null for a SYSTEM action** — `AuditLog.userId` is nullable — '
+            + 'so render your own fallback label rather than treating null as an error.'
+            + '\n\n**`action` is a bare string, not an enum.** `AuditEventPayload.action` is '
+            + 'one too: two thirds of this codebase\'s audit writes use a domain verb rather '
+            + 'than CREATE/UPDATE/DELETE, and the list is not closed. Match on the values you '
+            + 'know and show the raw verb for the rest.'
+            + '\n\n**The name is `User.name`, not a published profile.** This is a tenant '
+            + 'surface whose readers already see each other by that name in the member list '
+            + 'and the assignee picker; `PersonProfile.displayName` is an opt-in publication '
+            + 'for the public social surfaces and almost nobody has made one, so requiring it '
+            + 'here would render a nameless placeholder for most colleagues.',
+        tags: ['Tasks'],
+        params: TaskParams,
+        extraResponses: codedErrorResponses({
+            403: '`READ_FORBIDDEN_FOR_ROLE` — the role cannot read records at all.',
+        }),
+        success: {
+            status: 200,
+            description: 'Up to 50 activity entries, newest first.',
+            schema: z.array(TaskActivityDTOSchema),
         },
     });
 

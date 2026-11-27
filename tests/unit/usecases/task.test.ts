@@ -120,6 +120,7 @@ import {
     bulkDeleteTask,
     addTaskLink,
     removeTaskLink,
+    getTaskActivity,
 } from '@/app-layer/usecases/task';
 import { AuditDetailsSchema } from '@/lib/audit/event-schema';
 import { createBulkTaskSummaryNotification } from '@/app-layer/notifications/bulk-task-summary';
@@ -1119,5 +1120,93 @@ describe('relationship audit payloads satisfy the canonical schema (#2109)', () 
 
         await expect(removeTaskLink(makeRequestContext('EDITOR'), 'link-foreign')).rejects.toThrow();
         expect(mockLog).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * The activity read selects a NARROW field list — #3264.
+ *
+ * It used `include: { user: { select: { id, name, email } } }` and the route
+ * returned the rows unmapped, so anything passing `assertCanReadTasks` — which
+ * includes READER and the deliberately-confined MECHANISATOR — received the
+ * actor's EMAIL plus the whole `AuditLog` row: `diffJson` (before and after of
+ * a Task, whose `description` and `resolution` are encrypted columns, at values
+ * since edited away), `detailsJson`, `metadataJson`, `recordIds`, `details`,
+ * and the hash chain's `entryHash` / `previousHash`.
+ *
+ * Asserted on the QUERY rather than on a mapped result, because the query is
+ * where the fix lives: `email` is an `ENCRYPTED_FIELDS` column, so not
+ * selecting it means the client extension never decrypts it. A post-read
+ * mapper would produce the same payload while still pulling the plaintext into
+ * memory, and these assertions would not tell the two apart.
+ */
+describe('getTaskActivity — the field list is the contract (#3264)', () => {
+    /** Capture the `findMany` argument the usecase builds. */
+    async function captureQuery(): Promise<Record<string, any>> {
+        let arg: Record<string, any> | undefined;
+        const db = {
+            auditLog: {
+                findMany: async (a: Record<string, any>) => {
+                    arg = a;
+                    return [];
+                },
+            },
+        };
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(db as never));
+        await getTaskActivity(makeRequestContext('READER'), 'task-1');
+        expect(arg).toBeDefined();
+        return arg!;
+    }
+
+    it('uses `select`, never `include`', () => {
+        // `include` is what pulled the whole row. The two are mutually
+        // exclusive in Prisma, so this is the structural half of the fix.
+        return captureQuery().then((q) => {
+            expect(q.select).toBeDefined();
+            expect(q.include).toBeUndefined();
+        });
+    });
+
+    it('selects exactly the four fields the activity list renders', async () => {
+        const q = await captureQuery();
+        expect(Object.keys(q.select).sort()).toEqual(['action', 'createdAt', 'id', 'user']);
+    });
+
+    it('does NOT select the actor email', async () => {
+        const q = await captureQuery();
+        expect(Object.keys(q.select.user.select).sort()).toEqual(['id', 'name']);
+        expect(q.select.user.select.email).toBeUndefined();
+        // The whole serialised query, in case a future shape nests it
+        // somewhere these key checks would miss.
+        expect(JSON.stringify(q)).not.toContain('email');
+    });
+
+    it('does NOT select the audit internals', async () => {
+        const q = await captureQuery();
+        for (const forbidden of [
+            'diffJson', 'detailsJson', 'metadataJson', 'recordIds',
+            'details', 'entryHash', 'previousHash',
+        ]) {
+            expect(q.select[forbidden]).toBeUndefined();
+            expect(JSON.stringify(q)).not.toContain(forbidden);
+        }
+    });
+
+    it('CONTROL — it still selects the actor NAME, so the list is not empty', async () => {
+        // Without this, stripping the user relation entirely would satisfy
+        // every assertion above. `User.name` stays deliberately: this is a
+        // tenant surface whose readers already see each other by that name,
+        // and requiring a published `PersonProfile.displayName` would render a
+        // nameless placeholder for nearly everybody (agrent-ios, 2026-11-27).
+        const q = await captureQuery();
+        expect(q.select.user.select.name).toBe(true);
+        expect(q.select.action).toBe(true);
+    });
+
+    it('CONTROL — it is still bounded and newest-first', async () => {
+        const q = await captureQuery();
+        expect(q.take).toBe(50);
+        expect(q.orderBy).toEqual({ createdAt: 'desc' });
+        expect(q.where).toMatchObject({ entity: 'Task', entityId: 'task-1' });
     });
 });

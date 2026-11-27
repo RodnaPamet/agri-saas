@@ -2548,7 +2548,7 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/activity",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/assign",
