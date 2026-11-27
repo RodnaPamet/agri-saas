@@ -23,31 +23,74 @@ function normalizePurchaseDate(value: unknown): Date | null | undefined {
     return new Date(value as string);
 }
 
+/**
+ * `includeDeleted` is a filter whose permission tier is HIGHER than the read
+ * it rides on, and BOTH list paths go through this one function (#3272).
+ *
+ * Not inlined at each call site on purpose. Two spellings of one permission
+ * rule is how #1664 ended up enforced on one path and not the other, and the
+ * failure direction here is privilege: a missing check would let any READER
+ * see every soft-deleted asset on the farm. The flag used to be the sole
+ * argument to a separate `listAssetsWithDeleted`, which made the gate
+ * obvious; folding it into the filters is what removes the silent
+ * filter-dropping, so the gate has to be re-stated somewhere unmissable.
+ *
+ * `assertCanRead` still runs first on both paths — this is additive, not a
+ * replacement, so the ordinary refusal for a non-reader is unchanged.
+ */
+function assertMayIncludeDeleted(
+    ctx: RequestContext,
+    filters?: { includeDeleted?: boolean },
+): void {
+    if (!filters?.includeDeleted) return;
+    assertCanAdmin(ctx);
+}
+
+/**
+ * B7 — attach unified linked-task counts (TaskLink ASSET) so the list page
+ * can show a Tasks column, matching Practices.
+ *
+ * Shared by both list paths since #3272. The paginated branch returned rows
+ * without these two fields, so a client that started paging silently lost
+ * the counts it had while unpaged.
+ */
+async function withTaskCounts<T extends { id: string }>(
+    db: Parameters<typeof WorkItemRepository.countLinkedToEntities>[0],
+    ctx: RequestContext,
+    rows: T[],
+): Promise<(T & { taskTotal: number; taskDone: number })[]> {
+    const counts = await WorkItemRepository.countLinkedToEntities(
+        db,
+        ctx,
+        'ASSET' as TaskLinkEntityType,
+        rows.map((r) => r.id),
+    );
+    return rows.map((r) => ({
+        ...r,
+        taskTotal: counts.get(r.id)?.total ?? 0,
+        taskDone: counts.get(r.id)?.done ?? 0,
+    }));
+}
+
 export async function listAssets(ctx: RequestContext, filters?: AssetFilters) {
     assertCanRead(ctx);
+    assertMayIncludeDeleted(ctx, filters);
     return runInTenantContext(ctx, async (db) => {
         const rows = await AssetRepository.list(db, ctx, filters);
-        // B7 — attach unified linked-task counts (TaskLink ASSET) so the
-        // list page can show a Tasks column, matching Practices.
-        const counts = await WorkItemRepository.countLinkedToEntities(
-            db,
-            ctx,
-            'ASSET' as TaskLinkEntityType,
-            rows.map((r: { id: string }) => r.id),
-        );
-        return rows.map((r) => ({
-            ...r,
-            taskTotal: counts.get(r.id)?.total ?? 0,
-            taskDone: counts.get(r.id)?.done ?? 0,
-        }));
+        return withTaskCounts(db, ctx, rows as { id: string }[]);
     });
 }
 
 export async function listAssetsPaginated(ctx: RequestContext, params: AssetListParams) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
-        AssetRepository.listPaginated(db, ctx, params)
-    );
+    assertMayIncludeDeleted(ctx, params.filters);
+    return runInTenantContext(ctx, async (db) => {
+        const page = await AssetRepository.listPaginated(db, ctx, params);
+        return {
+            ...page,
+            items: await withTaskCounts(db, ctx, page.items as { id: string }[]),
+        };
+    });
 }
 
 /**
@@ -279,7 +322,6 @@ export async function bulkDeleteAsset(
 // ─── Restore / Purge / Include Deleted ───
 
 import { restoreEntity, purgeEntity } from './soft-delete-operations';
-import { withDeleted } from '@/lib/soft-delete';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 
 export async function restoreAsset(ctx: RequestContext, id: string) {
@@ -290,11 +332,21 @@ export async function purgeAsset(ctx: RequestContext, id: string) {
     return purgeEntity(ctx, 'Asset', id);
 }
 
-export async function listAssetsWithDeleted(ctx: RequestContext) {
-    assertCanAdmin(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.asset.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const } }))
-    );
+/**
+ * RETIRED by #3272 — `listAssets(ctx, { includeDeleted: true })` replaces it.
+ *
+ * It took ONLY a ctx, which is what made the defect inevitable: the route had
+ * no way to pass the caller's filters, so it dropped them. It was also
+ * unbounded (no `take:`) and returned a bare row with neither the resolved
+ * `ownerUser` nor the task counts, so one path served three row shapes.
+ *
+ * Kept as a thin delegate rather than deleted, because the ADMIN gate is the
+ * property its tests pin and the name is the clearest statement of it. The
+ * filters are now honoured, the read is capped at `ASSET_LIST_CAP`, and the
+ * row shape matches every other branch.
+ */
+export async function listAssetsWithDeleted(ctx: RequestContext, filters?: AssetFilters) {
+    return listAssets(ctx, { ...filters, includeDeleted: true });
 }
 
 /**

@@ -301,12 +301,92 @@ describe('purgeAsset', () => {
     });
 });
 
+/**
+ * `includeDeleted` is a FILTER with an ADMIN gate (#3272).
+ *
+ * It used to be the sole argument of a separate `listAssetsWithDeleted`,
+ * where the gate was obvious because the function existed to carry it. Now
+ * that it rides the ordinary filter object, the gate is a line inside a read
+ * that every reader is allowed to call — so it is the kind of check that can
+ * be deleted during a refactor with nothing else failing, and the failure
+ * direction is privilege.
+ *
+ * Both list paths are asserted, each with a POSITIVE control in the same
+ * breath: a READER must still be able to run the ordinary list. Without that
+ * control, "refuses a reader" is satisfied perfectly by a read that refuses
+ * everybody.
+ */
+describe('includeDeleted is admin-gated on BOTH list paths', () => {
+    beforeEach(() => {
+        (AssetRepository.list as jest.Mock).mockResolvedValue([]);
+        (AssetRepository.listPaginated as jest.Mock).mockResolvedValue({
+            items: [],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        });
+        // `countLinkedToEntities` is NOT mocked in this file — it runs for
+        // real against `mockDb.taskLink.findMany`, which defaults to [], so
+        // the counts resolve to 0.
+    });
+
+    it('the flat read refuses a READER asking for deleted rows', async () => {
+        await expect(listAssets(readerCtx, { includeDeleted: true })).rejects.toBeDefined();
+    });
+
+    it('the flat read refuses an AUDITOR asking for deleted rows', async () => {
+        await expect(listAssets(auditorCtx, { includeDeleted: true })).rejects.toBeDefined();
+    });
+
+    it('the PAGINATED read refuses a READER too', async () => {
+        await expect(
+            listAssetsPaginated(readerCtx, { filters: { includeDeleted: true } }),
+        ).rejects.toBeDefined();
+    });
+
+    it('control — a READER can still run the ordinary list', async () => {
+        await expect(listAssets(readerCtx, { q: 'fendt' })).resolves.toEqual([]);
+    });
+
+    it('control — a READER can still page the ordinary list', async () => {
+        await expect(
+            listAssetsPaginated(readerCtx, { filters: { q: 'fendt' } }),
+        ).resolves.toMatchObject({ items: [] });
+    });
+
+    it('an ADMIN is allowed through', async () => {
+        await expect(listAssets(adminCtx, { includeDeleted: true })).resolves.toEqual([]);
+    });
+});
+
 describe('listAssetsWithDeleted', () => {
-    it('admin-gated + uses withDeleted wrapper', async () => {
-        (mockDb.asset.findMany as jest.Mock).mockResolvedValue([{ id: 'a-1' }]);
+    beforeEach(() => {
+        (AssetRepository.list as jest.Mock).mockResolvedValue([{ id: 'a-1' }]);
+    });
+
+    it('sets the filter rather than reaching for its own query (#3272)', async () => {
         await listAssetsWithDeleted(adminCtx);
-        const args = (mockDb.asset.findMany as jest.Mock).mock.calls[0][0];
-        expect(args._withDeleted).toBe(true);
+        expect(AssetRepository.list).toHaveBeenCalledWith(
+            expect.anything(),
+            adminCtx,
+            expect.objectContaining({ includeDeleted: true }),
+        );
+    });
+
+    it('PASSES THE CALLER FILTERS THROUGH — the whole point of #3272', async () => {
+        await listAssetsWithDeleted(adminCtx, { q: 'fendt', type: ['TRACTOR'] });
+        expect(AssetRepository.list).toHaveBeenCalledWith(
+            expect.anything(),
+            adminCtx,
+            expect.objectContaining({
+                includeDeleted: true,
+                q: 'fendt',
+                type: ['TRACTOR'],
+            }),
+        );
+    });
+
+    it('returns the SAME row shape as every other branch — task counts attached', async () => {
+        const rows = await listAssetsWithDeleted(adminCtx);
+        expect(rows[0]).toMatchObject({ id: 'a-1', taskTotal: 0, taskDone: 0 });
     });
 
     it('rejects AUDITOR', async () => {

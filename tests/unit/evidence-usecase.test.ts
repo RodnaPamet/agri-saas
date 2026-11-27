@@ -379,19 +379,106 @@ describe('purgeEvidence', () => {
 
 // ─── listEvidenceWithDeleted (admin only) ──────────────────────────
 
+/**
+ * `includeDeleted` is a FILTER with an ADMIN gate (#3272).
+ *
+ * It used to be the sole argument of a separate `listEvidenceWithDeleted`,
+ * where the gate was obvious because the function existed to carry it. Now
+ * that it rides the ordinary filter object, the gate is a line inside a read
+ * every reader may call — deletable in a refactor with nothing else failing,
+ * and the failure direction is privilege.
+ *
+ * Each refusal is paired with a POSITIVE control, because "refuses a reader"
+ * is satisfied perfectly by a read that refuses everybody.
+ */
+describe('includeDeleted is admin-gated on BOTH list paths', () => {
+    beforeEach(() => {
+        (EvidenceRepository.list as jest.Mock).mockResolvedValue([]);
+        (EvidenceRepository.listPaginated as jest.Mock).mockResolvedValue({
+            items: [],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        });
+    });
+
+    it('the flat read refuses a READER asking for deleted rows', async () => {
+        await expect(listEvidence(readerCtx, { includeDeleted: true })).rejects.toBeDefined();
+    });
+
+    it('the flat read refuses an AUDITOR asking for deleted rows', async () => {
+        await expect(listEvidence(auditorCtx, { includeDeleted: true })).rejects.toBeDefined();
+    });
+
+    it('the PAGINATED read refuses a READER too', async () => {
+        await expect(
+            listEvidencePaginated(readerCtx, { filters: { includeDeleted: true } }),
+        ).rejects.toBeDefined();
+    });
+
+    it('control — a READER can still run the ordinary list', async () => {
+        await expect(listEvidence(readerCtx, { q: 'invoice' })).resolves.toEqual([]);
+    });
+
+    it('control — a READER can still page the ordinary list', async () => {
+        await expect(
+            listEvidencePaginated(readerCtx, { filters: { q: 'invoice' } }),
+        ).resolves.toMatchObject({ items: [] });
+    });
+
+    it('an ADMIN is allowed through', async () => {
+        await expect(listEvidence(adminCtx, { includeDeleted: true })).resolves.toEqual([]);
+    });
+});
+
 describe('listEvidenceWithDeleted', () => {
+    beforeEach(() => {
+        (EvidenceRepository.list as jest.Mock).mockResolvedValue([
+            { id: 'ev-1' },
+            { id: 'ev-2', deletedAt: new Date() },
+        ]);
+    });
+
     it('returns evidence rows including soft-deleted under ADMIN', async () => {
-        (mockDb.evidence.findMany as jest.Mock).mockResolvedValue([{ id: 'ev-1' }, { id: 'ev-2', deletedAt: new Date() }]);
         const rows = await listEvidenceWithDeleted(adminCtx);
         expect(rows).toHaveLength(2);
-        // The withDeleted helper is invoked (annotated for the test mock)
-        const findManyArgs = (mockDb.evidence.findMany as jest.Mock).mock.calls[0][0];
-        expect(findManyArgs._withDeleted).toBe(true);
+    });
+
+    it('sets the filter rather than reaching for its own query (#3272)', async () => {
+        await listEvidenceWithDeleted(adminCtx);
+        expect(EvidenceRepository.list).toHaveBeenCalledWith(
+            expect.anything(),
+            adminCtx,
+            expect.objectContaining({ includeDeleted: true }),
+            expect.anything(),
+        );
+    });
+
+    it('PASSES THE CALLER FILTERS THROUGH — the whole point of #3272', async () => {
+        await listEvidenceWithDeleted(adminCtx, { q: 'invoice', folder: 'Сертификати' });
+        expect(EvidenceRepository.list).toHaveBeenCalledWith(
+            expect.anything(),
+            adminCtx,
+            expect.objectContaining({
+                includeDeleted: true,
+                q: 'invoice',
+                folder: 'Сертификати',
+            }),
+            expect.anything(),
+        );
+    });
+
+    it('HONOURS THE CALLER CAP, so the trash read is bounded', async () => {
+        await listEvidenceWithDeleted(adminCtx, undefined, { take: 51 });
+        expect(EvidenceRepository.list).toHaveBeenCalledWith(
+            expect.anything(),
+            adminCtx,
+            expect.objectContaining({ includeDeleted: true }),
+            expect.objectContaining({ take: 51 }),
+        );
     });
 
     it('rejects AUDITOR (admin gate, not audit gate)', async () => {
         await expect(listEvidenceWithDeleted(auditorCtx)).rejects.toBeDefined();
-        expect(mockDb.evidence.findMany).not.toHaveBeenCalled();
+        expect(EvidenceRepository.list).not.toHaveBeenCalled();
     });
 
     it('rejects READER (admin gate)', async () => {

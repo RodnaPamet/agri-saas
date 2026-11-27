@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listAssets, listAssetsPaginated, createAsset, listAssetsWithDeleted } from '@/app-layer/usecases/asset';
+import { listAssets, listAssetsPaginated, createAsset } from '@/app-layer/usecases/asset';
 import { withValidatedBody } from '@/lib/validation/route';
 import { CreateAssetSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -31,33 +31,34 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = AssetQuerySchema.parse(sp);
 
-    if (query.includeDeleted === 'true') {
-        const assets = await listAssetsWithDeleted(ctx);
-        return jsonResponse(assets);
-    }
-
-    const hasPagination = query.limit || query.cursor;
-    if (hasPagination) {
-        const result = await listAssetsPaginated(ctx, {
-            limit: query.limit,
-            cursor: query.cursor,
-            filters: {
-                type: query.type,
-                status: query.status,
-                criticality: query.criticality,
-                q: query.q,
-            },
-        });
-        return jsonResponse(result);
-    }
-
-    // Backward compat: return flat array
-    const assets = await listAssets(ctx, {
+    // #3272 — ONE filter set, built once, honoured by both branches.
+    //
+    // `includeDeleted` used to be an early `return` ABOVE this line, so a
+    // caller sending it alongside a filter, a search term or a cursor got
+    // every asset on the farm and no indication that its parameters had been
+    // discarded. It is a filter now; the ADMIN gate it carries lives in the
+    // usecase (`assertMayIncludeDeleted`).
+    const filters = {
         type: query.type,
         status: query.status,
         criticality: query.criticality,
         q: query.q,
-    });
+        includeDeleted: query.includeDeleted === 'true',
+    };
+
+    // The remaining branch is about the ENVELOPE only, and both sides now
+    // return the same row shape.
+    if (query.limit || query.cursor) {
+        const result = await listAssetsPaginated(ctx, {
+            limit: query.limit,
+            cursor: query.cursor,
+            filters,
+        });
+        return jsonResponse(result);
+    }
+
+    // Backward compat: a bare array, capped at ASSET_LIST_CAP.
+    const assets = await listAssets(ctx, filters);
     return jsonResponse(assets);
 });
 
