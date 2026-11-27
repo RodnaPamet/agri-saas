@@ -49,7 +49,7 @@ export function registerSessionRevocationPaths(registry: OpenAPIRegistry): void 
             + 'are building a "sign out this device" affordance, this route is not it and '
             + 'nothing else is either — see #3080\'s notes. Label the control accordingly '
             + '("sign out everywhere") rather than implying one device.'
-            + '\n\nThe only route of the three with NO permission gate: any member may end '
+            + '\n\nThe only route of the three with NO permission gate — any member may end '
             + 'their own sessions, which is correct — a way out must not require a '
             + 'privilege.'
             + PLATFORM_WIDE,
