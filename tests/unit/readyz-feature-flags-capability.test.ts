@@ -53,7 +53,10 @@ jest.mock('@/lib/redis', () => ({
 // is a plain `as const` array with no side effects and nothing to mock. It is
 // the registry the capability itself reads, which is the point of deriving
 // from it rather than restating it.
-import { REFERENCED_FLAG_KEYS } from '@/lib/feature-flag-keys';
+import {
+    DELIBERATELY_ROWLESS_FLAG_KEYS,
+    REFERENCED_FLAG_KEYS,
+} from '@/lib/feature-flag-keys';
 
 function loadRouteFresh() {
     jest.resetModules();
@@ -77,6 +80,13 @@ interface ProbeBody {
         featureFlags: {
             state: string;
             missingRows: string[];
+            // #2841 — a decided absence is reported here rather than as a
+            // missing row. Declared so the assertions below are typechecked
+            // against the real payload: the jest run passed without it,
+            // because ts-jest only compiles the files a test imports and this
+            // shape is hand-written.
+            dormantRows: string[];
+            staleDormantEntries: string[];
             referenced: number;
             orphanRows: number;
         };
@@ -168,8 +178,24 @@ describe('GET /api/readyz — capabilities.featureFlags is REPORTED, never GATIN
         const { status, body } = await probe();
 
         expect(body.capabilities.featureFlags.state).toBe('incomplete');
+        // Narrowed by #2841: a DECIDED absence is reported under
+        // `dormantRows` instead, so the complement derived here excludes the
+        // deliberately-rowless keys. The state is still `incomplete`, which
+        // is the point of this case — the two rows that mattered in the
+        // measured state were nobody's decision.
         expect(body.capabilities.featureFlags.missingRows).toEqual(
-            [...REFERENCED_FLAG_KEYS].filter((k) => !PRESENT_ON_2026_10_24.includes(k)).sort(),
+            [...REFERENCED_FLAG_KEYS]
+                .filter(
+                    (k) =>
+                        !PRESENT_ON_2026_10_24.includes(k) &&
+                        !(DELIBERATELY_ROWLESS_FLAG_KEYS as readonly string[]).includes(k),
+                )
+                .sort(),
+        );
+        // The decided pair is still NAMED rather than dropped, so this
+        // endpoint does not go quiet about a dark surface.
+        expect([...body.capabilities.featureFlags.dormantRows].sort()).toEqual(
+            [...DELIBERATELY_ROWLESS_FLAG_KEYS].sort(),
         );
         // Still names the two that mattered, so the derivation cannot quietly
         // become an empty set.
