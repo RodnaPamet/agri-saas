@@ -9507,6 +9507,212 @@ exports[`API contract — per-schema snapshots schema: EvidencePageInfo 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EvidencePurgeResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "purged": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "purged"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceRetentionMetrics 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "expiringCount": {
+      "type": "integer",
+      "description": "Records whose \`retentionUntil\` falls in the next 30 days — a FIXED window, not the \`?days=\` one the expiring LIST takes, so the card and that list answer different questions whenever a caller passes \`days\`."
+    },
+    "archivedCount": {
+      "type": "integer",
+      "description": "Archived records, with NO condition on expiry — so it counts manual archives alongside swept ones and is the complement of neither sibling."
+    },
+    "expiredCount": {
+      "type": "integer",
+      "description": "Expired records that are **still not archived**.\\n\\nRead that clause carefully before rendering this as \\"Expired\\": the sweep sets \`expiredAt\` and \`isArchived\` in the same write, so every record it processes leaves this count at the moment it joins \`GET /retention/expired\`. In a farm whose sweep is up to date this is ZERO while that list is long, which looks like a broken counter and is tracked as **#3281**. It is a sweep BACKLOG gauge, whatever its name suggests."
+    }
+  },
+  "required": [
+    "expiringCount",
+    "archivedCount",
+    "expiredCount"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceRetentionRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "An explicit expiry instant, or null to clear it. **IGNORED when the effective policy is \`DAYS_AFTER_UPLOAD\`** — see the policy field."
+    },
+    "retentionPolicy": {
+      "type": "string",
+      "enum": [
+        "NONE",
+        "FIXED_DATE",
+        "DAYS_AFTER_UPLOAD"
+      ],
+      "description": "How the expiry is decided. \`FIXED_DATE\` honours \`retentionUntil\` as sent. \`DAYS_AFTER_UPLOAD\` DERIVES it as \`createdAt + retentionDays\` and overwrites anything you sent in \`retentionUntil\` in the same request — the derived value wins silently, so do not send both and expect yours to stick. \`NONE\` leaves the record with no expiry.\\n\\nThe derivation also fires when the STORED policy is already \`DAYS_AFTER_UPLOAD\` and you send only \`retentionDays\`, which is how a change of cadence re-dates an existing record."
+    },
+    "retentionDays": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 36500,
+      "description": "Days after upload, 1–36500 (a century). Only consulted under \`DAYS_AFTER_UPLOAD\`; stored but inert under the other two policies."
+    }
+  },
+  "description": "Set or clear retention on one evidence record. Every field is optional and only the fields present are written."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceRetentionSweepRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "dryRun": {
+      "type": "boolean",
+      "description": "When true, report what WOULD be archived and write nothing. Note the response still carries \`archived\`, equal to \`scanned\` — it means \\"would archive\\", so read \`dryRun\` alongside it."
+    }
+  },
+  "description": "Run the retention sweep for this farm. ADMIN."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceRetentionSweepResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "scanned": {
+      "type": "integer",
+      "description": "Lapsed, unarchived records the sweep found."
+    },
+    "expired": {
+      "type": "integer"
+    },
+    "archived": {
+      "type": "integer",
+      "description": "How many were archived — or, on a DRY RUN, how many WOULD be: the field is set to \`scanned\` without anything being written. Read \`dryRun\` alongside it or you will be told work happened that did not."
+    },
+    "dryRun": {
+      "type": "boolean",
+      "description": "Present and true only on a dry run."
+    }
+  },
+  "required": [
+    "scanned",
+    "expired",
+    "archived"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceRetentionView 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "FILE",
+        "LINK",
+        "TEXT"
+      ]
+    },
+    "isArchived": {
+      "type": "boolean",
+      "description": "Set by the SWEEP as well as by the manual archive control, which is why a record can be archived without anybody having archived it."
+    },
+    "retentionPolicy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "NONE",
+        "FIXED_DATE",
+        "DAYS_AFTER_UPLOAD",
+        null
+      ]
+    },
+    "retentionDays": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When retention lapses. Under \`DAYS_AFTER_UPLOAD\` this is DERIVED by the server and not what a caller sent."
+    },
+    "expiredAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Stamped by the sweep when it first processes a lapsed record, and idempotent — a second sweep leaves an existing value alone, so this is when it was FIRST noticed rather than when retention lapsed. Those differ by however long the sweep took to run."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The base \`DAYS_AFTER_UPLOAD\` counts from — upload time, not the time the policy was set, so applying a 30-day policy to a year-old record expires it immediately."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "type",
+    "isArchived",
+    "retentionPolicy",
+    "retentionDays",
+    "retentionUntil",
+    "expiredAt",
+    "createdAt",
+    "updatedAt"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EvidenceReview 1`] = `
 "{
   "type": "object",

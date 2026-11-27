@@ -8,6 +8,11 @@
 import fs from 'fs';
 import path from 'path';
 
+import {
+    EvidenceRetentionSchema,
+    EvidenceRetentionSweepSchema,
+} from '@/lib/schemas';
+
 // ─── Expiry Computation ───
 
 describe('Evidence Retention — Expiry Computation', () => {
@@ -153,14 +158,54 @@ describe('Evidence Retention — Route Structure', () => {
         expect(violations).toEqual([]);
     });
 
-    test('sweep route uses Zod .strip()', () => {
-        const content = fs.readFileSync(path.join(routeDir, 'retention/sweep/route.ts'), 'utf-8');
-        expect(content).toContain('.strip()');
+    /**
+     * Both bodies STRIP unknown keys — asserted by EXECUTING the schema
+     * rather than by grepping the route file for `.strip()` (#3080).
+     *
+     * The previous form read the route's TEXT, so it graded WHERE the
+     * declaration lives rather than what it does. When the two schemas moved
+     * to `src/lib/schemas/` — which `request-body-declared-once` requires,
+     * since a documented path may not have a second hand-written copy of its
+     * body — the token left the route file, the property was entirely
+     * unchanged, and these tests failed anyway.
+     *
+     * Parsing is also strictly stronger: a `.strip()` present in the file but
+     * applied to the wrong object, or a schema later rebuilt without it,
+     * satisfies a text scan and fails this.
+     */
+    test('the retention body strips unknown keys', () => {
+        const parsed = EvidenceRetentionSchema.parse({
+            retentionPolicy: 'DAYS_AFTER_UPLOAD',
+            retentionDays: 30,
+            // Not in the schema. `.strip()` drops it; `.strict()` would throw;
+            // a passthrough schema would keep it.
+            sneakyExtra: 'should not survive',
+        });
+        expect(parsed).toEqual({
+            retentionPolicy: 'DAYS_AFTER_UPLOAD',
+            retentionDays: 30,
+        });
+        expect(parsed).not.toHaveProperty('sneakyExtra');
     });
 
-    test('retention route uses Zod .strip()', () => {
-        const content = fs.readFileSync(path.join(routeDir, '[id]/retention/route.ts'), 'utf-8');
-        expect(content).toContain('.strip()');
+    test('the sweep body strips unknown keys', () => {
+        const parsed = EvidenceRetentionSweepSchema.parse({
+            dryRun: true,
+            sneakyExtra: 'should not survive',
+        });
+        expect(parsed).toEqual({ dryRun: true });
+        expect(parsed).not.toHaveProperty('sneakyExtra');
+    });
+
+    test('CONTROL: both schemas still REFUSE a value of the wrong shape', () => {
+        // Without this, "strips unknown keys" is satisfied by a schema that
+        // accepts and discards EVERYTHING, which would be a weaker contract
+        // wearing a passing test's clothes.
+        expect(() => EvidenceRetentionSchema.parse({ retentionDays: 0 })).toThrow();
+        expect(() =>
+            EvidenceRetentionSchema.parse({ retentionPolicy: 'WHENEVER' }),
+        ).toThrow();
+        expect(() => EvidenceRetentionSweepSchema.parse({ dryRun: 'yes' })).toThrow();
     });
 });
 
