@@ -1449,17 +1449,17 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/files/{fileId}/download",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/imports",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/imports/{jobId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/metrics",
@@ -1489,7 +1489,7 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/uploads",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}",
@@ -2013,7 +2013,7 @@
     {
       "path": "/api/t/{tenantSlug}/knowledge",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/ask",
@@ -2023,7 +2023,7 @@
     {
       "path": "/api/t/{tenantSlug}/knowledge/categories",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/satellite-guide",
@@ -2038,32 +2038,32 @@
     {
       "path": "/api/t/{tenantSlug}/knowledge/{id}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/{id}/acknowledge",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/{id}/archive",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/{id}/publish",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/{id}/unarchive",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/{id}/versions",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/leases",

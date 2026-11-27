@@ -267,17 +267,25 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // `purge` is the only operation in this API that destroys stored BYTES.
 //
 // COUNTED from the file.
-// 161 → 153 (#3080): the knowledge base's ARTICLE surface — browse,
+// 161 → 157 (#3288, on main): the evidence BYTE routes — the multipart
+// upload, the ZIP import and its poll, and the download. That completed the
+// evidence domain at 21 of 21 paths.
+//
+// 157 → 149 (this branch): the knowledge base's ARTICLE surface — browse,
 // author, version, publish, archive/unarchive and the worker read-receipt.
 // Separate from `knowledge.paths.ts`, which documents «Почва»: a static
 // published guide with no lifecycle and nothing to author, where this is the
-// CMS. `ask` and `satellite-guide` stay baselined for now — `ask` is an LLM
+// CMS. `ask` and `satellite-guide` stay baselined — `ask` is an LLM
 // cost-and-abuse surface with its own permission gate, its own rate limit and
 // a grounded no-sources answer returned as a 200, and it earns its own
 // treatment rather than an appendix here.
 //
-// COUNTED from the file.
-const UNDOCUMENTED_CEILING = 153;
+// BOTH blocks kept and the value COUNTED from the merged baseline (149
+// entries), not carried from either side. I had written 153 on this branch,
+// which was 161 − 8 against a baseline that had since lost the four byte
+// routes — the same off-by-N the `toBe` below refuses, and the second time
+// this merge has produced it.
+const UNDOCUMENTED_CEILING = 149;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that

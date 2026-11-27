@@ -8732,6 +8732,61 @@
         "additionalProperties": {},
         "description": "Evidence record with the full review history attached. Returned by GET /evidence/{id}."
       },
+      "EvidenceImportAccepted": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "description": "The queue id to poll. Nothing has been extracted yet when this returns."
+      },
+      "EvidenceImportForm": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "A `.zip` archive. The EXTENSION is checked as well as the MIME type, and both must pass."
+          }
+        },
+        "required": [
+          "file"
+        ]
+      },
+      "EvidenceImportJob": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "The BullMQ job state — `waiting`, `active`, `completed`, `failed`, `delayed`. A STRING rather than an enum: it is the queue's vocabulary, not this API's, so a client needs a default arm."
+          },
+          "progress": {
+            "description": "Whatever the executor last reported through `updateProgress` — a number or an object of counters, and `0` before it has reported anything. Shape is the executor's, so treat it as opaque unless you own that job."
+          },
+          "result": {
+            "description": "BullMQ's `returnvalue`: the executor's full counters, present only once `state` is `completed`. Null otherwise — including while the job is running, so this is not a progress signal."
+          },
+          "failedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when `state` is `failed`. Null otherwise."
+          }
+        },
+        "required": [
+          "jobId",
+          "state",
+          "failedReason"
+        ]
+      },
       "EvidenceListItem": {
         "type": "object",
         "properties": {
@@ -9437,6 +9492,48 @@
         "required": [
           "success",
           "evidence"
+        ]
+      },
+      "EvidenceUploadForm": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "REQUIRED. A missing or non-File value is a 400 in the BARE error shape."
+          },
+          "title": {
+            "type": "string",
+            "description": "Defaults to the uploaded filename when omitted. Sanitised before storage."
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "assetId": {
+            "type": "string",
+            "description": "Attaching to an asset or a task is what makes the file downloadable by a READER later — see the download operation's provenance rule."
+          },
+          "category": {
+            "type": "string"
+          },
+          "folder": {
+            "type": "string",
+            "description": "Applied to the created record. Rides with the upload so a batch writes the same folder onto every row."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Free-text keeper."
+          },
+          "reviewCycle": {
+            "type": "string"
+          },
+          "nextReviewDate": {
+            "type": "string",
+            "description": "ISO 8601. A string on the form, like every field here."
+          }
+        },
+        "required": [
+          "file"
         ]
       },
       "ExchangeInquiry": {
@@ -96876,6 +96973,625 @@
           },
           "404": {
             "description": "No such record on this farm, OR it has not been soft-deleted first. Uncoded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/uploads": {
+      "post": {
+        "operationId": "uploadEvidenceFile",
+        "summary": "Upload a file as evidence",
+        "description": "The ONLY way to create `type: FILE` evidence. `POST /evidence` creates LINK and TEXT records and would leave a FILE record with no bytes behind it.\n\n**The stored bytes are not the bytes you sent, and the pipeline is worth knowing in order:**\n\n1. The declared `Content-Type` is checked against the allowlist → `FILE_TYPE_NOT_ALLOWED`.\n2. The BYTES are sniffed and the resolved type is checked again, so a caller that mislabels a file is refused on content rather than on its claim — the same code with `reason: \"content\"`. A mismatch that is still allowed is logged and proceeds.\n3. The buffer is **AV-scanned before** the record is marked stored, and ahead of the strippers below — a decoder fed caller-controlled bytes wants a scan in front of it.\n4. **EXIF/GPS is stripped from images.** This is the live case, not a hypothetical: a farmer photographs a field from the field, and the GPS tag in that photo is the parcel's location.\n5. **Document metadata is stripped from PDFs**, and this step can REFUSE: a PDF whose bytes cannot be parsed is a 400 rather than being stored unstripped, because a privacy property that degrades silently to no privacy is not one. The two strippers are mutually exclusive by resolved type and an archive passes through both untouched.\n\nSo the `sha256` on the record digests the STORED bytes. A client cannot pre-compute it from the file it uploaded, and for an image or a PDF it will not match.\n\n**Identical bytes are DEDUPLICATED.** If a STORED file with the same sha256 already exists for this farm, the new object is deleted and the existing `FileRecord` is reused — so two evidence records can share one file, and uploading the same document twice costs one copy. Note the dedup is on the bytes AFTER stripping, so two photos differing only in EXIF dedupe to one.\n\nGated on the `upload` capability, so a past-due tenant is refused here rather than at a shared choke point — this route was one of four that did not reach the gate everything was assumed to pass through.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm these bytes belong to."
+            },
+            "required": true,
+            "description": "The farm these bytes belong to.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceUploadForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created evidence record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evidence"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The BARE `{\"error\": \"...\"}` shape, NOT the envelope: `file` was missing from the form or was not a File.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`PAST_DUE_RESTRICTED` — the farm owes payment and the `upload` capability is withheld. Read-only members are refused with the ordinary permission code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/imports": {
+      "post": {
+        "operationId": "importEvidenceArchive",
+        "summary": "Stage a ZIP of evidence for background extraction",
+        "description": "Accepts the archive, stages it, enqueues a job, and returns — it does NOT extract anything. A ZIP can hold hundreds of files and decompressing it inside the request would stall the runtime for minutes, so the contract here is \"accept, stage, enqueue\" and the worker does the work. Poll `GET /evidence/imports/{jobId}`.\n\nNeeds the `evidence.upload` **capability**, not a role tier — and that check answers in the BARE error shape.\n\nFour cheap refusals run before a byte is written, each with its own status so the caller learns something more useful than \"rejected\":\n\n- an empty archive → **400**\n- over the **100 MB** cap → **413**\n- a filename not ending `.zip` → **415**\n- a MIME outside `application/zip`, `application/x-zip-compressed` and `application/octet-stream` → **415**. The third is admitted because some browsers label a `.zip` that way, which is why the extension is checked too.\n\nThe past-due gate runs AFTER those and before the write: a 415 for a file that would be refused anyway costs the caller nothing and tells them more than a billing error would.\n\nThe worker re-asserts the permission when it builds its own context, so a revocation between accepting and running still bounces the import.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm these bytes belong to."
+            },
+            "required": true,
+            "description": "The farm these bytes belong to.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceImportForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted and enqueued. Poll the job for progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceImportAccepted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The BARE `{\"error\": \"...\"}` shape throughout this route: `file` missing or not a File, or the archive is empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`evidence.upload` capability required — bare shape, no code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The archive exceeds the 100 MB cap. Bare shape.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Not a `.zip` by extension, or a MIME type outside the accepted three. Bare shape.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/imports/{jobId}": {
+      "get": {
+        "operationId": "getEvidenceImportJob",
+        "summary": "Poll a staged import",
+        "description": "Built to be polled by the upload dialog so an operator can watch progress without waiting for completion.\n\n**A job belonging to another farm answers the SAME 404 as one that does not exist.** The handler compares the job payload's `tenantId` against the request context and refuses on mismatch with an identical body, so job ids cannot be probed across tenants — the queue is global and its ids are not secret.\n\nErrors here are the BARE `{\"error\": \"...\"}` shape, including the 404, so there is no code distinguishing \"wrong farm\" from \"no such job\". That is the point.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm these bytes belong to."
+            },
+            "required": true,
+            "description": "The farm these bytes belong to.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "From the import response."
+            },
+            "required": true,
+            "description": "From the import response.",
+            "name": "jobId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job's state, progress and — once completed — its counters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceImportJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`evidence.upload` capability required. Bare shape.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job, OR the job belongs to another farm. Deliberately indistinguishable, and bare.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/files/{fileId}/download": {
+      "get": {
+        "operationId": "downloadEvidenceFile",
+        "summary": "Download an evidence file",
+        "description": "Serves the bytes — and **answers in one of two entirely different ways depending on the storage provider**, which a client must handle:\n\n- **S3**: a **302** to a presigned URL. No body.\n- **Local disk**: a **200** streaming the file, with `Content-Type`, `Content-Length` and `Content-Disposition`.\n\nBoth carry `X-Content-SHA256` — the digest of the STORED bytes, which for an image or a PDF is not the digest of what was uploaded, because the strippers rewrote it. Both are `Cache-Control: private`; the redirect adds `no-store` because a presigned URL is a bearer credential in a query string.\n\n`Content-Disposition` keeps the real filename in RFC 6266 `filename*` with a TRANSLITERATED ASCII fallback. The sanitiser it replaced mapped every non-ASCII character to `_`, so «Фактура-2026.pdf» downloaded as `_______-2026.pdf` and two invoices with different Cyrillic names downloaded under the SAME name.\n\n**Three gates, and the second and third are evidence-specific:**\n\n1. The file must be `STORED` — `FILE_NOT_DOWNLOADABLE` otherwise, which also covers a record whose upload never completed.\n2. The AV verdict. `INFECTED` is always refused; `PENDING` is refused only in strict mode. This is a SECOND, inline implementation of the policy rather than the shared `isDownloadAllowed`, and both agree today — they refuse INFECTED and admit SKIPPED.\n3. **Provenance.** A caller WITHOUT write permission may only download evidence attached to an asset or a task; unattached evidence is refused with a sentence telling them to ask an administrator to attach it. A writer skips this gate entirely.\n\nA soft-deleted evidence row answers `EVIDENCE_DELETED` even though the FILE is still stored — the record's state governs, not the object's.\n\nEvery success writes an `EVIDENCE_DOWNLOADED` audit entry.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm these bytes belong to."
+            },
+            "required": true,
+            "description": "The farm these bytes belong to.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "A `FileRecord` id — `fileRecordId` on the evidence row, NOT the evidence id."
+            },
+            "required": true,
+            "description": "A `FileRecord` id — `fileRecordId` on the evidence row, NOT the evidence id.",
+            "name": "fileId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file bytes (local provider). An S3-backed deployment answers 302 instead, with no body.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "The stored bytes. The real `Content-Type` is the file's own, not this one — this media type is the spec's way of saying \"opaque bytes of whatever type the record carries\"."
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "S3 deployments only: a redirect to a presigned URL, with no body. Carries `X-Content-SHA256` and `Cache-Control: private, no-cache, no-store` — `no-store` because a presigned URL is a bearer credential in a query string."
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`INFECTED` by the scanner; or `PENDING` under strict scanning; or the provenance rule above refused a non-writer. Three different sentences, all 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`FILE_NOT_FOUND`, `FILE_NOT_DOWNLOADABLE` (not in STORED state) or `EVIDENCE_DELETED` (the record was soft-deleted while the object remains).",
             "content": {
               "application/json": {
                 "schema": {

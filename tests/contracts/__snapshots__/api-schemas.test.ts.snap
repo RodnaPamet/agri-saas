@@ -9149,6 +9149,70 @@ exports[`API contract — per-schema snapshots schema: EvidenceDetail 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EvidenceImportAccepted 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "jobId"
+  ],
+  "description": "The queue id to poll. Nothing has been extracted yet when this returns."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceImportForm 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary",
+      "description": "A \`.zip\` archive. The EXTENSION is checked as well as the MIME type, and both must pass."
+    }
+  },
+  "required": [
+    "file"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceImportJob 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "description": "The BullMQ job state — \`waiting\`, \`active\`, \`completed\`, \`failed\`, \`delayed\`. A STRING rather than an enum: it is the queue's vocabulary, not this API's, so a client needs a default arm."
+    },
+    "progress": {
+      "description": "Whatever the executor last reported through \`updateProgress\` — a number or an object of counters, and \`0\` before it has reported anything. Shape is the executor's, so treat it as opaque unless you own that job."
+    },
+    "result": {
+      "description": "BullMQ's \`returnvalue\`: the executor's full counters, present only once \`state\` is \`completed\`. Null otherwise — including while the job is running, so this is not a progress signal."
+    },
+    "failedReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Set when \`state\` is \`failed\`. Null otherwise."
+    }
+  },
+  "required": [
+    "jobId",
+    "state",
+    "failedReason"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EvidenceListItem 1`] = `
 "{
   "type": "object",
@@ -9900,6 +9964,51 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateResult 1`] 
   "required": [
     "success",
     "evidence"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceUploadForm 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary",
+      "description": "REQUIRED. A missing or non-File value is a 400 in the BARE error shape."
+    },
+    "title": {
+      "type": "string",
+      "description": "Defaults to the uploaded filename when omitted. Sanitised before storage."
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "assetId": {
+      "type": "string",
+      "description": "Attaching to an asset or a task is what makes the file downloadable by a READER later — see the download operation's provenance rule."
+    },
+    "category": {
+      "type": "string"
+    },
+    "folder": {
+      "type": "string",
+      "description": "Applied to the created record. Rides with the upload so a batch writes the same folder onto every row."
+    },
+    "owner": {
+      "type": "string",
+      "description": "Free-text keeper."
+    },
+    "reviewCycle": {
+      "type": "string"
+    },
+    "nextReviewDate": {
+      "type": "string",
+      "description": "ISO 8601. A string on the form, like every field here."
+    }
+  },
+  "required": [
+    "file"
   ]
 }"
 `;
