@@ -89,6 +89,35 @@ export interface AcknowledgedBreakingChange {
  */
 export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
     {
+        kind: 'ref-retargeted',
+        schema: 'AssetPage',
+        property: 'items[]',
+        contractVersion: 3,
+        pr: 3276,
+        date: '2026-11-27',
+        why:
+            'A response WIDENING, not a narrowing: `AssetListRow` is `Asset` plus the '
+            + 'two required task-count numbers, so every property a client decoded at '
+            + 'this path before is still there and two more arrive. Owner-approved '
+            + '2026-11-27 as part of #3272 \u2014 the ruling was "add the missing fields", '
+            + 'and retargeting this ref is the mechanical consequence of doing so.\n\n'
+            + 'It is reported because the classifier DELIBERATELY does not resolve '
+            + '`$ref`s, so it cannot compare the two targets and see that one contains '
+            + 'the other \u2014 `openapi-breaking.ts` states that choice and the gaps it '
+            + 'leaves, naming `ref-retargeted` as one of them. This is that gap, not a '
+            + 'classifier bug, which is why the entry is here rather than a patch to the '
+            + 'scanner: loosening a safety gate to admit my own change is the wrong '
+            + 'direction even when the change is additive.\n\n'
+            + 'The window is tiny and measurable: the base it breaks against is the spec '
+            + '#3274 merged roughly two hours earlier, where the paginated branch was '
+            + 'documented as returning `Asset` because that is what it then returned. '
+            + 'The fields it gains are the ones the flat read has carried since B4, so '
+            + 'the retarget is what stops paging from silently costing a client the '
+            + 'Owner column and the work-item counts.\n\n'
+            + 'Production holds ZERO `Asset` rows across all tenants, measured before '
+            + 'the change, so no caller has ever received either shape.',
+    },
+    {
         kind: 'enum-narrowed',
         schema: 'ActOnNotice',
         property: 'actionKind',

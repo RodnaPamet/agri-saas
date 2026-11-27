@@ -2833,7 +2833,7 @@ exports[`API contract — per-schema snapshots schema: Asset 1`] = `
         "name",
         "email"
       ],
-      "description": "Resolved from \`ownerUserId\`. **Present on the flat read ONLY** — the paginated and \`includeDeleted\` branches omit it, which is #3272. Absent here never means unassigned; read \`ownerUserId\` for that."
+      "description": "Resolved from \`ownerUserId\`, so the Owner column can prefer a real name over the free-text keeper. Present on EVERY branch since #3272; the paginated read omitted it before that. Null means \`ownerUserId\` is null — nobody is assigned."
     },
     "externalRef": {
       "type": [
@@ -3515,7 +3515,7 @@ exports[`API contract — per-schema snapshots schema: AssetListRow 1`] = `
       "properties": {
         "taskTotal": {
           "type": "integer",
-          "description": "Linked work items, all states. 0 when none, never absent on this branch."
+          "description": "Linked work items, all states. 0 when none, never absent."
         },
         "taskDone": {
           "type": "integer",
@@ -3778,9 +3778,9 @@ exports[`API contract — per-schema snapshots schema: AssetPage 1`] = `
     "items": {
       "type": "array",
       "items": {
-        "$ref": "#/components/schemas/Asset"
+        "$ref": "#/components/schemas/AssetListRow"
       },
-      "description": "Ordered \`createdAt\` DESC then \`id\` DESC — a TOTAL order, so the cursor cannot skip or repeat a row when two assets share a creation timestamp. Rows on this branch carry neither \`ownerUser\` nor the task counts (#3272)."
+      "description": "Ordered \`createdAt\` DESC then \`id\` DESC — a TOTAL order, so the cursor cannot skip or repeat a row when two assets share a creation timestamp. Since #3272 these are the SAME enriched rows the flat read returns, \`ownerUser\` and task counts included; paging no longer costs you fields."
     },
     "pageInfo": {
       "$ref": "#/components/schemas/AssetPageInfo"

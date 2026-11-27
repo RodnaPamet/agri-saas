@@ -11,17 +11,22 @@
  * Three things in here are contract rather than formatting, and each one is
  * capable of handing a client a confidently wrong answer.
  *
- * ── `GET /assets` serves THREE different bodies ──
+ * ── `GET /assets` serves TWO envelopes over ONE row shape ──
  *
- * Not a simplification: the handler has two early returns before the branch
- * that does the enriching work, so the envelope AND the row shape both depend
- * on which query parameters were sent. Documented per branch below, because a
- * single `oneOf` with no explanation is how a client picks the wrong one.
+ * It served three bodies until #3272, and the row shape differed between
+ * them: the handler had two early returns before the branch that did the
+ * enriching work, so a client lost the resolved assignee and the task counts
+ * the moment it started paging, and the `includeDeleted` branch silently
+ * discarded every filter it was sent.
  *
- * The divergence is a defect rather than a design, and it is filed as #3272 —
- * the `includeDeleted` branch additionally discards every filter it was sent.
- * The spec describes what the endpoint DOES; it is not the place to pretend
- * the three branches agree.
+ * Fixed. `includeDeleted` is a FILTER now, so the only remaining branch is
+ * the ENVELOPE — a bare array, or `{items, pageInfo}` when `limit` or
+ * `cursor` is present — and both sides return `AssetListRow`. Every filter
+ * applies on every path.
+ *
+ * The one thing a client still cannot see from the path is that this
+ * operation carries TWO permission tiers: READ, and ADMIN as soon as
+ * `includeDeleted=true` is sent.
  *
  * ── The four KPI counts are not a partition ──
  *
@@ -139,8 +144,8 @@ const ListQuery = AssetFilterQuery.extend({
     limit: z.coerce.number().int().min(1).max(100).optional().openapi({
         description:
             'Page size. PRESENCE of this or `cursor` switches the response to the paginated '
-            + 'envelope — see the operation description, because the row shape changes with '
-            + 'it. Clamped to 1–100; absent means 20 once paginating.',
+            + 'envelope. The ROW shape is unchanged either way since #3272. Clamped to '
+            + '1–100; absent means 20 once paginating.',
     }),
     cursor: z.string().optional().openapi({
         description:
@@ -149,13 +154,22 @@ const ListQuery = AssetFilterQuery.extend({
     }),
     includeDeleted: z.enum(['true', 'false']).optional().openapi({
         description:
-            'ADMIN only, and it REPLACES the read rather than widening it. `true` returns '
-            + 'live and soft-deleted rows as a bare array, and — this is a defect, tracked '
-            + 'as #3272, not a contract to rely on — every other parameter on this operation '
-            + 'is silently ignored: the filters above, `q`, `limit` and `cursor` alike. The '
-            + 'rows also arrive WITHOUT `ownerUser` and without the task counts. Treat it as '
-            + 'a separate trash-can endpoint that happens to share a path, send it alone, and '
-            + 'filter client-side, which is what the web UI does.',
+            'Include soft-deleted rows. **ADMIN**, unlike the rest of this operation, which '
+            + 'needs only READ — so the same path carries two permission tiers and a READER '
+            + 'sending this gets a 403 rather than a narrower list.\n\n'
+            + 'It is an ordinary FILTER and composes with everything else here: the facets, '
+            + '`q`, `limit` and `cursor` all still apply, and the rows carry `ownerUser` and '
+            + 'the task counts like any other. That was NOT true before #3272 — the flag was '
+            + 'an early return that discarded every other parameter and served a thinner '
+            + 'row — so a client written against the old behaviour may be sending it alone '
+            + 'and filtering locally, which still works.\n\n'
+            + 'One caveat the fix introduces, stated because it is the kind that looks like '
+            + 'an empty trash can: the flat read is now CAPPED at 1,000 rows and ordered '
+            + 'newest-first over live AND deleted rows together, so on a farm with more than '
+            + '1,000 assets an OLD deleted row can fall outside the page. The flag composes '
+            + 'with `limit` and `cursor` now, so paging is the remedy. It was previously '
+            + 'unbounded, which is the trade: a bounded response that can be paged, instead '
+            + 'of an unbounded one that cannot.',
     }),
 });
 
@@ -207,9 +221,10 @@ const AssetSchema = z
         }),
         ownerUser: OwnerUserSchema.nullable().optional().openapi({
             description:
-                'Resolved from `ownerUserId`. **Present on the flat read ONLY** — the '
-                + 'paginated and `includeDeleted` branches omit it, which is #3272. Absent '
-                + 'here never means unassigned; read `ownerUserId` for that.',
+                'Resolved from `ownerUserId`, so the Owner column can prefer a real name '
+                + 'over the free-text keeper. Present on EVERY branch since #3272; the '
+                + 'paginated read omitted it before that. Null means `ownerUserId` is null — '
+                + 'nobody is assigned.',
         }),
         externalRef: z.string().nullable(),
         location: z.string().nullable().openapi({
@@ -240,15 +255,16 @@ const AssetSchema = z
     .openapi('Asset');
 
 /**
- * The flat read's row — the register row plus two derived task counts.
+ * The register row plus two derived task counts — the shape EVERY branch of
+ * the list read returns since #3272.
  *
  * The counts come from `TaskLink` rows of entity type `ASSET`, resolved in one
- * batched query rather than per row. They are **absent from the other two
- * branches** (#3272), so a client that starts paging loses them.
+ * batched query rather than per row. They used to be attached on the flat read
+ * only, so a client that started paging lost them.
  */
 const AssetListRowSchema = AssetSchema.extend({
     taskTotal: z.number().int().openapi({
-        description: 'Linked work items, all states. 0 when none, never absent on this branch.',
+        description: 'Linked work items, all states. 0 when none, never absent.',
     }),
     taskDone: z.number().int().openapi({
         description: 'Of those, the completed ones. `taskTotal - taskDone` is what is outstanding.',
@@ -257,11 +273,12 @@ const AssetListRowSchema = AssetSchema.extend({
 
 const AssetPageSchema = z
     .object({
-        items: z.array(AssetSchema).openapi({
+        items: z.array(AssetListRowSchema).openapi({
             description:
                 'Ordered `createdAt` DESC then `id` DESC — a TOTAL order, so the cursor cannot '
-                + 'skip or repeat a row when two assets share a creation timestamp. Rows on '
-                + 'this branch carry neither `ownerUser` nor the task counts (#3272).',
+                + 'skip or repeat a row when two assets share a creation timestamp. Since '
+                + '#3272 these are the SAME enriched rows the flat read returns, `ownerUser` '
+                + 'and task counts included; paging no longer costs you fields.',
         }),
         pageInfo: z
             .object({
@@ -446,34 +463,32 @@ export function registerAssetPaths(registry: OpenAPIRegistry): void {
         summary: 'List the asset register',
         description:
             'Reads the farm’s machines, buildings, storage and tools.\n\n'
-            + '**This operation returns one of THREE different bodies, chosen by query '
-            + 'parameters, and the row shape changes with the envelope.** The divergence is a '
-            + 'defect rather than a design — tracked as #3272 — and is documented because a '
-            + 'client has to survive it today:\n\n'
-            + '1. **No `limit`, `cursor` or `includeDeleted`** → a BARE ARRAY of '
-            + '`AssetListRow`, newest first, capped at **1,000 rows with no flag in the '
-            + 'body**. Rows carry the resolved `ownerUser` and the `taskTotal` / `taskDone` '
-            + 'counts. Compare the array length against `total` from '
-            + '`GET /assets/kpi` to find out whether you are seeing everything.\n\n'
+            + '**Two envelopes over one row shape.** Every query parameter applies on '
+            + 'both:\n\n'
+            + '1. **No `limit` and no `cursor`** → a BARE ARRAY of `AssetListRow`, newest '
+            + 'first, capped at **1,000 rows with no flag in the body**. Compare the array '
+            + 'length against `total` from `GET /assets/kpi` to learn whether you are '
+            + 'seeing everything — that cross-endpoint comparison is the intended signal, '
+            + 'and it is the one thing about this read that is not self-describing.\n\n'
             + '2. **`limit` or `cursor` present** → an `AssetPage` envelope '
-            + '(`{items, pageInfo}`). Rows have NEITHER `ownerUser` NOR the task counts, so '
-            + 'paging silently costs you the assignee name and the work-item counts you had '
-            + 'while unpaged.\n\n'
-            + '3. **`includeDeleted=true`** → a BARE ARRAY including soft-deleted rows, '
-            + 'requiring ADMIN, **unbounded**, with no `ownerUser` and no task counts, and '
-            + 'with every filter, `q`, `limit` and `cursor` SILENTLY IGNORED. Send it alone.\n\n'
-            + 'So this one path carries two permission tiers: READ, and ADMIN as soon as '
-            + '`includeDeleted=true` is sent. That is not discoverable from the path, which '
-            + 'is why it is stated here.',
+            + '(`{items, pageInfo}`) over the same `AssetListRow`.\n\n'
+            + 'It served THREE bodies with three different row shapes until #3272, and a '
+            + 'client written against that may still be working around it: paging dropped '
+            + '`ownerUser` and the task counts, and `includeDeleted=true` was an early '
+            + 'return that discarded every filter, `q`, `limit` and `cursor` it was sent, '
+            + 'and returned an unbounded bare array. All of that is gone.\n\n'
+            + 'One thing is still NOT discoverable from the path: this operation carries '
+            + 'two permission tiers. READ, and **ADMIN** as soon as `includeDeleted=true` '
+            + 'is sent, which answers 403 rather than a narrower list.',
         tags: TAGS,
         params: TenantParams,
         query: ListQuery,
         success: {
             status: 200,
             description:
-                'One of the three shapes above. `AssetListRow[]` for branch 1, `AssetPage` for '
-                + 'branch 2, `Asset[]` for branch 3.',
-            schema: z.union([z.array(AssetListRowSchema), AssetPageSchema, z.array(AssetSchema)]),
+                '`AssetListRow[]` with no pagination parameters, `AssetPage` with them. The '
+                + 'row shape is the same either way.',
+            schema: z.union([z.array(AssetListRowSchema), AssetPageSchema]),
         },
         extraResponses: codedErrorResponses({
             400: 'A facet carried a member that is not in its enum, or `limit` is out of range. '

@@ -4,6 +4,7 @@ import { Prisma, type EvidenceType, type EvidenceStatus } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { traceRepository } from '@/lib/observability/repository-tracing';
+import { withDeleted } from '@/lib/soft-delete';
 
 export interface EvidenceListFilters {
     /**
@@ -27,6 +28,14 @@ export interface EvidenceListFilters {
     q?: string;
     archived?: boolean;
     expiring?: boolean;
+    /**
+     * Include soft-deleted rows (#3272).
+     *
+     * A FILTER, not a separate read. The route used to branch on it before
+     * the filter block and silently drop every other parameter. ADMIN-gated
+     * at the usecase (`assertMayIncludeDeleted` in `usecases/evidence.ts`).
+     */
+    includeDeleted?: boolean;
 }
 
 export interface EvidenceListParams {
@@ -87,6 +96,15 @@ export class EvidenceRepository {
         return traceRepository('evidence.list', ctx, async () => {
             const where = EvidenceRepository._buildWhere(ctx, filters);
             return db.evidence.findMany({
+                // Spread, not wrapped — see `AssetRepository.list` for why:
+                // keeping `take:` literally on this call is what Layer D2 of
+                // `query-shape-guardrails` scans for, and hoisting the whole
+                // argument object into a variable hid the bound from it
+                // (#3272). The key itself is the one the soft-delete
+                // extension looks for and strips; this cannot be expressed as
+                // a `where.deletedAt` clause, because the extension would put
+                // its own back.
+                ...(filters?.includeDeleted ? withDeleted({}) : {}),
                 where,
                 orderBy: { createdAt: 'desc' },
                 select: evidenceListSelect,
@@ -111,6 +129,7 @@ export class EvidenceRepository {
             }
 
             const items = await db.evidence.findMany({
+                ...(params.filters?.includeDeleted ? withDeleted({}) : {}),
                 where,
                 orderBy: CURSOR_ORDER_BY,
                 take: limit + 1,

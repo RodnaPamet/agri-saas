@@ -4,6 +4,7 @@ import { Prisma, AssetType, AssetStatus, Criticality } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { MACHINE_ASSET_WHERE } from '@/lib/agriculture/machine-asset-types';
+import { withDeleted } from '@/lib/soft-delete';
 
 export interface AssetFilters {
     // ARRAYS, not `string` plus a cast. These facets are `multiple: true`
@@ -14,6 +15,17 @@ export interface AssetFilters {
     status?: AssetStatus[];
     criticality?: Criticality[];
     q?: string;
+    /**
+     * Include soft-deleted rows (#3272).
+     *
+     * A FILTER, not a separate read, which is the whole point of the fix: the
+     * route used to branch on it before the filter block and silently drop
+     * every other parameter. It is ADMIN-gated at the usecase — see
+     * `listAssets` — because the gate belongs where the permission context
+     * is, and a repository that enforced it would be the only one here that
+     * did.
+     */
+    includeDeleted?: boolean;
 }
 
 /**
@@ -43,6 +55,14 @@ export class AssetRepository {
     ) {
         const where = AssetRepository._buildWhere(ctx, filters);
         return db.asset.findMany({
+            // `withDeleted({})` yields the one key the soft-delete extension
+            // looks for and strips, SPREAD rather than wrapped (#3272): this
+            // cannot be a `where.deletedAt` clause, because the extension
+            // would put its own back. Spreading keeps `take:` literally on
+            // this call, which is what `query-shape-guardrails` Layer D2
+            // scans for — wrapping the whole argument object in a variable
+            // hid the bound from it and counted a capped read as unbounded.
+            ...(filters?.includeDeleted ? withDeleted({}) : {}),
             where,
             orderBy: { createdAt: 'desc' },
             take: options.take ?? ASSET_LIST_CAP,
@@ -69,9 +89,16 @@ export class AssetRepository {
         }
 
         const items = await db.asset.findMany({
+            ...(params.filters?.includeDeleted ? withDeleted({}) : {}),
             where,
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
+            // Added by #3272. The flat read has resolved the assignee since
+            // B4 and this branch never did, so a client that started PAGING
+            // silently lost the Owner column.
+            include: {
+                ownerUser: { select: { id: true, name: true, email: true } },
+            },
         });
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
