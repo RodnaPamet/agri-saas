@@ -8831,6 +8831,124 @@ exports[`API contract — per-schema snapshots schema: ErrorResponse 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: Evidence 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/EvidenceListRow"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewCycle": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A cadence label. It had NO reader anywhere for a while — setting \\"review quarterly\\" scheduled nothing — and the reader is now the APPROVED transition, which is what advances \`nextReviewDate\` from it."
+        },
+        "nextReviewDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Advanced by an APPROVED review, from \`reviewCycle\`. Approving is the event that means a person looked, which is what the interval measures from; nothing else moves it, so a record with no cadence keeps whatever date it was given."
+        },
+        "taskId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assetId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "tenantId",
+        "description",
+        "reviewCycle",
+        "nextReviewDate",
+        "taskId",
+        "assetId"
+      ]
+    }
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceBulkDeleteRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "maxItems": 100,
+      "description": "1-100 evidence ids. An empty array is a 400; more than 100 is a 400."
+    }
+  },
+  "required": [
+    "evidenceIds"
+  ],
+  "description": "Soft-delete up to 100 evidence records. Ids that do not exist, belong to another farm, or were already deleted are SKIPPED rather than refused, so the call is idempotent."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceBulkDeleteResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "deleted": {
+      "type": "integer",
+      "description": "How many records this call soft-deleted. May be LOWER than the ids sent — ids that do not exist, belong to another farm, or were already deleted are skipped rather than refused. Zero is a successful no-op."
+    }
+  },
+  "required": [
+    "deleted"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceCappedList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/EvidenceListRow"
+      }
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "TRUE when the register holds more than 5,000 matching records and this response was cut to the first 5,000. A real flag rather than a silent cut, which is what the sibling asset list does NOT have — there the only signal is comparing the array length against a separate count endpoint."
+    }
+  },
+  "required": [
+    "rows",
+    "truncated"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EvidenceCreateRequest 1`] = `
 "{
   "type": "object",
@@ -9147,6 +9265,248 @@ exports[`API contract — per-schema snapshots schema: EvidenceListItem 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EvidenceListRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "fileName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Set for FILE evidence; null for LINK and TEXT."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "FILE",
+        "LINK",
+        "TEXT"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED",
+        "NEEDS_REVIEW"
+      ],
+      "description": "\`NEEDS_REVIEW\` is written by the retention sweep, never by a caller — it is how an APPROVED record becomes movable again. See the review operation."
+    },
+    "owner": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "FREE TEXT owner. The structured one is \`ownerUserId\`."
+    },
+    "ownerUserId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The responsible person, as a \`User\` id. Review notifications route on THIS and not on \`owner\`, so a record with only the free-text field notifies nobody."
+    },
+    "folder": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "An operator-chosen label, flat rather than a path — there is no nesting and no folder entity. Null and empty mean the same thing, which is why the filter needs a \`__none__\` sentinel."
+    },
+    "isArchived": {
+      "type": "boolean",
+      "description": "Archived is NOT deleted and NOT a status. It is a separate boolean, so an archived record keeps whatever \`status\` it had."
+    },
+    "expiredAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Non-null only on an \`includeDeleted=true\` read. Soft-deleted records are invisible to every other operation here, \`GET /{id}\` included."
+    },
+    "retentionUntil": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "dateCollected": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "content": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For LINK evidence this is the URL. For TEXT it is the body. Null for FILE, where the bytes live behind the download route instead."
+    },
+    "category": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fileRecordId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fileRecord": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "mimeType"
+      ],
+      "description": "Present for FILE evidence. The \`mimeType\` is the RECONCILED one — the ingest path checks the declared type against the bytes — so it is safe to branch rendering on."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Required by the cursor helper rather than by the table, and part of the contract for that reason: it is what the keyset orders on."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "fileName",
+    "type",
+    "status",
+    "owner",
+    "ownerUserId",
+    "folder",
+    "isArchived",
+    "expiredAt",
+    "deletedAt",
+    "retentionUntil",
+    "dateCollected",
+    "content",
+    "category",
+    "fileRecordId",
+    "fileRecord",
+    "createdAt",
+    "updatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceMetrics 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "totalEvidence": {
+      "type": "integer",
+      "description": "Live records — soft-deleted ones are excluded."
+    },
+    "fileEvidence": {
+      "type": "integer",
+      "description": "Of those, type FILE."
+    },
+    "storedFileCount": {
+      "type": "integer",
+      "description": "FileRecords in \`STORED\` state, which is NOT the same number as \`fileEvidence\`: a record whose upload failed or is still scanning has evidence and no stored file, and the two counts drifting apart is the signal this endpoint exists to show."
+    },
+    "totalBytesStored": {
+      "type": "integer",
+      "description": "Sum of \`sizeBytes\` over STORED files. Use this one."
+    },
+    "totalBytesFormatted": {
+      "type": "string",
+      "description": "A server-composed ENGLISH string — \`\\"1.5 MB\\"\`, or KB under a megabyte, one decimal place. It is not localised and does not honour the reader's language, so **prefer \`totalBytesStored\` and format it client-side**; a Bulgarian UI rendering this shows English units. It is documented rather than quietly omitted because it exists and something may already read it."
+    }
+  },
+  "required": [
+    "totalEvidence",
+    "fileEvidence",
+    "storedFileCount",
+    "totalBytesStored",
+    "totalBytesFormatted"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidencePage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/EvidenceListRow"
+      }
+    },
+    "pageInfo": {
+      "$ref": "#/components/schemas/EvidencePageInfo"
+    }
+  },
+  "required": [
+    "items",
+    "pageInfo"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidencePageInfo 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "nextCursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hasNextPage": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "nextCursor",
+    "hasNextPage"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EvidenceReview 1`] = `
 "{
   "type": "object",
@@ -9196,6 +9556,45 @@ exports[`API contract — per-schema snapshots schema: EvidenceReview 1`] = `
   ],
   "additionalProperties": {},
   "description": "A single evidence-review event (submission/approval/rejection) — append-only audit row attached to the evidence record."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceReviewRecord 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "evidenceId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SUBMITTED",
+        "APPROVED",
+        "REJECTED"
+      ]
+    },
+    "comment": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "evidenceId",
+    "status",
+    "comment",
+    "createdAt"
+  ]
 }"
 `;
 
@@ -9275,6 +9674,27 @@ exports[`API contract — per-schema snapshots schema: EvidenceUpdateRequest 1`]
     }
   },
   "description": "Partial update for an evidence record (metadata only — file content is immutable post-upload)."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: EvidenceUpdateResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "evidence": {
+      "$ref": "#/components/schemas/Evidence"
+    }
+  },
+  "required": [
+    "success",
+    "evidence"
+  ]
 }"
 `;
 
