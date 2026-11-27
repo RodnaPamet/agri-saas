@@ -13,12 +13,32 @@ import type { EvidenceType, ReviewCadence } from '@prisma/client';
 import { z } from 'zod';
 import { CreateEvidenceSchema, UpdateEvidenceSchema } from '@/lib/schemas';
 
+/**
+ * `includeDeleted` is a filter whose permission tier is HIGHER than the read
+ * it rides on, and BOTH list paths go through this one function (#3272).
+ *
+ * Two spellings of one permission rule is how #1664 ended up enforced on one
+ * path and not the other, and the failure direction here is privilege: a
+ * missing check would let any READER see every soft-deleted evidence row on
+ * the farm.
+ *
+ * `assertCanRead` still runs first on both paths — this is additive.
+ */
+function assertMayIncludeDeleted(
+    ctx: RequestContext,
+    filters?: { includeDeleted?: boolean },
+): void {
+    if (!filters?.includeDeleted) return;
+    assertCanAdmin(ctx);
+}
+
 export async function listEvidence(
     ctx: RequestContext,
     filters?: EvidenceListFilters,
     options: { take?: number } = {},
 ) {
     assertCanRead(ctx);
+    assertMayIncludeDeleted(ctx, filters);
     return cachedListRead({
         ctx,
         entity: 'evidence',
@@ -43,6 +63,7 @@ export async function listEvidencePaginated(ctx: RequestContext, params: {
     filters?: EvidenceListFilters;
 }) {
     assertCanRead(ctx);
+    assertMayIncludeDeleted(ctx, params.filters);
     return cachedListRead({
         ctx,
         entity: 'evidence',
@@ -455,11 +476,24 @@ export async function purgeEvidence(ctx: RequestContext, id: string) {
     return result;
 }
 
-export async function listEvidenceWithDeleted(ctx: RequestContext) {
-    assertCanAdmin(ctx);
-    return runInTenantContext(ctx, (db) =>
-        db.evidence.findMany(withDeleted({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'desc' as const } }))
-    );
+/**
+ * RETIRED by #3272 — `listEvidence(ctx, { includeDeleted: true }, opts)`
+ * replaces it.
+ *
+ * It took ONLY a ctx, which is what made the defect inevitable: the route had
+ * no way to pass the caller's filters, so it dropped them. It was also
+ * unbounded and returned a bare row rather than the tight `evidenceListSelect`
+ * shape every other branch serves.
+ *
+ * Kept as a thin delegate rather than deleted, because the ADMIN gate is the
+ * property its tests pin and the name is the clearest statement of it.
+ */
+export async function listEvidenceWithDeleted(
+    ctx: RequestContext,
+    filters?: EvidenceListFilters,
+    options: { take?: number } = {},
+) {
+    return listEvidence(ctx, { ...filters, includeDeleted: true }, options);
 }
 
 /**

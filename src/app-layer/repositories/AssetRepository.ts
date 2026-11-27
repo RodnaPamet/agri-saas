@@ -4,6 +4,7 @@ import { Prisma, AssetType, AssetStatus, Criticality } from '@prisma/client';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { MACHINE_ASSET_WHERE } from '@/lib/agriculture/machine-asset-types';
+import { withDeleted } from '@/lib/soft-delete';
 
 export interface AssetFilters {
     // ARRAYS, not `string` plus a cast. These facets are `multiple: true`
@@ -14,6 +15,17 @@ export interface AssetFilters {
     status?: AssetStatus[];
     criticality?: Criticality[];
     q?: string;
+    /**
+     * Include soft-deleted rows (#3272).
+     *
+     * A FILTER, not a separate read, which is the whole point of the fix: the
+     * route used to branch on it before the filter block and silently drop
+     * every other parameter. It is ADMIN-gated at the usecase — see
+     * `listAssets` — because the gate belongs where the permission context
+     * is, and a repository that enforced it would be the only one here that
+     * did.
+     */
+    includeDeleted?: boolean;
 }
 
 /**
@@ -42,9 +54,9 @@ export class AssetRepository {
         options: { take?: number } = {},
     ) {
         const where = AssetRepository._buildWhere(ctx, filters);
-        return db.asset.findMany({
+        const args = {
             where,
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'desc' as const },
             take: options.take ?? ASSET_LIST_CAP,
             include: {
                 // B4 — resolve the structured assignee so the list Owner
@@ -52,7 +64,12 @@ export class AssetRepository {
                 // free-text keeper.
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
-        });
+        };
+        // `withDeleted` sets a key the soft-delete extension strips, so this
+        // cannot be expressed as `where.deletedAt` — the extension would put
+        // its own clause back. The cap applies either way, which is what
+        // bounds the formerly unbounded trash read (#3272).
+        return db.asset.findMany(filters?.includeDeleted ? withDeleted(args) : args);
     }
 
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: AssetListParams): Promise<PaginatedResponse<unknown>> {
@@ -68,11 +85,20 @@ export class AssetRepository {
             }
         }
 
-        const items = await db.asset.findMany({
+        const pageArgs = {
             where,
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
-        });
+            // Added by #3272. The flat read has resolved the assignee since
+            // B4 and this branch never did, so a client that started PAGING
+            // silently lost the Owner column.
+            include: {
+                ownerUser: { select: { id: true, name: true, email: true } },
+            },
+        };
+        const items = await db.asset.findMany(
+            params.filters?.includeDeleted ? withDeleted(pageArgs) : pageArgs,
+        );
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
         return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };

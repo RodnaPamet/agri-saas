@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listEvidence, listEvidencePaginated, createEvidence, listEvidenceWithDeleted } from '@/app-layer/usecases/evidence';
+import { listEvidence, listEvidencePaginated, createEvidence } from '@/app-layer/usecases/evidence';
 import { withValidatedBody } from '@/lib/validation/route';
 import { CreateEvidenceSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -38,11 +38,19 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = EvidenceQuerySchema.parse(sp);
 
-    if (query.includeDeleted === 'true') {
-        const evidence = await listEvidenceWithDeleted(ctx);
-        return jsonResponse(evidence);
-    }
-
+    // #3272 — ONE filter set, built once, honoured by both branches.
+    //
+    // `includeDeleted` used to be an early `return` ABOVE this line, so a
+    // caller sending it alongside a filter, a folder, a search term or a
+    // cursor got every evidence row on the farm and no indication that its
+    // parameters had been discarded. It is a filter now; the ADMIN gate it
+    // carries lives in the usecase (`assertMayIncludeDeleted`).
+    //
+    // It also rides the list CACHE key: `cachedListRead` hashes the whole
+    // filter object, so a deleted-inclusive result can never be served from
+    // cache to a plain reader. That is a disclosure property rather than a
+    // performance one, and `evidence-include-deleted.test.ts` pins it —
+    // the cache is keyed per (entity, tenant, filters), NOT per role.
     const filters = {
         type: query.type,
         status: query.status,
@@ -50,6 +58,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         q: query.q,
         archived: query.archived === 'true' ? true : query.archived === 'false' ? false : undefined,
         expiring: query.expiring === 'true',
+        includeDeleted: query.includeDeleted === 'true',
     };
 
     // If pagination params present, use paginated response
