@@ -969,9 +969,16 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
             details: `Evidence file downloaded: ${fileRecord.originalName}`,
             detailsJson: {
                 category: 'access',
-                operation: 'login',
+                // `'login'` until #3285 — a file download audited as an
+                // authentication event. It typechecked because `AccessDetails`
+                // offered no value describing a download, so a SIEM counting
+                // logins counted evidence downloads.
+                operation: 'file_downloaded',
                 detail: `Evidence downloaded: ${fileRecord.originalName}`,
-                targetUserId: ctx.userId,
+                // `targetUserId: ctx.userId` was here too, which said a person
+                // performed an access change on THEMSELVES. The field is for
+                // the user an access change is ABOUT; a download is about a
+                // file, and the actor is already on the row.
             },
         });
 
