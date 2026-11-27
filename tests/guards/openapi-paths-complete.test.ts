@@ -267,7 +267,15 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // `purge` is the only operation in this API that destroys stored BYTES.
 //
 // COUNTED from the file.
-const UNDOCUMENTED_CEILING = 161;
+// 161 → 157 (#3080): the evidence BYTE routes — the multipart upload, the
+// ZIP import and its poll, and the download. Its own module, because every
+// one of them either accepts bytes from a caller or serves them back, so the
+// allowlist, the scanner, the two metadata strippers and the egress gate live
+// on these four operations and nowhere else in the family. It also completes
+// the evidence domain: 21 of 21 paths described.
+//
+// COUNTED from the file.
+const UNDOCUMENTED_CEILING = 157;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that

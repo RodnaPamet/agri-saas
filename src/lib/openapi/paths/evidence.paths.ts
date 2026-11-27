@@ -236,7 +236,12 @@ const EvidencePageSchema = z
  * Declared as the list row plus the fields the narrow projection drops, so
  * the two cannot drift into describing different columns.
  */
-const EvidenceSchema = EvidenceListRowSchema.extend({
+/**
+ * EXPORTED for `evidence-bytes.paths.ts` (#3080): the multipart upload
+ * creates one of these, and `openapi-response-shapes-ratchet` requires it to
+ * point at a schema that already exists rather than hand-write a mirror.
+ */
+export const EvidenceSchema = EvidenceListRowSchema.extend({
     tenantId: z.string(),
     description: z.string().nullable(),
     reviewCycle: z.string().nullable().openapi({
