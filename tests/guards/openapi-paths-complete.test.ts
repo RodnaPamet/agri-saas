@@ -231,7 +231,7 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted — the instruction this block gives
 // after #2578, and the reason the previous value was once one too high.
-const UNDOCUMENTED_CEILING = 192;
+const UNDOCUMENTED_CEILING = 189;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that
@@ -241,6 +241,9 @@ const UNDOCUMENTED_CEILING = 192;
 // 196 -> 192 by #3080's third chunk: `tasks/metrics`, the two
 // `tasks/{taskId}/evidence` operations and `tasks/{taskId}/links/{linkId}`,
 // which completes the `tasks` family — every path under it is described now.
+// 192 -> 189 by #3080's fourth chunk: the three session-revocation routes. They
+// were worth doing before the bigger families because all three bump a
+// PLATFORM-WIDE `sessionVersion` and none of their names says so.
 // COUNTED from the file as the block above instructs, not subtracted.
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —

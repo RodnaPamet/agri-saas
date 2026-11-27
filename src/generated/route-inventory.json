@@ -2468,17 +2468,17 @@
     {
       "path": "/api/t/{tenantSlug}/security/sessions/revoke-all",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/security/sessions/revoke-current",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/security/sessions/revoke-user",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/soil/legend",
