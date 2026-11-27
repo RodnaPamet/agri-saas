@@ -32,12 +32,29 @@ jest.mock('@/app-layer/repositories/ProcessMapRepository', () => ({
     },
 }));
 
+/**
+ * The CERTIFICATION gate (#3291) reads `TenantModuleSettings`, so the real
+ * `assertModuleEnabled` needs a database this suite does not have — every
+ * write failed with `Cannot read properties of undefined (reading
+ * 'findUnique')` the moment the gate was added.
+ *
+ * Mocked as a SPY rather than stubbed away, so the cases below still prove
+ * the gate is INVOKED on a write and NOT on a read. Without that the guard
+ * `process-map-writes-are-module-gated` would be asserting the call exists in
+ * the source while nothing executed it — which is the gap between a guard and
+ * a behavioural test this repo keeps naming.
+ */
+jest.mock('@/app-layer/usecases/modules', () => ({
+    assertModuleEnabled: jest.fn(async () => undefined),
+}));
+
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));
 
 import { ProcessMapRepository } from '@/app-layer/repositories/ProcessMapRepository';
 import { logEvent } from '@/app-layer/events/audit';
+import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import {
@@ -322,5 +339,42 @@ describe('setProcessMapCanvasMode', () => {
         await expect(
             setProcessMapCanvasMode(makeCtx('READER'), 'pm-1', 'AUTOMATION'),
         ).rejects.toBeDefined();
+    });
+});
+
+// ─── The CERTIFICATION gate is INVOKED, not merely present (#3291) ───
+
+describe('CERTIFICATION gating', () => {
+    beforeEach(() => {
+        (assertModuleEnabled as jest.Mock).mockClear();
+    });
+
+    it('a WRITE asserts the module', async () => {
+        (ProcessMapRepository.create as jest.Mock).mockResolvedValue({ id: 'pm-1' });
+        await createProcessMap(writerCtx, { name: 'Map' } as never);
+        expect(assertModuleEnabled).toHaveBeenCalledWith(
+            expect.anything(),
+            'CERTIFICATION',
+        );
+    });
+
+    it('a READ does NOT — a farm keeps what it already made', async () => {
+        // Owner ruling 2026-11-27: writes gated, reads open. Asserted as a
+        // NEGATIVE so a later change that gates reads wholesale has to come
+        // past this test rather than sliding in as tidying.
+        (ProcessMapRepository.getByIdWithGraph as jest.Mock).mockResolvedValue({ id: 'pm-1' });
+        await getProcessMap(writerCtx, 'pm-1');
+        expect(assertModuleEnabled).not.toHaveBeenCalled();
+    });
+
+    it('the gate runs BEFORE the repository is touched', async () => {
+        // Order matters: a disabled module must not reach the database at
+        // all, or the refusal costs a query and any side effect before it.
+        (assertModuleEnabled as jest.Mock).mockRejectedValueOnce(
+            new Error('MODULE_DISABLED'),
+        );
+        (ProcessMapRepository.softDelete as jest.Mock).mockClear();
+        await expect(deleteProcessMap(writerCtx, 'pm-1')).rejects.toThrow('MODULE_DISABLED');
+        expect(ProcessMapRepository.softDelete).not.toHaveBeenCalled();
     });
 });
