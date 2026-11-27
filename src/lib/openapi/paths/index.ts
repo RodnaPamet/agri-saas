@@ -67,6 +67,7 @@ import { registerMachinePaths } from './machines.paths';
 import { registerSessionRevocationPaths } from './session-revocation.paths';
 import { registerAssetPaths } from './assets.paths';
 import { registerEvidencePaths } from './evidence.paths';
+import { registerEvidenceRetentionPaths } from './evidence-retention.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -148,4 +149,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSessionRevocationPaths(registry);
     registerAssetPaths(registry);
     registerEvidencePaths(registry);
+    registerEvidenceRetentionPaths(registry);
 }
