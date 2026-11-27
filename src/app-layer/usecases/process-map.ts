@@ -1,12 +1,41 @@
 /**
  * Roadmap-26 PR-A — Process Map usecases.
  *
- * Thin orchestration: auth → tenant context → repo → audit.
+ * Thin orchestration: auth → module → tenant context → repo → audit.
+ *
+ * ## The CERTIFICATION gate lives HERE, not on the routes (#3291)
+ *
+ * It used to sit on `processes/route.ts` alone, which covered 2 of the
+ * surface's 12 operations. The other ten are reachable by id and were
+ * ungated — including `DELETE` and snapshot `restore` — so a farm with the
+ * module off could not see the index and could still destroy a map. The
+ * usecases are the one layer every operation passes through, so the gate is
+ * placed here and a new route inherits it (owner ruling 2026-11-27).
+ *
+ * ## WRITES are gated; READS stay open
+ *
+ * Owner ruling, same date: a farm keeps access to work it already did and to
+ * its PDF history, and simply cannot add to it. That is #1655's deletion
+ * freeze applied to an entitlement — "no new content" and "nothing visible"
+ * are different decisions, and hiding a season's compliance maps because a
+ * plan lapsed is the worse one.
+ *
+ * So `getProcessMap`, `listProcessMapSnapshots` and `getProcessMapSnapshot`
+ * carry NO module assertion, deliberately.
+ *
+ * ## One asymmetry, which is a decision rather than an oversight
+ *
+ * `listProcessMaps` IS gated, even though it is a read — the collection gate
+ * predates this change and the ruling kept it, so the index is the one
+ * read-side restriction. A farm with the module off can therefore open a map
+ * it has an id for and cannot browse to it. Written down because it looks
+ * exactly like the bug this change fixes.
  */
 
 import { RequestContext } from '../types';
 import { ProcessMapRepository } from '../repositories/ProcessMapRepository';
 import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertModuleEnabled } from './modules';
 import { logEvent } from '../events/audit';
 import { notFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -50,6 +79,9 @@ export async function createProcessMap(
     input: CreateProcessMapInput,
 ) {
     assertCanWrite(ctx);
+    // Already gated on the route; asserted here too so the usecase does not
+    // depend on its caller remembering (#3291).
+    await assertModuleEnabled(ctx, 'CERTIFICATION');
 
     return runInTenantContext(ctx, async (db) => {
         const map = await ProcessMapRepository.create(db, ctx, {
@@ -84,6 +116,9 @@ export async function saveProcessMap(
     input: SaveProcessMapInput,
 ) {
     assertCanWrite(ctx);
+    // #3291 — CERTIFICATION gates the WRITES on this surface. See the
+    // module docblock: reads stay open so a farm keeps what it made.
+    await assertModuleEnabled(ctx, 'CERTIFICATION');
 
     return runInTenantContext(ctx, async (db) => {
         const map = await ProcessMapRepository.replaceGraph(db, ctx, id, {
@@ -144,6 +179,9 @@ export async function setProcessMapCanvasMode(
     canvasMode: 'DOCUMENT' | 'AUTOMATION',
 ) {
     assertCanWrite(ctx);
+    // #3291 — CERTIFICATION gates the WRITES on this surface. See the
+    // module docblock: reads stay open so a farm keeps what it made.
+    await assertModuleEnabled(ctx, 'CERTIFICATION');
     return runInTenantContext(ctx, async (db) => {
         const ok = await ProcessMapRepository.setCanvasMode(db, ctx, id, canvasMode);
         if (!ok) throw notFound('Process map not found');
@@ -214,6 +252,9 @@ export async function restoreProcessMapSnapshot(
     expectedVersion: number,
 ) {
     assertCanWrite(ctx);
+    // #3291 — CERTIFICATION gates the WRITES on this surface. See the
+    // module docblock: reads stay open so a farm keeps what it made.
+    await assertModuleEnabled(ctx, 'CERTIFICATION');
 
     return runInTenantContext(ctx, async (db) => {
         const snapshot = await ProcessMapRepository.getSnapshotByVersion(
@@ -259,6 +300,9 @@ export async function restoreProcessMapSnapshot(
 
 export async function deleteProcessMap(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
+    // #3291 — CERTIFICATION gates the WRITES on this surface. See the
+    // module docblock: reads stay open so a farm keeps what it made.
+    await assertModuleEnabled(ctx, 'CERTIFICATION');
 
     return runInTenantContext(ctx, async (db) => {
         const ok = await ProcessMapRepository.softDelete(db, ctx, id, ctx.userId);
