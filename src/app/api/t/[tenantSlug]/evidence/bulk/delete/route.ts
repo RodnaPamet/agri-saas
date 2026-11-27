@@ -11,12 +11,9 @@ import { getTenantCtx } from '@/app-layer/context';
 import { bulkDeleteEvidence } from '@/app-layer/usecases/evidence';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
+import { BulkDeleteEvidenceSchema } from '@/lib/schemas';
 import { jsonResponse } from '@/lib/api-response';
-import { z } from 'zod';
 
-const BulkDeleteEvidenceSchema = z.object({
-    evidenceIds: z.array(z.string().min(1)).min(1).max(100),
-});
 
 export const POST = withApiErrorHandling(
     withValidatedBody(

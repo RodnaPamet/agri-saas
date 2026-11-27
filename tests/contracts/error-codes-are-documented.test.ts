@@ -576,7 +576,11 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // reason they did not quietly stay.
     'ACCOUNT_HAS_NO_EMAIL',
     'EVIDENCE_DELETED',
-    'EVIDENCE_NOT_FOUND',
+    // 'EVIDENCE_NOT_FOUND' left this baseline in #3080's evidence chunk: the
+    // register's ten paths are described now and every one of them names the
+    // code, so the entry became a claim the spec contradicts. The ratchet
+    // works in BOTH directions and this is the direction that is easy to
+    // forget — a documented code left baselined reads as still-undocumented.
     'FILE_DELETED',
     'FILE_NOT_DOWNLOADABLE',
     'FILE_NOT_FOUND',
