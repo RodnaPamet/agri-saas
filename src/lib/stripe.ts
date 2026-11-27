@@ -44,8 +44,33 @@ let _stripe: Stripe | null = null;
  * additive, which the per-release table confirms row by row. The breaking
  * Treasury rows dated 2026-10-28 belong to `2026-10-28.preview`, a different
  * version string on the preview channel that this pin does not select.
+ *
+ * 2026-11-18.endive replaced it on 2026-11-27, with stripe@23.2.0, by owner
+ * ruling. Three things made it the cheap moment, in descending order of how
+ * much they actually carry:
+ *
+ *   1. SAME GENERATION. `.endive` is the generation whose first version is
+ *      `2026-09-30.endive`, so by the release rule recorded in the paragraph
+ *      above this is an additive step from the previous pin. The generation is
+ *      not inferred from the suffix: the SDK declares it separately as
+ *      `ApiMajorVersion = 'endive'` beside `ApiVersion`, so "same generation"
+ *      is machine-checkable — `node_modules/stripe/cjs/apiVersion.d.ts` holds
+ *      both. **The RULE, though, is #2758's research and inherited rather than
+ *      re-derived.** If a future bump moves `ApiMajorVersion`, that
+ *      paragraph's argument does not carry and the per-release table has to be
+ *      read again.
+ *   2. The paragraph above: this pin does not govern inbound webhook shapes,
+ *      only what we send and read back from our own calls.
+ *   3. Billing was DORMANT. Measured on the production container the same day,
+ *      names only and with a positive control: `DATABASE_URL`,
+ *      `DATA_ENCRYPTION_KEY` and `PLATFORM_TENANT_SLUG` all reported PRESENT
+ *      while `STRIPE_SECRET_KEY` did not — so `getStripe()` throws before any
+ *      call is made and no live traffic used either version. That is the same
+ *      condition #1309's bump relied on, and it is the weakest of the three
+ *      reasons: it will stop being true the moment billing is switched on, and
+ *      the gap to close will be wider every time this is deferred.
  */
-const STRIPE_API_VERSION = '2026-10-28.endive';
+const STRIPE_API_VERSION = '2026-11-18.endive';
 
 export function getStripe(): Stripe {
     if (_stripe) return _stripe;
