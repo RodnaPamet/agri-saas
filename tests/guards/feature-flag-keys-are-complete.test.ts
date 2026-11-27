@@ -44,7 +44,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { FLAG_KEY_PATTERN, FLAG_KEY_MAX_LENGTH } from '../../src/lib/feature-flags';
-import { REFERENCED_FLAG_KEYS } from '../../src/lib/feature-flag-keys';
+import {
+    DELIBERATELY_ROWLESS_FLAG_KEYS,
+    REFERENCED_FLAG_KEYS,
+} from '../../src/lib/feature-flag-keys';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles } from '../helpers/collect-files';
 
@@ -282,5 +285,41 @@ describe('every gated flag key is enumerable and listed (#2009)', () => {
             );
             expect(found).toEqual([{ kind: 'literal', key: 'social.real' }]);
         });
+    });
+});
+
+/**
+ * `DELIBERATELY_ROWLESS_FLAG_KEYS` cannot carry an inert entry (#2841).
+ *
+ * The list exempts a key from `missingRows`, so a MISSPELLED entry exempts
+ * nothing while reading exactly like a covered case — the shape that had
+ * four invented authenticator names in #2645 looking like protection. Every
+ * entry must therefore name a key this registry actually references.
+ */
+describe('deliberately-rowless flag keys (#2841)', () => {
+    it('every entry names a REFERENCED key — no typos, no inert entries', () => {
+        const referenced = new Set<string>(REFERENCED_FLAG_KEYS);
+        const unknown = DELIBERATELY_ROWLESS_FLAG_KEYS.filter(
+            (k) => !referenced.has(k),
+        );
+        expect(unknown).toEqual([]);
+    });
+
+    it('the list is tiny, and each entry is a ruling somebody made', () => {
+        // Two today. A growing list means absences are being excused rather
+        // than decided, which is how this stops meaning anything.
+        expect(DELIBERATELY_ROWLESS_FLAG_KEYS.length).toBeLessThanOrEqual(4);
+        // CONTROL: and it is not empty, so the assertion above is not
+        // passing over nothing.
+        expect(DELIBERATELY_ROWLESS_FLAG_KEYS.length).toBeGreaterThan(0);
+    });
+
+    it('prints its denominator', () => {
+        console.log(
+            `[flag-keys] ${REFERENCED_FLAG_KEYS.length} referenced key(s), ` +
+                `${DELIBERATELY_ROWLESS_FLAG_KEYS.length} deliberately rowless: ` +
+                DELIBERATELY_ROWLESS_FLAG_KEYS.join(', '),
+        );
+        expect(REFERENCED_FLAG_KEYS.length).toBeGreaterThan(10);
     });
 });

@@ -215,4 +215,47 @@ export const REFERENCED_FLAG_KEYS = [
     'usage.events',
 ] as const;
 
+/**
+ * Referenced keys whose ABSENCE from `FeatureFlag` is a DECISION, not a
+ * forgotten launch (#2841).
+ *
+ * `Feature flag coverage` runs on a schedule and had failed on every run for
+ * six days — 21 to 26 November — on exactly these two keys. The facts it
+ * reported were correct: both are referenced under `src/` and neither has a
+ * production row. What was wrong is that it called them a failure, and a
+ * scheduled job with no PR page that is red every day is a job people learn
+ * to scroll past. That is #1076's lesson in a different costume.
+ *
+ * Tenant SAML/OIDC SSO and SCIM are TURNED OFF and dormant (owner ruling
+ * 2026-11-18). Unlike a dark launch they are not waiting to go on, so no row
+ * is the intended state — which `REFERENCED_FLAG_KEYS` already said in prose
+ * above, while nothing acted on it. Owner ruling 2026-11-27 chose to teach
+ * the checker over inserting `enabled = false` rows, so this list is where
+ * that decision lives.
+ *
+ * ## What this does NOT do
+ *
+ * It does not hide anything. `featureFlagsCapability` still reports these
+ * keys, under `dormantRows`, so `/api/readyz` says "these two have no row and
+ * somebody decided that" rather than going quiet. Only `state` changes: an
+ * absence that was decided no longer reads as `incomplete`.
+ *
+ * It also keeps the check's teeth for every other key — a genuinely
+ * forgotten launch still turns `state` to `incomplete` and still fails the
+ * workflow. The list is two entries and should stay tiny; an entry here is a
+ * claim that somebody ruled, with the date.
+ *
+ * ## When a flag here goes live
+ *
+ * Delete its entry in the same change that inserts the row. The capability
+ * reports a key that is listed here AND has a row under
+ * `staleDormantEntries`, because an entry that has outlived its decision
+ * reads exactly like a covered case — the failure mode of every allowlist
+ * that outlives the thing it allowed.
+ */
+export const DELIBERATELY_ROWLESS_FLAG_KEYS = [
+    'auth.scim',
+    'auth.tenant-sso',
+] as const;
+
 export type ReferencedFlagKey = (typeof REFERENCED_FLAG_KEYS)[number];

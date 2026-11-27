@@ -85,15 +85,44 @@
  * for nothing — and `FeatureFlag` is tenantless, so there is no tenant context
  * to resolve one from.
  */
-import { REFERENCED_FLAG_KEYS } from '@/lib/feature-flag-keys';
+import {
+    DELIBERATELY_ROWLESS_FLAG_KEYS,
+    REFERENCED_FLAG_KEYS,
+} from '@/lib/feature-flag-keys';
 import { logger } from '@/lib/observability/logger';
 
 export type FeatureFlagRowsState = 'complete' | 'incomplete' | 'unknown';
 
 export interface FeatureFlagsCapability {
     readonly state: FeatureFlagRowsState;
-    /** Referenced keys with no row. Empty unless `state` is `incomplete`. */
+    /**
+     * Referenced keys with no row AND no decision saying there should be none.
+     * Empty unless `state` is `incomplete`.
+     *
+     * Narrowed by #2841: a key in `DELIBERATELY_ROWLESS_FLAG_KEYS` is absent
+     * because somebody ruled, and reporting that as a fault made a scheduled
+     * job red every day for six days. Those keys are reported under
+     * `dormantRows` instead — nothing is hidden, and this field now means
+     * "a surface is dark and nobody decided that", which is the thing worth
+     * waking up for.
+     */
     readonly missingRows: readonly string[];
+    /**
+     * Referenced keys with no row BECAUSE somebody decided (#2841). Listed
+     * rather than counted, so `/api/readyz` names them and an operator can
+     * see which surfaces are deliberately dark without reading the source.
+     */
+    readonly dormantRows: readonly string[];
+    /**
+     * Keys listed as deliberately rowless that NOW HAVE a row — so the
+     * decision was reversed and the entry has outlived it.
+     *
+     * Reported because an allowlist entry that is no longer needed reads
+     * exactly like a covered case, which is how such a list stops meaning
+     * anything. It does NOT fail `state`: the surface is live and working,
+     * and the stale entry is tidying rather than an outage.
+     */
+    readonly staleDormantEntries: readonly string[];
     /** How many referenced keys there are, so the figure above has a scale. */
     readonly referenced: number;
     /** Rows whose key nothing gates on. A count — see the docblock. */
@@ -122,13 +151,22 @@ export async function featureFlagsCapability(
     try {
         const rows = await db.featureFlag.findMany({ select: { key: true } });
         const present = new Set(rows.map((r) => r.key));
-        const missingRows = REFERENCED_FLAG_KEYS.filter((k) => !present.has(k));
+        const dormant = new Set<string>(DELIBERATELY_ROWLESS_FLAG_KEYS);
+        const absent = REFERENCED_FLAG_KEYS.filter((k) => !present.has(k));
+        // Split on whether somebody DECIDED the absence (#2841). `state`
+        // follows `missingRows` only, so a decided absence is not an alarm
+        // and an undecided one still is.
+        const missingRows = absent.filter((k) => !dormant.has(k));
+        const dormantRows = absent.filter((k) => dormant.has(k));
+        const staleDormantEntries = [...dormant].filter((k) => present.has(k)).sort();
         const orphanRows = [...present].filter(
             (k) => !(REFERENCED_FLAG_KEYS as readonly string[]).includes(k),
         ).length;
         return {
             state: missingRows.length === 0 ? 'complete' : 'incomplete',
             missingRows,
+            dormantRows,
+            staleDormantEntries,
             referenced,
             orphanRows,
         };
@@ -140,6 +178,13 @@ export async function featureFlagsCapability(
             component: 'feature-flags-capability',
             error: err instanceof Error ? err.message : String(err),
         });
-        return { state: 'unknown', missingRows: [], referenced, orphanRows: 0 };
+        return {
+            state: 'unknown',
+            missingRows: [],
+            dormantRows: [],
+            staleDormantEntries: [],
+            referenced,
+            orphanRows: 0,
+        };
     }
 }

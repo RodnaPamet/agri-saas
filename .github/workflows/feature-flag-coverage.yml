@@ -68,6 +68,12 @@ jobs:
 
                   state="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.state // "absent"')"
                   missing="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.missingRows // [] | join(", ")')"
+                  # #2841 — a DECIDED absence is reported separately, so this
+                  # job stops failing on it while still printing it. Both
+                  # lines are read, because a check that goes quiet about a
+                  # dark surface is worse than one that is noisy about it.
+                  dormant="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.dormantRows // [] | join(", ")')"
+                  stale="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.staleDormantEntries // [] | join(", ")')"
                   referenced="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.referenced // "?"')"
                   orphans="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.orphanRows // "?"')"
 
@@ -75,6 +81,17 @@ jobs:
                   # zero referenced keys is vacuously true, and a reader needs to
                   # see which it is.
                   echo "▸ state=${state}  referenced=${referenced}  orphanRows=${orphans}"
+                  if [ -n "$dormant" ]; then
+                      echo "▸ deliberately rowless (off, as decided): ${dormant}"
+                  fi
+                  if [ -n "$stale" ]; then
+                      # NOT a failure: the surface is live and working. The
+                      # list has outlived its decision, which is tidying.
+                      echo "::warning::${stale} is listed as deliberately"\
+                           "rowless but now HAS a row — the decision was"\
+                           "reversed, so delete the entry from"\
+                           "DELIBERATELY_ROWLESS_FLAG_KEYS."
+                  fi
 
                   case "$state" in
                     complete)
@@ -85,7 +102,12 @@ jobs:
                             echo "longer measuring what it claims to."
                             exit 1
                         fi
-                        echo "✔ All ${referenced} gated flag key(s) have a row."
+                        if [ -n "$dormant" ]; then
+                            echo "✔ Every gated flag key either has a row or is"
+                            echo "  deliberately rowless by an owner ruling."
+                        else
+                            echo "✔ All ${referenced} gated flag key(s) have a row."
+                        fi
                         ;;
                     incomplete)
                         echo "::error::${missing:-unknown} has no FeatureFlag row."
