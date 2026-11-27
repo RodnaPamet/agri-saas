@@ -7,9 +7,20 @@
  *
  * Six load-bearing invariants:
  *
- *   1. Fetches from `/api/notifications` — the existing app-layer
- *      surface (no new API). Lazy on popover open + one initial
- *      ping on mount for the badge count.
+ *   1. Fetches from `/api/t/{tenantSlug}/notifications` — THE FARM IN THE
+ *      URL. Lazy on popover open + one initial ping on mount for the badge
+ *      count.
+ *
+ *      This invariant read `/api/notifications` until #3277, and pinning
+ *      that was pinning a defect: the slug-less route resolves a farm from
+ *      the session's backward-compat `tenantId` claim — the caller's OLDEST
+ *      membership — so a person in two farms saw one farm's notifications
+ *      for ever. PR-8's "no new API" reasoning was sound at the time and the
+ *      tenant-scoped route already existed; nothing compared the two.
+ *
+ *      Re-pointed rather than relaxed. A guard widened to accept either
+ *      endpoint would admit the defect back, which is the whole failure mode
+ *      of loosening an assertion to make a change pass.
  *
  *   2. Unread badge renders ONLY when `unreadCount > 0`. The bell
  *      stays uncluttered when nothing demands attention.
@@ -51,11 +62,17 @@ describe('Roadmap-14 PR-8 — NotificationsBell discipline', () => {
             );
         });
 
-        it('fetches from the canonical `/api/notifications` endpoint', () => {
-            // Same source the existing notification dashboard
-            // uses. PR-8 doesn't add a new API.
+        it('fetches the TENANT-SCOPED list — the farm in the URL (#3277)', () => {
+            // A template literal now, because the slug is interpolated.
             expect(BELL_SRC).toMatch(
-                /fetch\(\s*['"]\/api\/notifications['"]/,
+                /fetch\(\s*`\/api\/t\/\$\{tenantSlug\}\/notifications`/,
+            );
+            // And the negative, which is the half with teeth: the slug-less
+            // route must not come back. Matched on a fetch CALL rather than
+            // on the string anywhere in the file, because the docblock
+            // explains the old endpoint by name and must stay able to.
+            expect(BELL_SRC).not.toMatch(
+                /fetch\(\s*['"`]\/api\/notifications['"`]/,
             );
         });
 
