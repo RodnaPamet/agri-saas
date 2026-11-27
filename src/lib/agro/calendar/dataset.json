@@ -378,7 +378,8 @@
             "bg": "Заедно с жътвата на обикновената пшеница."
           }
         }
-      ]
+      ],
+      "commodityCanonical": "wheat"
     },
     {
       "key": "barley",
@@ -576,7 +577,8 @@
             "bg": "През 2026 г. първата ръж беше прибрана в края на юни."
           }
         }
-      ]
+      ],
+      "commodityCanonical": "rye"
     },
     {
       "key": "oats",
@@ -653,7 +655,8 @@
             "page": 22
           }
         }
-      ]
+      ],
+      "commodityCanonical": "oats"
     },
     {
       "key": "maize",
@@ -959,7 +962,8 @@
             }
           ]
         }
-      ]
+      ],
+      "commodityCanonical": "soybean"
     },
     {
       "key": "dry-bean",
@@ -1027,7 +1031,8 @@
             "page": 19
           }
         }
-      ]
+      ],
+      "commodityCanonical": "peas"
     },
     {
       "key": "lentil",
@@ -1051,7 +1056,8 @@
             "page": 26
           }
         }
-      ]
+      ],
+      "commodityCanonical": "lentils"
     },
     {
       "key": "broad-bean",

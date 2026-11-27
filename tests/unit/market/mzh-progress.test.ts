@@ -36,7 +36,7 @@ describe('the autumn bulletin (Бюлетин № 31/2026, към 05.11)', () =>
         expect(p.sowing[0].rows[0]).toEqual({
             label: 'пшеница', commodity: 'wheat', sownHa: 767199, lastYearHa: 658208, changePct: '16.6',
         });
-        expect(p.sowing[0].rows.map((r) => r.commodity)).toEqual(['wheat', 'barley', 'rapeseed', 'rye', 'triticale']);
+        expect(p.sowing[0].rows.map((r) => r.commodity)).toEqual(['wheat', 'barley', 'rapeseed', 'rye']);
         expect(p.sowing[0].rows.find((r) => r.label === 'ръж')?.changePct).toBe('-28.4');
     });
 
@@ -52,7 +52,10 @@ describe('the summer bulletin (към 09.07): the winter-crop harvest', () => {
     it('reads every row, joining labels wrapped over two lines', () => {
         const rows = p.harvest[0].rows;
         expect(rows.map((r) => r.label)).toEqual([
-            'пшеница', 'ечемик (вкл. пролетен)', 'маслодайна рапица', 'ръж', 'тритикале',
+            // «тритикале» is absent because it is a SKIPPED prefix since the
+            // owner's 2026-11-26 ruling — skipped by decision, so it is
+            // neither a row nor an unmapped label.
+            'пшеница', 'ечемик (вкл. пролетен)', 'маслодайна рапица', 'ръж',
         ]);
         expect(rows[0]).toMatchObject({ commodity: 'wheat', harvestedHa: 308732, areaHa: 1145055, harvestedPct: 27 });
         expect(p.refused).toEqual([]);

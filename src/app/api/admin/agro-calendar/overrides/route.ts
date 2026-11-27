@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { listCalendarOverrides, setCalendarOverride } from '@/app-layer/usecases/agro-calendar-overrides';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError, type PlatformKeyGeneration } from '@/lib/auth/platform-admin';
+import { enforceRateLimit } from '@/lib/security/rate-limit-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 
@@ -36,9 +37,22 @@ export const GET = withApiErrorHandling(
     async (req: NextRequest) => {
         const gate = platformGate(req);
         if (gate instanceof NextResponse) return gate;
+
+        // Enforced HERE, not by the wrapper — #3155. `resolveRateLimitScope`
+        // returns null for any non-mutation method, so the
+        // `rateLimit: { config }` this route used to declare was a control
+        // that could not execute. The Edge covers neither: `apiReadRateLimit`
+        // reaches `/api/t/**` plus person paths, and `/api/admin/*` is
+        // excluded from the public read tier. AFTER the gate, so an
+        // unauthenticated caller cannot spend the budget.
+        const limited = await enforceRateLimit(req, {
+            scope: 'platform-agro-calendar',
+            config: LOGIN_LIMIT,
+        });
+        if (limited.response) return limited.response;
         return jsonResponse({ overrides: await listCalendarOverrides() });
     },
-    { rateLimit: { config: LOGIN_LIMIT, scope: 'platform-agro-calendar' } },
+    { rateLimit: false },
 );
 
 export const PUT = withApiErrorHandling(

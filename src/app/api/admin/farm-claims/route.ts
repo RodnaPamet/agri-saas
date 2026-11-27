@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { enforceRateLimit } from '@/lib/security/rate-limit-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
@@ -55,6 +56,19 @@ export const GET = withApiErrorHandling(
         const refused = platformGate(req);
         if (refused) return refused;
 
+        // Enforced HERE, not by the wrapper — #3155. `resolveRateLimitScope`
+        // returns null for any non-mutation method, so the
+        // `rateLimit: { config }` this route used to declare was a control
+        // that could not execute. The Edge covers neither: `apiReadRateLimit`
+        // reaches `/api/t/**` plus person paths, and `/api/admin/*` is
+        // excluded from the public read tier. AFTER the gate, so an
+        // unauthenticated caller cannot spend the budget.
+        const limited = await enforceRateLimit(req, {
+            scope: 'platform-farm-claims',
+            config: LOGIN_LIMIT,
+        });
+        if (limited.response) return limited.response;
+
         const parsed = Query.safeParse({
             status: req.nextUrl.searchParams.get('status') ?? undefined,
             before: req.nextUrl.searchParams.get('before') ?? undefined,
@@ -80,6 +94,6 @@ export const GET = withApiErrorHandling(
     {
         // Same pre-auth tier as the other platform-admin surfaces: the header
         // IS the credential, so this sits in the same abuse position as sign-in.
-        rateLimit: { config: LOGIN_LIMIT, scope: 'platform-farm-claims' },
+        rateLimit: false,
     },
 );

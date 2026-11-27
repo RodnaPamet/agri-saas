@@ -10,7 +10,7 @@ const clone = () => JSON.parse(JSON.stringify(raw));
 
 describe('the committed dataset', () => {
     it('loads, and every citation resolves to a source', () => {
-        expect(BENCHMARKS.yields.length).toBeGreaterThanOrEqual(13);
+        expect(BENCHMARKS.yields.length).toBeGreaterThanOrEqual(12);
         expect(BENCHMARKS.supportRates.length).toBeGreaterThanOrEqual(10);
         for (const x of [...BENCHMARKS.yields, ...BENCHMARKS.supportRates]) {
             expect(Object.keys(BENCHMARKS.sources)).toContain(x.cite.source);
@@ -98,7 +98,7 @@ describe('commodity slugs', () => {
     });
 
     it('accepts a crop the vocabulary does not know (control)', () => {
-        expect(benchmarkCommodities()).toContain('triticale');
+        expect(benchmarkCommodities()).toContain('chickpeas');
     });
 });
 

@@ -14,7 +14,7 @@
  *   - an ALIAS where the product has a canonical slug (`canola` for
  *     `rapeseed`). Clients join on `commodity-vocabulary`'s canonical values,
  *     so an alias is a figure no crop ever finds. A crop outside that
- *     vocabulary (triticale, chickpeas) is fine: it has no slug to clash with.
+ *     vocabulary (chickpeas) is fine: it has no slug to clash with.
  */
 import { BenchmarksDatasetSchema, type BenchmarksDataset, type BenchmarkYield, type SupportRate } from './schema';
 import { perDaEurCents } from '../calendar/costs';

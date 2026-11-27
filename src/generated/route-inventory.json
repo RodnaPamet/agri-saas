@@ -2031,6 +2031,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/knowledge/soil-guide",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/knowledge/{id}",
       "status": "live",
       "documented": false
@@ -2513,7 +2518,7 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/bulk/assign",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/bulk/delete",
@@ -2523,12 +2528,12 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/bulk/due",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/bulk/status",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/metrics",

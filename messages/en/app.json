@@ -6350,6 +6350,8 @@
         "collectInsurance": "Insurance quote requests: the parcel (name, crop, area), its satellite risk reading at that moment, the quote we showed you, and the message you wrote.",
         "collectUsage": "How the application is used: which screens you open and which actions you take — saving a treatment, downloading a diary. It is linked to your account. We do not record what you typed, where you were, or anything about a specific field or crop, and it is never used to track you across other services or shared with an advertising network.",
         "collectPositions": "Machine positions: if the farm fits a tracker to a vehicle, its location, speed and whether the engine is running are recorded. The record belongs to the MACHINE rather than to you — but if you were on it, it shows where you were. The farm is required to tell you which of its machines are tracked.",
+        "collectWeatherPlace": "Location for the weather: if you allow location, the app rounds the phone’s position to about 5 km and sends it to Apple Weather and Open-Meteo to show the weather and rainfall on the dashboard. It is not linked to your account and we do not keep it. Without permission, the centre of the farm’s blocks is used.",
+        "collectDiagnostics": "Diagnostics from the phone: when the app crashes, freezes or a screen is slow, it sends a technical report to Sentry — the device model, the iOS version and where in the app it happened. The report holds no name, email or farm records and no screenshot, and it is not linked to your account.",
         "useTitle": "What we use it for",
         "useOperate": "Running the application for your farm — showing your records back to you, and producing the reports and exports you ask for.",
         "useSuppliers": "When you tick the consent box on an offer request, your name and your message are shared with that supplier so they can contact you about it. Nothing is shared with a supplier unless you tick that box, and no offer request is stored without it.",
@@ -7651,6 +7653,29 @@
             "agraren-doklad": "Agrarian report",
             "coupled-support": "Coupled support",
             "integrated-production": "Integrated production"
+        },
+        "analysis": {
+            "new": "New",
+            "suggestions": "Suggestions for Agrent",
+            "none": "Nothing to add to the app.",
+            "area": {
+                "calendar": "Calendar",
+                "benchmarks": "Yields",
+                "thresholds": "Thresholds",
+                "prices": "Prices",
+                "progress": "Dashboard",
+                "support": "Support",
+                "other": "Other"
+            }
         }
+    },
+    "soilGuide": {
+        "title": "Soil",
+        "breadcrumbParent": "Knowledge",
+        "intro": "What the official rules and trusted guides say about fertilising, erosion, soil analysis and soil life — arranged by topic, with the source for each.",
+        "disclaimer": "These are summaries written by Agrent. Before acting on a date, distance or rate, check the full document and the current year's requirements.",
+        "tocLabel": "Topics",
+        "sources": "Sources",
+        "sourceMeta": " — {publisher}, {year}"
     }
 }

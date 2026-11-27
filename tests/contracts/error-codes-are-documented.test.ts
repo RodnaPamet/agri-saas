@@ -705,12 +705,20 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // the spec and only wanted the 404 they can already answer, which is the
     // `LISTING_INTEREST_ALREADY_SENT` precedent above.
     //
-    // These three are here for the `COMPANY_NAME_TAKEN` reason, measured
-    // against `src/generated/openapi.json` (184 paths) rather than assumed:
+    // These TWO are here for the `COMPANY_NAME_TAKEN` reason, measured
+    // against `src/generated/openapi.json` rather than assumed:
     //
     //     ORG_NOT_FOUND_OR_FORBIDDEN   no /org/ path in the spec at all
     //     SUPPORT_SCHEME_NOT_FOUND     no support-scheme path
-    //     TARGET_USER_NOT_IN_TENANT    no admin/sessions path
+    //
+    // It was THREE until #3080. `TARGET_USER_NOT_IN_TENANT` was baselined as
+    // "no admin/sessions path", which was true of the route the entry had in
+    // mind and not of the code: `assertActiveMembers` raises it from any
+    // operation that names a person, and `POST /tasks/bulk/assign` is one.
+    // Documenting that operation named the code, so the entry went. The
+    // lesson for the two below is that a baseline reason naming ONE route is
+    // only as durable as that route being the only raiser — grep the policy,
+    // not the surface.
     //
     // ORG_NOT_FOUND_OR_FORBIDDEN is the awkward one and worth naming: it comes
     // from `context.ts`'s org resolver, so it is raised by EVERY organisation
@@ -726,7 +734,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // leak, so this entry must not be resolved by adding two codes.
     'ORG_NOT_FOUND_OR_FORBIDDEN',
     'SUPPORT_SCHEME_NOT_FOUND',
-    'TARGET_USER_NOT_IN_TENANT',
 
     // The five Google-integration codes (#2005), here for the
     // `COMPANY_NAME_TAKEN` reason above and measured rather than assumed:

@@ -82,7 +82,7 @@ export async function sendInquiryEmail(
     // The commodity name, in the RECIPIENT's language. `translateFor` returns
     // the key path on a miss, which `commodityLabel` already treats as "no
     // entry" and title-cases — so a slug that predates the catalogue reads as
-    // `Triticale` rather than `trends.commodities.triticale`.
+    // `Spelt` rather than `trends.commodities.spelt`.
     const resolvedCommodity = await translateFor(
         locale,
         `trends.commodities.${commodity}`,
