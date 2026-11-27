@@ -371,6 +371,67 @@ export const LinkAssetEvidenceSchema = z.object({
     description: 'Attach a URL as evidence on an asset. File uploads use the multipart /evidence/uploads endpoint with an assetId.',
 });
 
+/**
+ * The asset maintenance + bulk-delete bodies, declared HERE rather than in
+ * their route files (#1555, #3080).
+ *
+ * All three were local `z.object` declarations inside their handlers, and
+ * documenting those paths put a SECOND hand-written declaration of each in
+ * `assets.paths.ts` — two schemas for one body, neither importing the other
+ * and nothing comparing them. `request-body-declared-once` caps that at zero,
+ * so the schema moved instead of being mirrored.
+ *
+ * The published component names are unchanged from the spec that first
+ * described them: renaming a component is a contract change, and these are
+ * what a generated client already calls them.
+ */
+export const CreateAssetMaintenanceSchema = z.object({
+    kind: z.enum(['SERVICE', 'REPAIR', 'INSPECTION', 'BREAKDOWN']),
+    openedAt: z.string().datetime().optional().openapi({
+        description: 'Defaults to now. Set it to backdate work already done.',
+    }),
+    closedAt: z.string().datetime().nullable().optional().openapi({
+        description:
+            'Present ⇒ the record is created already closed. Omitted or null ⇒ the work is '
+            + 'open, which is what makes `suggestStatus` non-null on an ACTIVE asset.',
+    }),
+    meterAtService: z.coerce.number().min(0).nullable().optional().openapi({
+        description:
+            'A NUMBER on the way in; it comes back as a decimal STRING. Engine hours or '
+            + 'odometer at the time of service, stored per record so "hours since last '
+            + 'service" stays answerable after the meter has moved on.',
+    }),
+    description: z.string().max(5000).nullable().optional().openapi({
+        description: 'Free text, sanitised at the usecase layer before storage.',
+    }),
+    cost: z.coerce.number().min(0).nullable().optional(),
+    nextDueAt: z.string().datetime().nullable().optional(),
+    nextDueMeter: z.coerce.number().min(0).nullable().optional(),
+}).openapi('AssetMaintenanceCreateRequest', {
+    description:
+        'Open a maintenance record, or log work already completed by sending `closedAt`.',
+});
+
+export const CloseAssetMaintenanceSchema = z.object({
+    closedAt: z.string().datetime().nullable().optional().openapi({
+        description: 'When the work finished. Defaults to now.',
+    }),
+}).openapi('AssetMaintenanceCloseRequest', {
+    description:
+        'Close a maintenance record. Closing is the only mutation the record supports — '
+        + 'there is no general edit.',
+});
+
+export const BulkDeleteAssetSchema = z.object({
+    assetIds: z.array(z.string().min(1)).min(1).max(100).openapi({
+        description: '1-100 asset ids. An empty array is a 400; more than 100 is a 400.',
+    }),
+}).openapi('AssetBulkDeleteRequest', {
+    description:
+        'Soft-delete up to 100 assets. Ids that do not exist, belong to another farm, or '
+        + 'were already deleted are SKIPPED rather than refused, so the call is idempotent.',
+});
+
 export const AddTaskLinkSchema = z.object({
     // Mirrors the Prisma `TaskLinkEntityType` enum, minus the GRC members
     // deleted in the teardown (PRACTICE / FRAMEWORK_REQUIREMENT / POLICY /
