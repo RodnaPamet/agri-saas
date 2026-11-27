@@ -9075,6 +9075,194 @@
           "hasNextPage"
         ]
       },
+      "EvidencePurgeResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "purged": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "purged"
+        ]
+      },
+      "EvidenceRetentionMetrics": {
+        "type": "object",
+        "properties": {
+          "expiringCount": {
+            "type": "integer",
+            "description": "Records whose `retentionUntil` falls in the next 30 days — a FIXED window, not the `?days=` one the expiring LIST takes, so the card and that list answer different questions whenever a caller passes `days`."
+          },
+          "archivedCount": {
+            "type": "integer",
+            "description": "Archived records, with NO condition on expiry — so it counts manual archives alongside swept ones and is the complement of neither sibling."
+          },
+          "expiredCount": {
+            "type": "integer",
+            "description": "Expired records that are **still not archived**.\n\nRead that clause carefully before rendering this as \"Expired\": the sweep sets `expiredAt` and `isArchived` in the same write, so every record it processes leaves this count at the moment it joins `GET /retention/expired`. In a farm whose sweep is up to date this is ZERO while that list is long, which looks like a broken counter and is tracked as **#3281**. It is a sweep BACKLOG gauge, whatever its name suggests."
+          }
+        },
+        "required": [
+          "expiringCount",
+          "archivedCount",
+          "expiredCount"
+        ]
+      },
+      "EvidenceRetentionRequest": {
+        "type": "object",
+        "properties": {
+          "retentionUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "An explicit expiry instant, or null to clear it. **IGNORED when the effective policy is `DAYS_AFTER_UPLOAD`** — see the policy field."
+          },
+          "retentionPolicy": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "FIXED_DATE",
+              "DAYS_AFTER_UPLOAD"
+            ],
+            "description": "How the expiry is decided. `FIXED_DATE` honours `retentionUntil` as sent. `DAYS_AFTER_UPLOAD` DERIVES it as `createdAt + retentionDays` and overwrites anything you sent in `retentionUntil` in the same request — the derived value wins silently, so do not send both and expect yours to stick. `NONE` leaves the record with no expiry.\n\nThe derivation also fires when the STORED policy is already `DAYS_AFTER_UPLOAD` and you send only `retentionDays`, which is how a change of cadence re-dates an existing record."
+          },
+          "retentionDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 36500,
+            "description": "Days after upload, 1–36500 (a century). Only consulted under `DAYS_AFTER_UPLOAD`; stored but inert under the other two policies."
+          }
+        },
+        "description": "Set or clear retention on one evidence record. Every field is optional and only the fields present are written."
+      },
+      "EvidenceRetentionSweepRequest": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+            "description": "When true, report what WOULD be archived and write nothing. Note the response still carries `archived`, equal to `scanned` — it means \"would archive\", so read `dryRun` alongside it."
+          }
+        },
+        "description": "Run the retention sweep for this farm. ADMIN."
+      },
+      "EvidenceRetentionSweepResult": {
+        "type": "object",
+        "properties": {
+          "scanned": {
+            "type": "integer",
+            "description": "Lapsed, unarchived records the sweep found."
+          },
+          "expired": {
+            "type": "integer"
+          },
+          "archived": {
+            "type": "integer",
+            "description": "How many were archived — or, on a DRY RUN, how many WOULD be: the field is set to `scanned` without anything being written. Read `dryRun` alongside it or you will be told work happened that did not."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "Present and true only on a dry run."
+          }
+        },
+        "required": [
+          "scanned",
+          "expired",
+          "archived"
+        ]
+      },
+      "EvidenceRetentionView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "FILE",
+              "LINK",
+              "TEXT"
+            ]
+          },
+          "isArchived": {
+            "type": "boolean",
+            "description": "Set by the SWEEP as well as by the manual archive control, which is why a record can be archived without anybody having archived it."
+          },
+          "retentionPolicy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "NONE",
+              "FIXED_DATE",
+              "DAYS_AFTER_UPLOAD",
+              null
+            ]
+          },
+          "retentionDays": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "retentionUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When retention lapses. Under `DAYS_AFTER_UPLOAD` this is DERIVED by the server and not what a caller sent."
+          },
+          "expiredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Stamped by the sweep when it first processes a lapsed record, and idempotent — a second sweep leaves an existing value alone, so this is when it was FIRST noticed rather than when retention lapsed. Those differ by however long the sweep took to run."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The base `DAYS_AFTER_UPLOAD` counts from — upload time, not the time the policy was set, so applying a 30-day policy to a year-old record expires it immediately."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "type",
+          "isArchived",
+          "retentionPolicy",
+          "retentionDays",
+          "retentionUntil",
+          "expiredAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "EvidenceReview": {
         "type": "object",
         "properties": {
@@ -93689,6 +93877,1047 @@
           },
           "404": {
             "description": "`EVIDENCE_NOT_FOUND` — no such record on this farm. An id belonging to a DIFFERENT tenant answers identically, so the register cannot be enumerated one id at a time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/{id}/retention": {
+      "post": {
+        "operationId": "setEvidenceRetention",
+        "summary": "Set or clear retention on a record",
+        "description": "Partial: every field is optional and only those present are written.\n\n**`DAYS_AFTER_UPLOAD` overwrites `retentionUntil`.** Under that policy the server derives the date as `createdAt + retentionDays` and discards anything you sent in the same request — silently, with the derived value winning. The derivation also fires when the STORED policy is already `DAYS_AFTER_UPLOAD` and you send only `retentionDays`, which is how a cadence change re-dates an existing record.\n\nIt counts from UPLOAD, not from when the policy was set, so applying a 30-day policy to a year-old record expires it immediately and the next sweep archives it. That is the intended meaning of the policy and the most surprising thing this endpoint does.\n\nWrites an `EVIDENCE_RETENTION_UPDATED` audit entry.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The evidence record id."
+            },
+            "required": true,
+            "description": "The evidence record id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceRetentionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The record with its retention fields as stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRetentionView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`retentionDays` outside 1–36500, an unknown `retentionPolicy`, or a malformed `retentionUntil`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read-only on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`EVIDENCE_NOT_FOUND` — no such record on this farm. An id belonging to a DIFFERENT tenant answers identically.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/retention/expiring": {
+      "get": {
+        "operationId": "listExpiringEvidence",
+        "summary": "Records whose retention lapses soon",
+        "description": "Live, unarchived records with a `retentionUntil` at or before now + `days`, soonest first.\n\n**`days` is not validated**, and the three ways that shows are worth knowing because none of them is an error:\n\n- A non-numeric value falls back to **30** rather than refusing, so `?days=banana` answers confidently about a window you did not ask for.\n- A NEGATIVE value passes through and puts the boundary in the PAST, so `?days=-5` lists records that lapsed days ago — under an endpoint called \"expiring\".\n- There is no upper bound, so a large value returns every record carrying a retention date at all.\n\nTracked with #3281. Send a sane positive integer.\n\nThe read is also UNBOUNDED — no page size and no cursor — so the response grows with the farm.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Look-ahead window in days. Defaults to 30, including when the value sent cannot be parsed. Not range-checked — see the description.",
+              "example": 30
+            },
+            "required": false,
+            "description": "Look-ahead window in days. Defaults to 30, including when the value sent cannot be parsed. Not range-checked — see the description.",
+            "name": "days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Records lapsing inside the window, soonest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EvidenceRetentionView"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/retention/expired": {
+      "get": {
+        "operationId": "listExpiredEvidence",
+        "summary": "Records whose retention has lapsed",
+        "description": "Every record carrying an `expiredAt`, newest first — **including archived ones**, which is what makes this list and `metrics.expiredCount` disagree (#3281): the count excludes archived records and the sweep archives everything it processes.\n\nSo this is the cumulative history of expiry, not a work queue. Soft-deleted records are excluded.\n\nUNBOUNDED, like its sibling: no page size, no cursor.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Expired records, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EvidenceRetentionView"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/retention/metrics": {
+      "get": {
+        "operationId": "getEvidenceRetentionMetrics",
+        "summary": "The three retention counts",
+        "description": "Three counts over three DIFFERENT populations. Read `EvidenceRetentionMetrics` before rendering any of them — in particular `expiredCount`, which is a sweep-backlog gauge rather than a count of expired records, and tends to zero (#3281).\n\nNeeds only READ, unlike the register's `/evidence/metrics`, which is ADMIN. The two are unrelated payloads despite the matching path segment.\n\nThe route's own docblock advertised a \"top practices\" breakdown until this change: that grouped by `Evidence.practiceId`, and both the column and `Practice` went with the GRC teardown. The usecase had recorded the removal; the route had not.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The three counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRetentionMetrics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/retention/sweep": {
+      "post": {
+        "operationId": "runEvidenceRetentionSweep",
+        "summary": "Run the retention sweep for this farm",
+        "description": "ADMIN. Finds live, unarchived records whose `retentionUntil` has passed, stamps `expiredAt` and sets `isArchived`.\n\n**Archiving is not deleting.** The sweep destroys nothing: the records stay readable and their files stay in storage. Destruction is the separate, two-step `delete` → `purge` path.\n\n`expiredAt` is only stamped when not already set, so the sweep is idempotent and the column records when a lapse was FIRST noticed rather than when it happened.\n\nSend `{\"dryRun\": true}` to see what it would do. Note the response then reports `archived` equal to `scanned` while writing nothing — the field means \"would archive\", so read `dryRun` with it.\n\nThere is also a SCHEDULED sweep, so a farm's records get archived whether or not anybody calls this. This endpoint is for running it now.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceRetentionSweepRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was archived — or would have been, on a dry run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRetentionSweepResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an administrator of this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/{id}/restore": {
+      "post": {
+        "operationId": "restoreEvidence",
+        "summary": "Restore a soft-deleted record",
+        "description": "Clears `deletedAt`. ADMIN. The body is the restored record.\n\nRestoring a record that is **not deleted** answers **404**, not 409 — and these 404s are UNCODED: a `message` and no `error.code`, unlike the `EVIDENCE_NOT_FOUND` every read returns. Switch on the status, and do not expect to tell \"no such record\" from \"not deleted\" programmatically.\n\nThis is the DELETE lifecycle, not the retention one. An ARCHIVED record is not deleted and is returned by `unarchive` instead; the two pairs are independent and a record can be both.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The evidence record id."
+            },
+            "required": true,
+            "description": "The evidence record id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restored record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRetentionView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an administrator of this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this farm, OR it is not deleted. Uncoded, and the two are not distinguishable from the response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/evidence/{id}/purge": {
+      "post": {
+        "operationId": "purgeEvidence",
+        "summary": "Permanently destroy a soft-deleted record and its file",
+        "description": "HARD delete, ADMIN, and the only operation in this API that destroys stored BYTES. There is no undo.\n\nThe record MUST already be soft-deleted: purging a live one answers **404**, uncoded. That two-step is the whole safety mechanism, so a client should not chain this onto a delete.\n\n**The bytes are released BEFORE the row, and the order is load-bearing.** `purgeEntity` carries an `Evidence`-specific branch that calls `purgeEvidenceBytes` first, because the row holds the only pointer to the stored object: deleting it first leaves the file readable in storage while the product reports the evidence purged — a deletion that did not happen, reported as one that did. Nothing in the response distinguishes the two, which is why the ordering is in the code rather than in a caller's hands.\n\nThe audit trail SURVIVES: the hash-chained entries describing this record's life, including `ENTITY_PURGED`, outlive it. So the activity history remains while `GET /evidence/{id}` answers 404.",
+        "tags": [
+          "Evidence"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose register this is."
+            },
+            "required": true,
+            "description": "The farm whose register this is.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The evidence record id."
+            },
+            "required": true,
+            "description": "The evidence record id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Purged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePurgeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an administrator of this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such record on this farm, OR it has not been soft-deleted first. Uncoded.",
             "content": {
               "application/json": {
                 "schema": {

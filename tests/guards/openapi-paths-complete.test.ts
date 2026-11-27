@@ -260,7 +260,14 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // less honestly than the baseline does.
 //
 // COUNTED from the file.
-const UNDOCUMENTED_CEILING = 168;
+// 168 → 161 (#3080): evidence RETENTION — the sweep, the three expiry reads,
+// the per-record retention write, and the restore/purge pair. Its own module
+// rather than part of the register's: the register answers "what do we hold"
+// and this answers "for how long, and what happens when that runs out", and
+// `purge` is the only operation in this API that destroys stored BYTES.
+//
+// COUNTED from the file.
+const UNDOCUMENTED_CEILING = 161;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that

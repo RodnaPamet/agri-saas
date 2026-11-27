@@ -1469,22 +1469,22 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/retention/expired",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/retention/expiring",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/retention/metrics",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/retention/sweep",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/uploads",
@@ -1504,17 +1504,17 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/purge",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/restore",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/retention",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/review",

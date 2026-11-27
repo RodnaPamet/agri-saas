@@ -290,6 +290,54 @@ export const EvidenceReviewSchema = z.object({
  * otherwise put a SECOND hand-written declaration of this body in
  * `evidence.paths.ts`, which `request-body-declared-once` caps at zero.
  */
+/**
+ * The evidence RETENTION bodies, declared here rather than in their routes
+ * (#1555, #3080).
+ *
+ * Both were route-local `z.object`s parsed with a bare
+ * `Schema.parse(await req.json())` rather than through `withValidatedBody`,
+ * so documenting their paths would have put a second hand-written
+ * declaration of each in `evidence-retention.paths.ts`.
+ */
+export const EvidenceRetentionSchema = z.object({
+    retentionUntil: z.string().datetime().nullable().optional().openapi({
+        description:
+            'An explicit expiry instant, or null to clear it. **IGNORED when the effective '
+            + 'policy is `DAYS_AFTER_UPLOAD`** — see the policy field.',
+    }),
+    retentionPolicy: z.enum(['NONE', 'FIXED_DATE', 'DAYS_AFTER_UPLOAD']).optional().openapi({
+        description:
+            'How the expiry is decided. `FIXED_DATE` honours `retentionUntil` as sent. '
+            + '`DAYS_AFTER_UPLOAD` DERIVES it as `createdAt + retentionDays` and overwrites '
+            + 'anything you sent in `retentionUntil` in the same request — the derived value '
+            + 'wins silently, so do not send both and expect yours to stick. `NONE` leaves '
+            + 'the record with no expiry.\n\n'
+            + 'The derivation also fires when the STORED policy is already '
+            + '`DAYS_AFTER_UPLOAD` and you send only `retentionDays`, which is how a change '
+            + 'of cadence re-dates an existing record.',
+    }),
+    retentionDays: z.number().int().min(1).max(36500).nullable().optional().openapi({
+        description:
+            'Days after upload, 1–36500 (a century). Only consulted under '
+            + '`DAYS_AFTER_UPLOAD`; stored but inert under the other two policies.',
+    }),
+}).strip().openapi('EvidenceRetentionRequest', {
+    description:
+        'Set or clear retention on one evidence record. Every field is optional and only '
+        + 'the fields present are written.',
+});
+
+export const EvidenceRetentionSweepSchema = z.object({
+    dryRun: z.boolean().optional().openapi({
+        description:
+            'When true, report what WOULD be archived and write nothing. Note the response '
+            + 'still carries `archived`, equal to `scanned` — it means "would archive", so '
+            + 'read `dryRun` alongside it.',
+    }),
+}).strip().openapi('EvidenceRetentionSweepRequest', {
+    description: 'Run the retention sweep for this farm. ADMIN.',
+});
+
 export const BulkDeleteEvidenceSchema = z.object({
     evidenceIds: z.array(z.string().min(1)).min(1).max(100).openapi({
         description: '1-100 evidence ids. An empty array is a 400; more than 100 is a 400.',
