@@ -43,13 +43,13 @@ const AUTHENTICATION_FILES: readonly string[] = [
 const LOGIN_OPERATION = /\boperation:\s*['"`]login['"`]/;
 
 function sourceFiles(): string[] {
-    // `minFiles` is the shared helper's own floor — the point of the module,
+    // `floor` is the shared helper's own minimum — the point of the module,
     // per its docblock — so an extraction that stopped matching fails here
     // rather than passing over nothing.
     return collectSourceFiles({
         roots: ['src'],
         extensions: ['.ts', '.tsx'],
-        minFiles: 1000,
+        floor: 1000,
     });
 }
 
