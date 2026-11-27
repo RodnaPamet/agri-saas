@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
-import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     listAssetMaintenance,
     createAssetMaintenance,
 } from '@/app-layer/usecases/asset-maintenance';
 import { withValidatedBody } from '@/lib/validation/route';
+import { CreateAssetMaintenanceSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 
@@ -20,16 +20,6 @@ import { jsonResponse } from '@/lib/api-response';
  * Traceability surfaces which a plain-farm tenant has hidden.
  */
 
-const CreateMaintenanceSchema = z.object({
-    kind: z.enum(['SERVICE', 'REPAIR', 'INSPECTION', 'BREAKDOWN']),
-    openedAt: z.string().datetime().optional(),
-    closedAt: z.string().datetime().nullable().optional(),
-    meterAtService: z.coerce.number().min(0).nullable().optional(),
-    description: z.string().max(5000).nullable().optional(),
-    cost: z.coerce.number().min(0).nullable().optional(),
-    nextDueAt: z.string().datetime().nullable().optional(),
-    nextDueMeter: z.coerce.number().min(0).nullable().optional(),
-});
 
 export const GET = withApiErrorHandling(
     async (
@@ -45,7 +35,7 @@ export const GET = withApiErrorHandling(
 
 export const POST = withApiErrorHandling(
     withValidatedBody(
-        CreateMaintenanceSchema,
+        CreateAssetMaintenanceSchema,
         async (
             req,
             { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> },

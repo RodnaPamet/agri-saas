@@ -76,6 +76,26 @@ const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
             + 'localised.',
     },
     {
+        pattern: /^src\/lib\/schemas\/index\.ts$/,
+        reason:
+            'ENGLISH BY CONVENTION, and the gap the two entries above left '
+            + '(#3080). This module\'s own header says what it is: "these '
+            + 'schemas are also the single source of truth for the generated '
+            + 'OpenAPI spec", and every hit in it is a `description:` passed to '
+            + '`.openapi(...)` — request-body component metadata on the same '
+            + 'axis as `src/lib/dto/`, read by SDK authors and by the contract '
+            + 'tests. Translating it would make `openapi-breaking-change` '
+            + 'compare two languages, which is the reason given for the spec '
+            + 'subtree one entry up.\n'
+            + 'MEASURED rather than assumed, because a whole-file exclusion is '
+            + 'a blind spot if it is wrong: all 62 hits in this file are '
+            + '`description:` and NONE is a `label:` or `placeholder:`. That is '
+            + 'also why the pattern names `index.ts` rather than the directory '
+            + '— `url.ts`, `timestamp.ts` and `farm-limits.ts` sit beside it '
+            + 'and are not covered, so a future UI string in one of them still '
+            + 'fails here.',
+    },
+    {
         pattern: /^src\/lib\/scim\//,
         reason:
             'SCIM type definitions. The protocol fixes these names and an IdP '
@@ -195,7 +215,11 @@ const CURRENT_BASELINE = 13;
 // coverage gate draws when `bullmq-real-api` entered its denominator: a
 // re-floor after the POPULATION moved is a different act from a re-floor that
 // admits new debt. Nothing in `src/app` or `src/components` changed here.
-const CONFIG_PROP_BASELINE = 407;
+// 407 → 350 (#3080): `src/lib/schemas/index.ts` joined FILE_ALLOWLIST above,
+// which removes 62 openapi `description:` hits from the population. This is a
+// POPULATION change, not an extraction — nothing was translated. Re-measured
+// from the scan, not subtracted from the old number.
+const CONFIG_PROP_BASELINE = 350;
 
 /**
  * A string counts as user-facing copy if — after stripping HTML entities — it

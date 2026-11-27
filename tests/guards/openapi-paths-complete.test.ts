@@ -231,7 +231,19 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted — the instruction this block gives
 // after #2578, and the reason the previous value was once one too high.
-const UNDOCUMENTED_CEILING = 192;
+// 192 → 181 (#3080): the eleven asset-register paths are documented now
+// (`assets.paths.ts`), so they leave the baseline in the same diff that
+// describes them — eighteen operations, the whole domain rather than a
+// slice of it, because `GET /assets` serves three different bodies and
+// documenting one branch would have been less honest than the baseline.
+//
+// COUNTED from the file, not subtracted from the previous line, and this
+// is the merge the comment above predicts: #3270 lowers the same constant
+// 192 → 189 on another branch for the session-revocation paths. Whichever
+// of the two merges second has a baseline that lost BOTH sets of rows and
+// a ceiling git will have resolved to one side's number — exactly the
+// off-by-N the `toBe` below refuses. Re-run `merge:main` and re-count.
+const UNDOCUMENTED_CEILING = 181;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that

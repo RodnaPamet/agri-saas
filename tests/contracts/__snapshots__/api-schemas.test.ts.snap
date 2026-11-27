@@ -2743,6 +2743,364 @@ exports[`API contract — per-schema snapshots schema: AppleSignInResponse 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: Asset 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION",
+        "BUILDING",
+        "STORAGE",
+        "LIVESTOCK_EQUIPMENT",
+        "TOOL",
+        "OTHER"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "IN_MAINTENANCE",
+        "RETIRED"
+      ],
+      "description": "Never changed as a side effect of logging maintenance. Opening or closing a record returns a \`suggestStatus\` for the caller to act on; the server does not flip this, because an operator recording an oil change after the fact would not expect the machine to go into maintenance retroactively."
+    },
+    "criticality": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        null
+      ]
+    },
+    "owner": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "FREE TEXT keeper. Not a user reference and not validated against membership."
+    },
+    "ownerUserId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The assigned person, as a \`User\` id. Checked against ACTIVE membership of this farm on write (#3208), so a body naming somebody else’s user is refused rather than stored."
+    },
+    "ownerUser": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email"
+      ],
+      "description": "Resolved from \`ownerUserId\`. **Present on the flat read ONLY** — the paginated and \`includeDeleted\` branches omit it, which is #3272. Absent here never means unassigned; read \`ownerUserId\` for that."
+    },
+    "externalRef": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free-text location. The structured one is \`locationId\`."
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A \`Location\` id — a «блок» in this product’s vocabulary. Distinct from \`location\` above, which is whatever somebody typed."
+    },
+    "manufacturer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "serialNumber": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "year": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "usefulLifeYears": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "purchaseDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "purchaseCost": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Decimal as a STRING. See the module note."
+    },
+    "deletedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Non-null only on the \`includeDeleted\` read. Soft-deleted rows are invisible to every other operation here, including \`GET /assets/{id}\`."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "name",
+    "type",
+    "status",
+    "criticality",
+    "owner",
+    "ownerUserId",
+    "externalRef",
+    "location",
+    "locationId",
+    "manufacturer",
+    "model",
+    "serialNumber",
+    "year",
+    "usefulLifeYears",
+    "purchaseDate",
+    "purchaseCost",
+    "deletedAt",
+    "createdAt",
+    "updatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetActivityEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "description": "The audit verb — \`CREATE\`, \`UPDATE\`, \`SOFT_DELETE\`, \`ENTITY_RESTORED\`, \`ENTITY_PURGED\` and the evidence/link verbs. A bare string rather than an enum: this API does not constrain the audit vocabulary, and a client that switches on it needs a default arm.",
+      "example": "UPDATE"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "description": "Who acted. NO email — an activity feed is one of the places where leaking it would be inappropriate, so only id and name are selected. Null for a system action."
+    }
+  },
+  "required": [
+    "id",
+    "action",
+    "createdAt",
+    "user"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetAttachedEvidence 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserRefShort"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "additionalProperties": {}
+      },
+      "description": "ALWAYS EMPTY. The payload shape is shared with \`<EvidenceSubTable>\`, which renders inherited links for other entity types; an asset has none, so this is structurally \`[]\` rather than occasionally so. Do not build a client branch for it being populated."
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/EvidenceListItem"
+      },
+      "description": "Evidence attached DIRECTLY to this asset via \`Evidence.assetId\`, newest first, soft-deleted rows excluded."
+    }
+  },
+  "required": [
+    "links",
+    "evidence"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetBulkDeleteRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "assetIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "maxItems": 100,
+      "description": "1-100 asset ids. An empty array is a 400; more than 100 is a 400."
+    }
+  },
+  "required": [
+    "assetIds"
+  ],
+  "description": "Soft-delete up to 100 assets. Ids that do not exist, belong to another farm, or were already deleted are SKIPPED rather than refused, so the call is idempotent."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetBulkDeleteResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "deleted": {
+      "type": "integer",
+      "description": "How many rows this call soft-deleted. May be LOWER than the ids sent — ids that do not exist, belong to another farm, or were already deleted are skipped rather than refused, so the call is idempotent. Zero is a successful no-op, not an error."
+    }
+  },
+  "required": [
+    "deleted"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AssetCreateRequest 1`] = `
 "{
   "type": "object",
@@ -2980,6 +3338,37 @@ exports[`API contract — per-schema snapshots schema: AssetEvidenceLinkRequest 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AssetKpiCounts 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "total": {
+      "type": "integer",
+      "description": "Matches the filters EXACTLY as sent, including \`status\` and \`criticality\`."
+    },
+    "active": {
+      "type": "integer",
+      "description": "ACTIVE assets within the filters — **ignoring any \`status\` filter**, so the card still says something while the user is looking at one status."
+    },
+    "critical": {
+      "type": "integer",
+      "description": "HIGH-criticality assets within the filters, ignoring any \`criticality\` filter, for the same reason."
+    },
+    "retired": {
+      "type": "integer",
+      "description": "RETIRED assets within the filters, ignoring any \`status\` filter."
+    }
+  },
+  "required": [
+    "total",
+    "active",
+    "critical",
+    "retired"
+  ],
+  "description": "Four INDEPENDENT headline counts, computed in the database over the whole matching set rather than over a page — which is the reason this is a separate endpoint from the list at all.\\n\\n**They are not a partition and must not be summed or charted against each other.** Each card drops its own facet from its own query, so under \`?status=ACTIVE\` the \`total\` equals \`active\` while \`retired\` stays non-zero. That is correct for four cards that each have to remain meaningful when their own facet is filtered, and it means \`active + retired\` can exceed \`total\`.\\n\\n\`total\` is also how a client learns the flat list was truncated: that branch caps at 1,000 rows with no flag in the body, so comparing the array length against this number is the intended signal."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AssetListItem 1`] = `
 "{
   "type": "object",
@@ -3115,6 +3504,358 @@ exports[`API contract — per-schema snapshots schema: AssetListItem 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AssetListRow 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Asset"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "taskTotal": {
+          "type": "integer",
+          "description": "Linked work items, all states. 0 when none, never absent on this branch."
+        },
+        "taskDone": {
+          "type": "integer",
+          "description": "Of those, the completed ones. \`taskTotal - taskDone\` is what is outstanding."
+        }
+      },
+      "required": [
+        "taskTotal",
+        "taskDone"
+      ]
+    }
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetMaintenanceCloseRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "closedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When the work finished. Defaults to now."
+    }
+  },
+  "description": "Close a maintenance record. Closing is the only mutation the record supports — there is no general edit."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetMaintenanceCloseResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "record": {
+      "$ref": "#/components/schemas/AssetMaintenanceRecord"
+    },
+    "suggestStatus": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ACTIVE",
+        null
+      ],
+      "description": "A status the caller MAY now want to set on the asset, or null. **Advisory only — the server has not changed \`Asset.status\`.** Opening a record on an ACTIVE asset suggests \`IN_MAINTENANCE\`; closing the LAST open record on an \`IN_MAINTENANCE\` asset suggests \`ACTIVE\`. Null whenever neither holds, which includes the case that matters: a machine with two open repairs is not fixed because one of them finished. Acting on it is a separate \`PATCH /assets/{id}\`."
+    },
+    "openCount": {
+      "type": "integer",
+      "description": "Records still open on this asset AFTER this close. Zero is what makes the suggestion above non-null; a non-zero value is why it is null."
+    }
+  },
+  "required": [
+    "record",
+    "suggestStatus",
+    "openCount"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetMaintenanceCreateRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "SERVICE",
+        "REPAIR",
+        "INSPECTION",
+        "BREAKDOWN"
+      ]
+    },
+    "openedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Defaults to now. Set it to backdate work already done."
+    },
+    "closedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Present ⇒ the record is created already closed. Omitted or null ⇒ the work is open, which is what makes \`suggestStatus\` non-null on an ACTIVE asset."
+    },
+    "meterAtService": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "A NUMBER on the way in; it comes back as a decimal STRING. Engine hours or odometer at the time of service, stored per record so \\"hours since last service\\" stays answerable after the meter has moved on."
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 5000,
+      "description": "Free text, sanitised at the usecase layer before storage."
+    },
+    "cost": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "nextDueAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "nextDueMeter": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "description": "Open a maintenance record, or log work already completed by sending \`closedAt\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetMaintenanceCreateResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "record": {
+      "$ref": "#/components/schemas/AssetMaintenanceRecord"
+    },
+    "suggestStatus": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "IN_MAINTENANCE",
+        null
+      ],
+      "description": "A status the caller MAY now want to set on the asset, or null. **Advisory only — the server has not changed \`Asset.status\`.** Opening a record on an ACTIVE asset suggests \`IN_MAINTENANCE\`; closing the LAST open record on an \`IN_MAINTENANCE\` asset suggests \`ACTIVE\`. Null whenever neither holds, which includes the case that matters: a machine with two open repairs is not fixed because one of them finished. Acting on it is a separate \`PATCH /assets/{id}\`."
+    }
+  },
+  "required": [
+    "record",
+    "suggestStatus"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetMaintenanceRecord 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "assetId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "SERVICE",
+        "REPAIR",
+        "INSPECTION",
+        "BREAKDOWN"
+      ]
+    },
+    "openedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "closedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Null while the work is open. Closing the LAST open record is what offers to put the asset back to ACTIVE."
+    },
+    "meterAtService": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Engine hours or odometer AT THE TIME of service, as a decimal string. Stored per record rather than read from the asset’s current meter, so \\"hours since last service\\" stays answerable after the meter has moved on."
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Free text, sanitised at the usecase layer before storage."
+    },
+    "cost": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Decimal as a STRING."
+    },
+    "nextDueAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Next service due by DATE. Nothing in the product reads it yet — it is stored so a service-due signal becomes possible without back-filling history."
+    },
+    "nextDueMeter": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Next service due by METER, as a decimal string. Also not yet read."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "assetId",
+    "kind",
+    "openedAt",
+    "closedAt",
+    "meterAtService",
+    "description",
+    "cost",
+    "nextDueAt",
+    "nextDueMeter",
+    "createdAt",
+    "createdByUserId"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetPage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/Asset"
+      },
+      "description": "Ordered \`createdAt\` DESC then \`id\` DESC — a TOTAL order, so the cursor cannot skip or repeat a row when two assets share a creation timestamp. Rows on this branch carry neither \`ownerUser\` nor the task counts (#3272)."
+    },
+    "pageInfo": {
+      "$ref": "#/components/schemas/AssetPageInfo"
+    }
+  },
+  "required": [
+    "items",
+    "pageInfo"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetPageInfo 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "nextCursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Pass back as \`cursor\`. Null on the last page."
+    },
+    "hasNextPage": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "nextCursor",
+    "hasNextPage"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetPurgeResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "purged": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "purged"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetSuccess 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "success"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AssetUpdateRequest 1`] = `
 "{
   "type": "object",
@@ -3232,6 +3973,27 @@ exports[`API contract — per-schema snapshots schema: AssetUpdateRequest 1`] = 
     }
   },
   "description": "Partial update for an agricultural asset. Every field is optional; only provided fields are persisted."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AssetUpdateResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    },
+    "asset": {
+      "$ref": "#/components/schemas/Asset"
+    }
+  },
+  "required": [
+    "success",
+    "asset"
+  ]
 }"
 `;
 
