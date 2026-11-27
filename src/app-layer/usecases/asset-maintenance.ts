@@ -27,7 +27,17 @@ import type { AssetMaintenanceKind } from '@prisma/client';
  * the fact; the UI prompts instead.
  */
 
-/** Free text that will be decrypted and re-rendered downstream. */
+/**
+ * Free text that is re-rendered downstream — the detail page, the PDF export
+ * and any future SDK consumer — so it is sanitised HERE, at the usecase, per
+ * Epic C.5 rather than at render time.
+ *
+ * It is NOT encrypted: `AssetMaintenance.description` sits in
+ * `DELIBERATELY_PLAINTEXT`, so nothing decrypts it. This docblock said
+ * "decrypted and re-rendered" until #3273, which read as though the field
+ * were in `ENCRYPTED_FIELDS` and is probably where the manifest's own wrong
+ * note about this field came from.
+ */
 function clean(value: string | null | undefined): string | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;

@@ -547,18 +547,53 @@ export const DELIBERATELY_PLAINTEXT: Readonly<Record<string, string>> = {
     //  These four are tenant-scoped, so a per-tenant DEK WOULD work for them —
     //  unlike the four above, where encryption was incoherent on its face.
     //  They are plaintext for a different reason: production holds zero
-    //  ciphertext for each, and none of their write paths sanitises the field.
-    //  Declaring them would therefore protect no existing row while buying a
-    //  `KNOWN_UNCOVERED` entry each on a ratchet meant to trend to zero.
+    //  ciphertext for each, so declaring them would protect no existing row.
+    //
+    //  This block also said "none of their write paths sanitises the field",
+    //  and that was FALSE for two of the four (#3273). Measured 2026-11-27:
+    //  `AssetMaintenance.description` and `AutomationRule.description` both
+    //  ARE sanitised at their usecase; `ProcessMap.description` and
+    //  `TenantCustomRole.description` are not. The per-entry notes below say
+    //  which is which.
+    //
+    //  The clause mattered because it was doing work in the argument. Since
+    //  declaring a field encrypted creates a sanitisation obligation, "no
+    //  sanitiser" is what made declaring cost a `KNOWN_UNCOVERED` entry on a
+    //  ratchet meant to trend to zero. For the two that already sanitise,
+    //  that cost is NOT there and the only remaining reason is the zero-row
+    //  count plus the configuration/farm-content split below — still
+    //  sufficient, and weaker than it read.
+    //
+    //  Note which way the false clause pointed: unsanitised AND plaintext is
+    //  the worse pair, so it read as a risk somebody had weighed and accepted
+    //  when it was a risk that did not exist.
     //
     //  All four are configuration rather than farm content, which is what
     //  makes that trade comfortable. If any later carries farmer free text,
     //  the correct move is to WIRE A SANITISER and declare it — in that order,
     //  and in its own change.
-    'AssetMaintenance.description': 'Maintenance-record description; 0 encrypted rows on prod and no sanitiser on the write path (AssetMaintenanceRepository writes it directly).',
-    'AutomationRule.description': 'Operator-authored rule label, written by automation-event-dispatch; configuration rather than farm content, 0 encrypted rows.',
-    'ProcessMap.description': 'Process-map metadata written straight through ProcessMapRepository; configuration, 0 encrypted rows.',
-    'TenantCustomRole.description': 'RBAC role description — configuration an admin types once, 0 encrypted rows, and it is read back into a permissions UI rather than a farm record.',
+    'AssetMaintenance.description':
+        'Maintenance-record description; 0 encrypted rows on prod. SANITISED — '
+        + '`createAssetMaintenance` passes it through `sanitizePlainText` before the '
+        + 'repository write, which is what `prisma/schema/assets.prisma` has always '
+        + 'said. This entry claimed the opposite until #3273.',
+    'AutomationRule.description':
+        'Operator-authored rule label; configuration rather than farm content, 0 '
+        + 'encrypted rows. SANITISED — `automation-rules.ts` writes it through '
+        + '`sanitizeOptional`, which calls `sanitizePlainText`, on both create and '
+        + 'update. This entry named `automation-event-dispatch` as the writer until '
+        + '#3273: that job updates the ROW (run bookkeeping) and never this COLUMN, '
+        + 'so it pointed a reader at a file where the field does not appear.',
+    'ProcessMap.description':
+        'Process-map metadata written straight through ProcessMapRepository; '
+        + 'configuration, 0 encrypted rows. GENUINELY UNSANITISED — verified when the '
+        + 'blanket claim above was corrected (#3273): zero sanitiser references in '
+        + 'the repository and in `usecases/process-map.ts`.',
+    'TenantCustomRole.description':
+        'RBAC role description — configuration an admin types once, 0 encrypted rows, '
+        + 'and it is read back into a permissions UI rather than a farm record. Also '
+        + 'unsanitised (`usecases/custom-roles.ts` has no sanitiser reference), which '
+        + 'this entry never claimed either way and now states.',
 };
 
 export const ALL_ENCRYPTED_FIELD_NAMES: ReadonlySet<string> = new Set(
