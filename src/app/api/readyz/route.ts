@@ -52,9 +52,22 @@
  *       "lookupKey": { "pinned": boolean },  // false => the master KEK is
  *                                            // NOT safely rotatable (P1.1)
  *       "featureFlags": { "state": "complete" | "incomplete" | "unknown",
- *                         "missingRows": string[], "referenced": N,
+ *                         "missingRows": string[], "dormantRows": string[],
+ *                         "staleDormantEntries": string[],
+ *                         "referenced": N,
  *                         "orphanRows": N },  // a referenced key with no row is
- *                                             // a surface off for everybody
+ *                                             // a surface off for everybody —
+ *                                             // `missingRows` when nobody
+ *                                             // decided that, `dormantRows`
+ *                                             // when somebody did (#2841).
+ *                                             // `state` follows missingRows
+ *                                             // ONLY, so a decided absence is
+ *                                             // reported without being an
+ *                                             // alarm. `staleDormantEntries`
+ *                                             // are decisions that have been
+ *                                             // reversed — the key now HAS a
+ *                                             // row and the list should lose
+ *                                             // its entry.
  *       "worker":    { "state": "beating" | "stale" | "unknown",
  *                       "lastBeatAt": ISO|null, "ageSeconds": N|null,
  *                       "ttlSeconds": N },   // #2825 — `beating` means a job

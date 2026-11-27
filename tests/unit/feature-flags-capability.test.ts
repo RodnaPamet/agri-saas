@@ -15,7 +15,7 @@ import {
     featureFlagsCapability,
     type FeatureFlagKeyReader,
 } from '@/lib/feature-flags-capability';
-import { REFERENCED_FLAG_KEYS } from '@/lib/feature-flag-keys';
+import { DELIBERATELY_ROWLESS_FLAG_KEYS, REFERENCED_FLAG_KEYS } from '@/lib/feature-flag-keys';
 
 jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
@@ -40,6 +40,11 @@ describe('featureFlagsCapability (#2009)', () => {
         return expect(featureFlagsCapability(reader([...REFERENCED_FLAG_KEYS]))).resolves.toEqual({
             state: 'complete',
             missingRows: [],
+            dormantRows: [],
+            // Every key has a row in this fixture, so the two
+            // deliberately-rowless entries have outlived their decision —
+            // which is exactly what `staleDormantEntries` reports (#2841).
+            staleDormantEntries: [...DELIBERATELY_ROWLESS_FLAG_KEYS].sort(),
             referenced: REFERENCED_FLAG_KEYS.length,
             orphanRows: 0,
         });
@@ -94,9 +99,82 @@ describe('featureFlagsCapability (#2009)', () => {
         // the orphan count beside it is what makes the two distinguishable.
         const r = await featureFlagsCapability(reader([]));
         expect(r.state).toBe('incomplete');
-        expect(r.missingRows).toEqual([...REFERENCED_FLAG_KEYS].sort());
+        // Narrowed by #2841: the two DECIDED absences move to `dormantRows`,
+        // so this is every OTHER referenced key. The state is still
+        // `incomplete`, which is the point — an empty table is not a
+        // deliberate configuration.
+        expect(r.missingRows).toEqual(
+            REFERENCED_FLAG_KEYS.filter(
+                (k) => !(DELIBERATELY_ROWLESS_FLAG_KEYS as readonly string[]).includes(k),
+            ).sort(),
+        );
+        expect([...r.dormantRows].sort()).toEqual(
+            [...DELIBERATELY_ROWLESS_FLAG_KEYS].sort(),
+        );
+        expect(r.staleDormantEntries).toEqual([]);
         expect(r.referenced).toBe(REFERENCED_FLAG_KEYS.length);
         expect(r.orphanRows).toBe(0);
+    });
+
+    /**
+     * The #2841 split: a DECIDED absence is not an alarm, and is not hidden.
+     */
+    it('the two dormant keys do NOT make the state incomplete', async () => {
+        // Production, 2026-11-27: every referenced key has a row EXCEPT the
+        // two dormant ones. `Feature flag coverage` failed on this exact
+        // state every day for six days.
+        const live = REFERENCED_FLAG_KEYS.filter(
+            (k) => !(DELIBERATELY_ROWLESS_FLAG_KEYS as readonly string[]).includes(k),
+        );
+        const r = await featureFlagsCapability(reader([...live]));
+
+        expect(r.state).toBe('complete');
+        expect(r.missingRows).toEqual([]);
+        // NOT hidden — named, so `/api/readyz` still says which surfaces are
+        // deliberately dark.
+        expect([...r.dormantRows].sort()).toEqual(
+            [...DELIBERATELY_ROWLESS_FLAG_KEYS].sort(),
+        );
+        expect(r.staleDormantEntries).toEqual([]);
+    });
+
+    it('CONTROL: an UNDECIDED absence still turns the state incomplete', async () => {
+        // Without this, "dormant keys are fine" is satisfied by a capability
+        // that stopped reporting missing rows at all — which is the failure
+        // this whole split could easily have become.
+        const live = REFERENCED_FLAG_KEYS.filter(
+            (k) => !(DELIBERATELY_ROWLESS_FLAG_KEYS as readonly string[]).includes(k),
+        );
+        const victim = live[0]!;
+        const r = await featureFlagsCapability(
+            reader(live.filter((k) => k !== victim)),
+        );
+
+        expect(r.state).toBe('incomplete');
+        expect(r.missingRows).toEqual([victim]);
+        // And the dormant pair is still reported beside it, so one undecided
+        // miss does not swallow the decided ones.
+        expect([...r.dormantRows].sort()).toEqual(
+            [...DELIBERATELY_ROWLESS_FLAG_KEYS].sort(),
+        );
+    });
+
+    it('a dormant key that GAINED a row is reported as a stale entry', async () => {
+        // The decision was reversed and the list has outlived it. Reported
+        // rather than silently tolerated, because an allowlist entry that is
+        // no longer needed reads exactly like a covered case.
+        const reversed = DELIBERATELY_ROWLESS_FLAG_KEYS[0]!;
+        const live = REFERENCED_FLAG_KEYS.filter(
+            (k) =>
+                !(DELIBERATELY_ROWLESS_FLAG_KEYS as readonly string[]).includes(k) ||
+                k === reversed,
+        );
+        const r = await featureFlagsCapability(reader([...live]));
+
+        expect(r.staleDormantEntries).toEqual([reversed]);
+        // It is NOT an alarm: the surface is live and working.
+        expect(r.state).toBe('complete');
+        expect(r.dormantRows).not.toContain(reversed);
     });
 
     it('a row nothing gates on is an ORPHAN, never a missing key', async () => {
