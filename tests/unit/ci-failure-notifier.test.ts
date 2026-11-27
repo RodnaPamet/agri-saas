@@ -92,6 +92,14 @@ interface Scenario {
     rawProbe?: string;
     /** What `gh issue view --json body` should report as the existing body. */
     existingBody?: string;
+    /**
+     * What `gh issue view --json comments` should report, one body per line —
+     * #3153. SEPARATE from `existingBody` on purpose: the two probes ask
+     * different questions, and answering one with the other's shape is how the
+     * all-clear gate ends up tested by accident. The `gh api` case below
+     * already carries that warning for its own two probes.
+     */
+    existingComments?: string;
     conclusion: string;
     runId: string;
     /**
@@ -163,7 +171,14 @@ case "$1 $2" in
       *)                  printf '%s' ${JSON.stringify(s.openIssue ?? '')} ;;
     esac
     ;;
-  "issue view")   printf '%s' ${JSON.stringify(s.existingBody ?? '')} ;;
+  "issue view")
+    # Two probes, two answers (#3153): the body carries the
+    # ci-failure-run marker, the comments carry the all-clear markers.
+    case "$args" in
+      *"--json comments"*) printf '%s' ${JSON.stringify(s.existingComments ?? '')} ;;
+      *)                   printf '%s' ${JSON.stringify(s.existingBody ?? '')} ;;
+    esac
+    ;;
   api*)
     # TWO different probes reach the gh api stub: the cancel-shape probe
     # (#748) and the failed-job probe (#1472). They are told apart by their jq,
@@ -546,6 +561,76 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         expect(closed(calls)).toBe(false);
         expect(commented(calls)).toBe(false);
         expect(out).toContain('stale success');
+    });
+
+    describe('the all-clear is posted ONCE per failure — #3153', () => {
+        // Measured on issue #2916: 109 comments, 4 failures and 105
+        // all-clears, because a FIXED-SUBJECT workflow is never closed by a
+        // green run (#2884) and nothing bounded the COMMENTING. `Release` runs
+        // on every push to main, so the two rules multiplied until a real
+        // failure would arrive as comment #110 in a thread whose previous 105
+        // entries say everything is fine.
+
+        it('the FIRST green after a failure still comments', () => {
+            // The control. Without it, a gate that suppressed EVERY all-clear
+            // would satisfy the suppression test below and the reader would
+            // never be told the workflow recovered.
+            const { calls } = run({
+                wf: 'Release',
+                conclusion: 'success',
+                runId: '300',
+                openIssue: '42',
+                existingBody: '<!-- ci-failure-run: 200 -->',
+                existingComments: 'some unrelated human comment',
+            });
+            expect(commented(calls)).toBe(true);
+        });
+
+        it('a LATER green adds nothing, because the all-clear is already there', () => {
+            const { out, calls } = run({
+                wf: 'Release',
+                conclusion: 'success',
+                runId: '400',
+                openIssue: '42',
+                existingBody: '<!-- ci-failure-run: 200 -->',
+                existingComments: 'green again\n<!-- ci-green-after: 200 -->',
+            });
+            expect(commented(calls)).toBe(false);
+            expect(closed(calls)).toBe(false);
+            expect(out).toContain('already posted');
+        });
+
+        it('a NEW failure re-arms it — an all-clear for an OLDER failure does not count', () => {
+            // The marker carries WHICH failure it answers, so when
+            // `ci-failure-run` moves the next green speaks again. Matching on
+            // mere presence of an all-clear would silence the notifier for
+            // ever after the first recovery.
+            const { calls } = run({
+                wf: 'Release',
+                conclusion: 'success',
+                runId: '600',
+                openIssue: '42',
+                existingBody: '<!-- ci-failure-run: 500 -->',
+                existingComments: 'green again\n<!-- ci-green-after: 200 -->',
+            });
+            expect(commented(calls)).toBe(true);
+        });
+
+        it('a workflow that CLOSES on green is untouched by the gate', () => {
+            // The gate sits inside the fixed-subject branch only. An ordinary
+            // workflow still comments and closes, which is the behaviour
+            // #2884 deliberately left alone.
+            const { calls } = run({
+                wf: 'Test',
+                conclusion: 'success',
+                runId: '300',
+                openIssue: '42',
+                existingBody: '<!-- ci-failure-run: 200 -->',
+                existingComments: 'green again\n<!-- ci-green-after: 200 -->',
+            });
+            expect(commented(calls)).toBe(true);
+            expect(closed(calls)).toBe(true);
+        });
     });
 
     it('a FIXED-SUBJECT workflow is NOT closed by a later green run — #2884', () => {

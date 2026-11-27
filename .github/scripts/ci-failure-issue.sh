@@ -215,6 +215,33 @@ recorded_run_id() {
         | sed -n "s/.*ci-failure-run: \([0-9]\{1,\}\).*/\1/p" | head -1
 }
 
+# ── The all-clear is posted ONCE per failure, not once per green run (#3153) ──
+#
+# A FIXED-SUBJECT workflow is never closed by a green run (#2884), and nothing
+# bounded the COMMENTING. `Release` runs on every push to main, so the two
+# rules multiplied: measured on issue #2916, 109 comments — 4 failures and 105
+# all-clears — and a new failure would arrive as comment #110 in a thread whose
+# previous 105 entries say everything is fine. That is the "cries wolf" ending
+# the flake ledger already argues against, reached by a different route.
+#
+# The fix is an idempotency marker carrying the failure the all-clear is ABOUT.
+# One per recorded failure: the first green after a failure says so, later
+# greens say nothing, and the next real failure moves `ci-failure-run` so the
+# next green speaks again.
+GREEN_MARKER_PREFIX="<!-- ci-green-after:"
+
+# Has an all-clear for THIS recorded failure already been posted?
+#
+# Reads comment BODIES rather than counting them, because a count cannot tell
+# an all-clear from a failure notice — and both live in this thread.
+already_all_clear() {
+    local issue="$1" recorded="$2"
+    [ -n "$recorded" ] || return 1
+    "$GH" issue view "$issue" --repo "$REPO" --json comments \
+        --jq '.comments[].body' 2>/dev/null \
+        | grep -qF "${GREEN_MARKER_PREFIX} ${recorded} -->"
+}
+
 # Filled in by the `cancelled)` branch with the measured created/executed job
 # split. Empty for every other conclusion, where there is nothing to
 # disambiguate.
@@ -263,10 +290,21 @@ case "$CONCLUSION" in
             # Green again, and that says nothing about the subject the earlier
             # failure broke — see FIXED_SUBJECT_WORKFLOWS. Comment and LEAVE
             # OPEN.
+            # ONCE per recorded failure (#3153). Without this gate every green
+            # run on main added another all-clear for ever: 105 of them on one
+            # issue, which is what made a real failure unreadable.
+            if already_all_clear "$EXISTING" "$RECORDED"; then
+                echo "left #${EXISTING} open: all-clear for failure ${RECORDED} already posted (#3153)"
+                exit 0
+            fi
             "$GH" issue comment "$EXISTING" --repo "$REPO" --body \
                 "✅ **${WF}** is green again — [run ${RUN_ID}](${RUN_URL}) on \`${BRANCH}\` (${SHA}).
 
-**Left open deliberately.** This workflow's artefacts are keyed to a tag, which does not move, so a later green run produces a DIFFERENT tag's artefact and repairs nothing for the one that failed. Confirm the failed run's own tag carries what it should — \`gh release view <tag> --json assets\` — and close this by hand once it does. See #2884."
+**Left open deliberately.** This workflow's artefacts are keyed to a tag, which does not move, so a later green run produces a DIFFERENT tag's artefact and repairs nothing for the one that failed. Confirm the failed run's own tag carries what it should — \`gh release view <tag> --json assets\` — and close this by hand once it does. See #2884.
+
+Later green runs will NOT add another of these — one all-clear per failure, since #3153.
+
+${GREEN_MARKER_PREFIX} ${RECORDED} -->"
             echo "left #${EXISTING} open: ${WF} is green but its subject is FIXED (#2884)"
             exit 0
         fi
