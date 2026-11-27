@@ -71,6 +71,20 @@ const OPEN_BY_DESIGN: Record<string, string> = {
     // hold. Pinning these would be a bug, not a narrowing.
     'src/app-layer/schemas/portfolio.ts:drillDownUrl':
         'output DTO carrying a server-minted relative in-app path; https would reject it',
+    // A `data:` URL, not a network one — the field carries the canvas PNG the
+    // CLIENT rendered, inline. `httpsUrl()` would reject every valid value.
+    //
+    // It is not loosely typed either, which is the point: the schema pins the
+    // scheme HARDER than `httpsUrl()` could, with
+    // `.startsWith('data:image/png;base64,')` plus a minimum length, so the
+    // only accepted scheme is one exact prefix and nothing is fetched.
+    //
+    // It entered this guard's population in #3080 by MOVING: the declaration
+    // was route-local until `request-body-declared-once` required it here, and
+    // this guard scans the schema directories. The field did not change — its
+    // address did.
+    'src/app-layer/schemas/process-map.ts:pngDataUrl':
+        'an inline data:image/png URL, pinned to that exact prefix; nothing is fetched and https would reject every valid value',
 };
 
 /** Every `.ts` under the schema directories, filesystem-derived. */

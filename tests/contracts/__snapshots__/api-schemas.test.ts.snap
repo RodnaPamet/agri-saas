@@ -4148,6 +4148,114 @@ exports[`API contract — per-schema snapshots schema: AuthUiConfig 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AutomationEvidencePack 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "processMapId": {
+      "type": "string"
+    },
+    "processMapName": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AutomationRuleEvidence"
+      }
+    },
+    "executions30d": {
+      "$ref": "#/components/schemas/AutomationExecutionWindow"
+    }
+  },
+  "required": [
+    "exportedAt",
+    "processMapId",
+    "processMapName",
+    "rules",
+    "executions30d"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AutomationExecutionWindow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "total": {
+      "type": "integer"
+    },
+    "succeeded": {
+      "type": "integer"
+    },
+    "failed": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "total",
+    "succeeded",
+    "failed"
+  ],
+  "description": "A FIXED 30-day window, not a parameter. \`total\` may exceed \`succeeded + failed\`: an execution still running is counted in the total and is terminal in neither."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AutomationRuleEvidence 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "triggerEvent": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "executionCount": {
+      "type": "integer"
+    },
+    "successRate": {
+      "type": "number",
+      "description": "Succeeded over TERMINAL executions, and **0 when there have been none** — which is NOT how the governance graph reports the same metric: there it is \`null\`. So a rule that has never run reads as 0% here and as \\"no data\\" there, and the two numbers are not comparable across the surfaces. Read \`executionCount\` beside this one to tell the cases apart."
+    },
+    "lastTriggeredAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "chainedRuleId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The rule this one hands off to, if any — the chain is part of the evidence, not just the individual rule."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "triggerEvent",
+    "status",
+    "executionCount",
+    "successRate",
+    "lastTriggeredAt",
+    "chainedRuleId"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AvatarRemoveResult 1`] = `
 "{
   "type": "object",
@@ -12552,6 +12660,92 @@ exports[`API contract — per-schema snapshots schema: GoogleConnectStart 1`] = 
   },
   "required": [
     "authorizeUrl"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GovernanceGraph 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/GovernanceGraphNode"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/GovernanceGraphLink"
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "nodes",
+    "links",
+    "generatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GovernanceGraphLink 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "target"
+  ],
+  "description": "A SUB-FLOW call: a rule on the source map invokes the target map's rule group. Only that relationship — these are not canvas edges."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GovernanceGraphNode 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "canvasMode": {
+      "type": "string",
+      "enum": [
+        "DOCUMENT",
+        "AUTOMATION"
+      ]
+    },
+    "ruleCount": {
+      "type": "integer"
+    },
+    "successRate": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "Succeeded over TERMINAL executions, or **null when there have been none**. Null means \\"no data\\", not zero — rendering it as 0% would report a map that has never run as a map that always fails."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "canvasMode",
+    "ruleCount",
+    "successRate"
   ]
 }"
 `;
@@ -21010,6 +21204,384 @@ exports[`API contract — per-schema snapshots schema: PriceOverrideWriteResult 
   "required": [
     "written",
     "series"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMap 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "ARCHIVED"
+      ]
+    },
+    "canvasMode": {
+      "type": "string",
+      "enum": [
+        "DOCUMENT",
+        "AUTOMATION"
+      ],
+      "description": "Which editor the map opens in. In \`AUTOMATION\` the canvas SYNCS to automation rules, so a save there changes rule configuration as well as the drawing."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Increments on every save AND on every restore. Send it back as \`expectedVersion\` to make the next write conditional."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "name",
+    "description",
+    "status",
+    "canvasMode",
+    "version",
+    "createdAt",
+    "updatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapCanvasModeRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "canvasMode": {
+      "type": "string",
+      "enum": [
+        "DOCUMENT",
+        "AUTOMATION"
+      ],
+      "description": "Which editor the map opens in. \`AUTOMATION\` is the mode whose canvas syncs to automation rules; \`DOCUMENT\` is the drawing surface."
+    }
+  },
+  "required": [
+    "canvasMode"
+  ],
+  "description": "A METADATA-only mode switch — it saves no graph, which is why it is a PATCH beside the full-graph PUT."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapCreateRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "ARCHIVED"
+      ]
+    },
+    "canvasMode": {
+      "type": "string",
+      "enum": [
+        "DOCUMENT",
+        "AUTOMATION"
+      ],
+      "description": "Defaults to \`DOCUMENT\`. \`AUTOMATION\` is the visual rule editor."
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "description": "Create a process map. Metadata only — the graph arrives through the full-graph PUT, so a new map starts empty."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapDeleted 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "success"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapPdfExportRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "pngDataUrl": {
+      "type": "string",
+      "minLength": 38,
+      "description": "The canvas, rendered to a PNG data URL BY THE CLIENT. The server only wraps it in a branded PDF — it does not draw the graph, so what you send is what prints. The prefix is enforced, and a payload shorter than the prefix plus 16 bytes is refused as empty."
+    }
+  },
+  "required": [
+    "pngDataUrl"
+  ],
+  "description": "Wrap a client-rendered canvas PNG in a branded PDF. Persists nothing — the PDF is streamed back."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapRestoreRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "expectedVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The version the client believes is CURRENT — not the version being restored, which is in the path. Forwarded to the same optimistic-concurrency check a save uses, so a restore cannot clobber an edit made while the history sidebar was open. REQUIRED here, unlike on a save."
+    }
+  },
+  "required": [
+    "expectedVersion"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapSaveRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "ARCHIVED"
+      ]
+    },
+    "expectedVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "OPTIMISTIC CONCURRENCY. The version the client believes is current; the repository refuses the write if the stored map has moved on. OPTIONAL, so omitting it saves unconditionally and will silently overwrite a concurrent edit — send it."
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "nodeKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "nodeType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "subtitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "posX": {
+            "type": "number"
+          },
+          "posY": {
+            "type": "number"
+          },
+          "parentNodeKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "dataJson": {}
+        },
+        "required": [
+          "nodeKey",
+          "nodeType",
+          "label",
+          "posX",
+          "posY"
+        ]
+      },
+      "maxItems": 500,
+      "description": "The WHOLE graph, every save. There is no per-node update path: the repository replaces the graph atomically, so a save omitting a node DELETES it. The canvas state is the source of truth and the server persists what it is handed."
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "edgeKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "sourceKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "targetKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "edgeKind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "default": "flow"
+          },
+          "labelOverride": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "dataJson": {},
+          "practices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "practiceKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "dataJson": {}
+              },
+              "required": [
+                "practiceKey",
+                "label"
+              ]
+            },
+            "maxItems": 64,
+            "default": []
+          }
+        },
+        "required": [
+          "edgeKey",
+          "sourceKey",
+          "targetKey"
+        ]
+      },
+      "maxItems": 1000,
+      "description": "The whole edge set, with the same replace-not-merge semantics as \`nodes\`."
+    }
+  },
+  "required": [
+    "nodes",
+    "edges"
+  ],
+  "description": "Replace a process map's graph. A full-graph PUT rather than a patch — see \`nodes\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapSnapshot 1`] = `
+"{
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ProcessMapSnapshotSummary"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "graphJson": {
+          "description": "The full canvas at that version — nodes, edges and edge-practices. Opaque here because its shape is the editor's, and the editor is what reads it back for the \\"view version N\\" overlay and the visual diff."
+        }
+      }
+    }
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ProcessMapSnapshotSummary 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdByName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "createdAt",
+    "createdByName"
   ]
 }"
 `;
