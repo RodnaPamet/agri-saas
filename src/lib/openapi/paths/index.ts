@@ -64,6 +64,7 @@ import { registerPublicFarmsPaths } from './public-farms.paths';
 import { registerPublicMediaPaths } from './public-media.paths';
 import { registerDocumentPaths } from './documents.paths';
 import { registerMachinePaths } from './machines.paths';
+import { registerSessionRevocationPaths } from './session-revocation.paths';
 import { registerAssetPaths } from './assets.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
@@ -143,5 +144,6 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     // not spending.
     registerDocumentPaths(registry);
     registerMachinePaths(registry);
+    registerSessionRevocationPaths(registry);
     registerAssetPaths(registry);
 }

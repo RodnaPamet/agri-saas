@@ -231,19 +231,22 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted — the instruction this block gives
 // after #2578, and the reason the previous value was once one too high.
-// 192 → 181 (#3080): the eleven asset-register paths are documented now
-// (`assets.paths.ts`), so they leave the baseline in the same diff that
-// describes them — eighteen operations, the whole domain rather than a
-// slice of it, because `GET /assets` serves three different bodies and
-// documenting one branch would have been less honest than the baseline.
+// 192 → 189 (#3270, on main): the three session-revocation paths.
+// 189 → 178 (#3080, this branch): the eleven asset-register paths are
+// documented now (`assets.paths.ts`), so they leave the baseline in the same
+// diff that describes them — eighteen operations, the whole domain rather than
+// a slice, because `GET /assets` serves three different bodies and documenting
+// one branch would have been less honest than the baseline entry it replaces.
 //
-// COUNTED from the file, not subtracted from the previous line, and this
-// is the merge the comment above predicts: #3270 lowers the same constant
-// 192 → 189 on another branch for the session-revocation paths. Whichever
-// of the two merges second has a baseline that lost BOTH sets of rows and
-// a ceiling git will have resolved to one side's number — exactly the
-// off-by-N the `toBe` below refuses. Re-run `merge:main` and re-count.
-const UNDOCUMENTED_CEILING = 181;
+// THIS IS THE MERGE THE BLOCK ABOVE WARNS ABOUT, and it happened exactly as
+// written: both branches lowered this constant from 192 — main to 189, this
+// one to 181 — and git offered one number over a baseline that had lost BOTH
+// sets of rows. Neither side's value was right, which is the off-by-N the
+// `toBe` below exists to refuse.
+//
+// So: COUNTED from the merged `openapi-undocumented-baseline.json`, which
+// holds 178 entries. Not subtracted from either side.
+const UNDOCUMENTED_CEILING = 178;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that
@@ -253,6 +256,9 @@ const UNDOCUMENTED_CEILING = 181;
 // 196 -> 192 by #3080's third chunk: `tasks/metrics`, the two
 // `tasks/{taskId}/evidence` operations and `tasks/{taskId}/links/{linkId}`,
 // which completes the `tasks` family — every path under it is described now.
+// 192 -> 189 by #3080's fourth chunk: the three session-revocation routes. They
+// were worth doing before the bigger families because all three bump a
+// PLATFORM-WIDE `sessionVersion` and none of their names says so.
 // COUNTED from the file as the block above instructs, not subtracted.
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
