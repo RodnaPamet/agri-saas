@@ -188,6 +188,77 @@ describe("v2-PR-4 motion language ratchet", () => {
             expect(offenders).toHaveLength(0);
         });
 
+        /**
+         * CONTROLS for the two selectors this guard stands on (#865,
+         * surfaced by `Selector teeth` when #3277 touched a chrome file and
+         * pulled this suite into the mutation-audit population).
+         *
+         * Both `isExempt()` and `walk()` were reported SURVIVED, and they
+         * fail the same way for the same reason: `[]`, `{}`, `new Set()` and
+         * `new Map()` are all TRUTHY in JavaScript. So an `isExempt` that
+         * returns any of them exempts EVERY path, `walk` returns an empty
+         * list, the scan reads zero files, `offenders` is empty, and the
+         * assertion above passes — a guard that has stopped looking, green
+         * for ever.
+         *
+         * The existing `scan root does not exist` throw (#875) does not cover
+         * this: the roots exist, and it is the per-entry filter that has
+         * swallowed everything.
+         */
+        it("CONTROL: the scan reads a real population, not zero files", () => {
+            const counts = SCAN_DIRS.map((dir) => ({
+                dir,
+                files: walk(path.join(ROOT, dir)).length,
+            }));
+            const total = counts.reduce((n, c) => n + c.files, 0);
+
+            // Tagged so the reading reaches the CI step summary — jest's
+            // default reporter drops console output once a run has more than
+            // one suite, which is every CI shard.
+            console.log(
+                `[motion-language] scanned ${total} file(s): ` +
+                    counts.map((c) => `${c.dir}=${c.files}`).join(" "),
+            );
+
+            // EVERY root must contribute, not just the total: one root
+            // silently emptying is the case a single sum hides.
+            for (const c of counts) {
+                expect(c.files).toBeGreaterThan(50);
+            }
+            expect(total).toBeGreaterThan(500);
+        });
+
+        it("CONTROL: isExempt DISCRIMINATES — it is not true for everything", () => {
+            // The positive half: a real exempt entry is matched.
+            const [firstExempt] = [...EXEMPT_FILES];
+            expect(firstExempt).toBeTruthy();
+            expect(isExempt(firstExempt!)).toBe(true);
+            // A test file, matched by pattern rather than by name.
+            expect(isExempt("src/components/ui/thing.test.tsx")).toBe(true);
+            // A directory-name match.
+            expect(isExempt(path.join("src", "components", "__mocks__", "x.tsx"))).toBe(true);
+
+            // The NEGATIVE half, which is the half with teeth: an ordinary
+            // source file must NOT be exempt. A selector returning a truthy
+            // object for every input passes all three assertions above and
+            // fails this one.
+            //
+            // Both files are DERIVED from the real scan rather than chosen:
+            // my first draft picked `layout/notifications-bell.tsx`, which is
+            // one of the four chrome slot files and therefore genuinely
+            // exempt — the control failed and was right to. Taking the names
+            // from `walk()` output means they cannot drift into being exempt
+            // without this assertion noticing.
+            const scanned = walk(path.join(ROOT, "src/components")).map((f) =>
+                path.relative(ROOT, f),
+            );
+            const notExempt = scanned.filter((rel) => !isExempt(rel));
+            expect(notExempt.length).toBeGreaterThan(50);
+            for (const rel of notExempt.slice(0, 5)) {
+                expect(isExempt(rel)).toBe(false);
+            }
+        });
+
         it("documents every exempt file with a reason", () => {
             for (const rel of EXEMPT_FILES) {
                 const abs = path.resolve(ROOT, rel);

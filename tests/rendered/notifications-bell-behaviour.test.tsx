@@ -17,7 +17,7 @@
  *   - that the unread badge renders the right count from real data.
  *
  * This test renders the component, drives it with mocked
- * `/api/notifications` data, and asserts the RENDERED outcome.
+ * `/api/t/{tenantSlug}/notifications` data, and asserts the RENDERED outcome.
  */
 
 import {
@@ -47,6 +47,13 @@ import { NotificationsBell } from '@/components/layout/notifications-bell';
 import { restoreViewport, setViewport, DEFAULT_VIEWPORT } from './viewport';
 
 // ─── fetch mock ────────────────────────────────────────────────────
+
+/**
+ * The farm in the URL (#3277). Every call site passes it, because the prop is
+ * REQUIRED — an absent slug used to mean "resolve one from the session", and
+ * that was the defect.
+ */
+const TENANT_SLUG = 'acme-farm';
 
 const fetchMock = jest.fn();
 
@@ -103,6 +110,75 @@ beforeEach(() => {
 
 afterEach(() => restoreViewport());
 
+/**
+ * The bell asks about THE FARM IN THE URL (#3277).
+ *
+ * The suite below asserts rendered outcomes and only ever checked THAT a
+ * fetch happened, never WHERE — so every one of those cases stays green if
+ * the bell reverts to the slug-less `/api/notifications`, which resolves the
+ * caller's OLDEST membership and is the defect. These cases assert the URL.
+ *
+ * The farm-switch case is the one that is easy to miss: `fetchList` is a
+ * `useCallback` and the slug has to be in its dependency array, or the bell
+ * keeps polling the previous farm after a switch — the same wrong-farm bug
+ * one layer up, where nothing visible changes.
+ */
+describe('<NotificationsBell> — asks about the farm in the URL (#3277)', () => {
+    const okEmpty = { ok: true, status: 200, json: async () => [] };
+
+    it('fetches the TENANT-SCOPED list, not the slug-less route', async () => {
+        fetchMock.mockResolvedValue(okEmpty);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+        const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+        expect(urls).toContain(`/api/t/${TENANT_SLUG}/notifications`);
+        // The control: not merely "a tenant URL somewhere" but the absence of
+        // the legacy one, which is what a revert would reintroduce.
+        expect(urls).not.toContain('/api/notifications');
+    });
+
+    it('a FARM SWITCH refetches the new farm — the stale-closure case', async () => {
+        fetchMock.mockResolvedValue(okEmpty);
+        const view = render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+        view.rerender(<NotificationsBell tenantSlug="second-farm" />);
+
+        await waitFor(() => {
+            const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+            expect(urls).toContain('/api/t/second-farm/notifications');
+        });
+    });
+
+    it('marks a row read with PUT on the tenant-scoped path', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => makeNotifications(),
+        });
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
+
+        await user.click(screen.getByTestId('top-chrome-notifications-bell'));
+        const row = await screen.findByTestId('notification-row-n1');
+        fetchMock.mockClear();
+        await user.click(row);
+
+        await waitFor(() => {
+            const marking = fetchMock.mock.calls.find((c) =>
+                String(c[0]).includes('/notifications/'),
+            );
+            expect(marking).toBeDefined();
+            expect(String(marking![0])).toContain(`/api/t/${TENANT_SLUG}/notifications/`);
+            // PUT, not the legacy PATCH: the tenant route exports PUT and
+            // validates an empty JSON body, so the verb AND the body matter.
+            expect((marking![1] as { method?: string }).method).toBe('PUT');
+            expect((marking![1] as { body?: string }).body).toBe('{}');
+        });
+    });
+});
+
 describe('<NotificationsBell> — behavioural (Tier 2)', () => {
     it('renders the unread COUNT from real data (not a hard-coded badge)', async () => {
         fetchMock.mockResolvedValue({
@@ -110,7 +186,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             status: 200,
             json: async () => makeNotifications(),
         });
-        render(<NotificationsBell />);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
 
         // The mount-time ping fetches the list; the badge then shows
         // the count of `read: false` rows. The fixture has 2 unread.
@@ -127,7 +203,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             json: async () =>
                 makeNotifications().map((n) => ({ ...n, read: true })),
         });
-        render(<NotificationsBell />);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
 
         // Let the mount-time fetch settle.
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -146,7 +222,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             status: 200,
             json: async () => [],
         });
-        render(<NotificationsBell />);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
         const bell = screen.getByTestId('top-chrome-notifications-bell');
 
         // The audit's complaint was an OFF-recipe hover. The canonical
@@ -201,7 +277,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             status: 200,
             json: async () => makeNotifications(),
         });
-        render(<NotificationsBell />);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
         await user.click(screen.getByTestId('top-chrome-notifications-bell'));
@@ -265,7 +341,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             status: 200,
             json: async () => makeNotifications(),
         });
-        render(<NotificationsBell />);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
         await user.click(
@@ -302,7 +378,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             status: 200,
             json: async () => [],
         });
-        render(<NotificationsBell />);
+        render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
         await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
         await user.click(
@@ -315,7 +391,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
     });
     });
 
-    it('REST-polls /api/notifications on a fixed interval (badge stays live)', async () => {
+    it('REST-polls the tenant-scoped list on a fixed interval (badge stays live)', async () => {
         // The bell's doc-comment promised a periodic poll; the code
         // shipped without one, so the badge froze at its mount-time
         // value. This asserts the poll is real: advancing the
@@ -327,7 +403,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
                 status: 200,
                 json: async () => makeNotifications(),
             });
-            render(<NotificationsBell />);
+            render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
             // Flush the mount-time fetch.
             await act(async () => {});
             const afterMount = fetchMock.mock.calls.length;
@@ -397,7 +473,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
                 status: 200,
                 json: async () => makeNotifications(),
             });
-            render(<NotificationsBell />);
+            render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
             await act(async () => {});
 
             // The stream is subscribed to, and to the right endpoint.
@@ -474,7 +550,7 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         const open = async (): Promise<{ popper: boolean; scrollLocked: boolean }> => {
             const user = userEvent.setup();
             fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => [] });
-            const view = render(<NotificationsBell />);
+            const view = render(<NotificationsBell tenantSlug={TENANT_SLUG} />);
             await waitFor(() => expect(fetchMock).toHaveBeenCalled());
             await user.click(screen.getByTestId('top-chrome-notifications-bell'));
             await screen.findByText('All clear');
