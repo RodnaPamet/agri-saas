@@ -218,7 +218,15 @@ export function TopChrome({ variant, operator = false, user, onMobileMenuClick }
                     {/* Operator mode: no workspace switcher, no notifications
                         bell — just the account menu (sign out / language). */}
                     {!operator && renderIdentity()}
-                    {!operator && <NotificationsBell />}
+                    {/* #3277 — the bell follows the farm in the URL, so it
+                        needs a slug and renders only where there is one. The
+                        org variant has no farm in its URL: there is no farm
+                        whose notifications those would be, and showing the
+                        oldest membership's there is the arbitrary behaviour
+                        being removed. Owner ruling 2026-11-27. */}
+                    {!operator && typeof params?.tenantSlug === 'string' && (
+                        <NotificationsBell tenantSlug={params.tenantSlug} />
+                    )}
                     <UserMenu
                         displayName={user.name ?? null}
                         displayEmail={user.email ?? null}
