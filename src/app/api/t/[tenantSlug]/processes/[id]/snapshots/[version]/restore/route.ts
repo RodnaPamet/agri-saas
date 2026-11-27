@@ -1,15 +1,15 @@
-import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { restoreProcessMapSnapshot } from '@/app-layer/usecases/process-map';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
 import { badRequest } from '@/lib/errors/types';
+import { RestoreProcessMapSnapshotSchema } from '@/app-layer/schemas/process-map';
 
 /**
  * Epic P5-PR-B — restore the active map to a target snapshot.
  *
- * Body: { expectedVersion: number } — the version the client
+ * RestoreProcessMapSnapshotSchema: { expectedVersion: number } — the version the client
  * believes is current. Forwarded to `replaceGraph` so the
  * Epic-P1 optimistic-concurrency check still gates the write.
  *
@@ -17,13 +17,10 @@ import { badRequest } from '@/lib/errors/types';
  * version, which is `expectedVersion + 1` — never the target
  * version, since history is preserved by the snapshot system).
  */
-const Body = z.object({
-    expectedVersion: z.number().int().min(1),
-});
 
 export const POST = withApiErrorHandling(
     withValidatedBody(
-        Body,
+        RestoreProcessMapSnapshotSchema,
         async (
             req,
             {

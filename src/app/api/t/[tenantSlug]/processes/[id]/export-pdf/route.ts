@@ -6,7 +6,7 @@
  * `exportCanvasAsPng`) and posts the base64 bytes here; we wrap
  * them in a branded PDF and stream the result back.
  *
- * Body: { pngDataUrl: string }  — `data:image/png;base64,...`
+ * ProcessMapPdfExportSchema: { pngDataUrl: string }  — `data:image/png;base64,...`
  * Returns: `application/pdf` with `Content-Disposition: attachment`.
  *
  * Why server-side:
@@ -17,7 +17,6 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { toSlug } from '@/lib/bg-transliterate';
-import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
@@ -32,17 +31,12 @@ import { contentDisposition } from '@/lib/http/content-disposition';
 // BEFORE `end()`, or pdfkit has already flushed and the buffer comes back
 // truncated rather than failing — a short PDF a client may still open.
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
+import { ProcessMapPdfExportSchema } from '@/app-layer/schemas/process-map';
 
 // Force Node.js runtime — pdfkit needs stream / zlib / Buffer.
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const Body = z.object({
-    pngDataUrl: z
-        .string()
-        .startsWith('data:image/png;base64,')
-        .min('data:image/png;base64,'.length + 16),
-});
 
 function safeFilename(mapName: string): string {
     // See share-card.ts: the old [a-z0-9] strip deleted Cyrillic entirely, so
@@ -64,7 +58,7 @@ export const POST = withApiErrorHandling(
         const params = await paramsPromise;
         const ctx = await getTenantCtx(params, req);
 
-        const body = Body.parse(await req.json());
+        const body = ProcessMapPdfExportSchema.parse(await req.json());
 
         // Confirm the map exists + the caller can read it. Throws
         // notFound — withApiErrorHandling maps it to 404.

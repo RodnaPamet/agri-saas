@@ -25,7 +25,10 @@
  * `version` field — the column is already there, just not
  * enforced yet at the repo layer.
  */
-import { z } from 'zod';
+// The EXTENDED zod, required by `schema-openapi-zod-import` once anything in
+// this file calls `.openapi()` — which #3080 does, to document the process-map
+// routes against the schemas their handlers actually parse.
+import { z } from '@/lib/openapi/zod';
 
 // ─── Lifecycle status ──────────────────────────────────────────────
 
@@ -83,7 +86,13 @@ export const CreateProcessMapSchema = z.object({
     description: z.string().max(2000).optional().nullable(),
     status: ProcessMapStatusSchema.optional(),
     // VR-2 — DOCUMENT (default) vs AUTOMATION (visual rule editor).
-    canvasMode: z.enum(['DOCUMENT', 'AUTOMATION']).optional(),
+    canvasMode: z.enum(['DOCUMENT', 'AUTOMATION']).optional().openapi({
+        description: 'Defaults to `DOCUMENT`. `AUTOMATION` is the visual rule editor.',
+    }),
+}).openapi('ProcessMapCreateRequest', {
+    description:
+        'Create a process map. Metadata only — the graph arrives through the full-graph '
+        + 'PUT, so a new map starts empty.',
 });
 export type CreateProcessMapInput = z.infer<typeof CreateProcessMapSchema>;
 
@@ -102,8 +111,73 @@ export const SaveProcessMapSchema = z.object({
     name: z.string().min(1).max(200).optional(),
     description: z.string().max(2000).optional().nullable(),
     status: ProcessMapStatusSchema.optional(),
-    expectedVersion: z.number().int().min(1).optional(),
-    nodes: z.array(ProcessNodeInputSchema).max(500),
-    edges: z.array(ProcessEdgeInputSchema).max(1000),
+    expectedVersion: z.number().int().min(1).optional().openapi({
+        description:
+            'OPTIMISTIC CONCURRENCY. The version the client believes is current; the '
+            + 'repository refuses the write if the stored map has moved on. OPTIONAL, so '
+            + 'omitting it saves unconditionally and will silently overwrite a concurrent '
+            + 'edit — send it.',
+    }),
+    nodes: z.array(ProcessNodeInputSchema).max(500).openapi({
+        description:
+            'The WHOLE graph, every save. There is no per-node update path: the repository '
+            + 'replaces the graph atomically, so a save omitting a node DELETES it. The '
+            + 'canvas state is the source of truth and the server persists what it is '
+            + 'handed.',
+    }),
+    edges: z.array(ProcessEdgeInputSchema).max(1000).openapi({
+        description: 'The whole edge set, with the same replace-not-merge semantics as `nodes`.',
+    }),
+}).openapi('ProcessMapSaveRequest', {
+    description:
+        'Replace a process map\'s graph. A full-graph PUT rather than a patch — see '
+        + '`nodes`.',
+});
+
+/**
+ * The three bodies below were route-local until #3080, which made them dual
+ * declarations the moment their paths were documented
+ * (`request-body-declared-once`, cap zero). They live here beside the two
+ * above rather than in `src/lib/schemas/`, because this is the domain's own
+ * schema module and the create/save pair already did.
+ */
+export const PatchProcessMapSchema = z.object({
+    canvasMode: z.enum(['DOCUMENT', 'AUTOMATION']).openapi({
+        description:
+            'Which editor the map opens in. `AUTOMATION` is the mode whose canvas syncs '
+            + 'to automation rules; `DOCUMENT` is the drawing surface.',
+    }),
+}).openapi('ProcessMapCanvasModeRequest', {
+    description:
+        'A METADATA-only mode switch — it saves no graph, which is why it is a PATCH '
+        + 'beside the full-graph PUT.',
+});
+
+export const RestoreProcessMapSnapshotSchema = z.object({
+    expectedVersion: z.number().int().min(1).openapi({
+        description:
+            'The version the client believes is CURRENT — not the version being restored, '
+            + 'which is in the path. Forwarded to the same optimistic-concurrency check a '
+            + 'save uses, so a restore cannot clobber an edit made while the history '
+            + 'sidebar was open. REQUIRED here, unlike on a save.',
+    }),
+}).openapi('ProcessMapRestoreRequest');
+
+export const ProcessMapPdfExportSchema = z.object({
+    pngDataUrl: z
+        .string()
+        .startsWith('data:image/png;base64,')
+        .min('data:image/png;base64,'.length + 16)
+        .openapi({
+            description:
+                'The canvas, rendered to a PNG data URL BY THE CLIENT. The server only '
+                + 'wraps it in a branded PDF — it does not draw the graph, so what you '
+                + 'send is what prints. The prefix is enforced, and a payload shorter than '
+                + 'the prefix plus 16 bytes is refused as empty.',
+        }),
+}).openapi('ProcessMapPdfExportRequest', {
+    description:
+        'Wrap a client-rendered canvas PNG in a branded PDF. Persists nothing — the PDF '
+        + 'is streamed back.',
 });
 export type SaveProcessMapInput = z.infer<typeof SaveProcessMapSchema>;

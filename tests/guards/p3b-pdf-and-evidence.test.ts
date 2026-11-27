@@ -16,6 +16,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { ProcessMapPdfExportSchema } from '@/app-layer/schemas/process-map';
 
 const ROOT = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -74,9 +75,40 @@ describe("Epic P3-PR-B — PDF export + Evidence attachment", () => {
             expect(src).toMatch(/export const runtime = ['"]nodejs['"]/);
         });
 
+        /**
+         * The body shape, asserted by PARSING rather than by reading the
+         * route's text (#3080).
+         *
+         * This matched `.startsWith('data:image/png;base64,')` in the route
+         * SOURCE until the schema moved to `src/app-layer/schemas/` — which
+         * `request-body-declared-once` requires, since documenting the path
+         * put a second declaration in the spec module. The token left the
+         * route file and the behaviour did not change at all, so the test
+         * failed for a reason that had nothing to do with the property.
+         *
+         * Parsing is also stronger: a prefix check present in the file but
+         * applied to the wrong field, or a schema later rebuilt without it,
+         * satisfies a text scan and fails this.
+         */
         it("zod-validates the body shape (pngDataUrl with the canonical prefix)", () => {
-            expect(src).toMatch(/data:image\/png;base64,/);
-            expect(src).toMatch(/\.startsWith\(['"]data:image\/png;base64,['"]\)/);
+            const good = `data:image/png;base64,${'A'.repeat(32)}`;
+            expect(ProcessMapPdfExportSchema.parse({ pngDataUrl: good })).toEqual({
+                pngDataUrl: good,
+            });
+
+            // The wrong scheme, the wrong media type, and a payload that is
+            // only the prefix — the three ways a caller gets this wrong.
+            expect(() =>
+                ProcessMapPdfExportSchema.parse({ pngDataUrl: 'https://example.com/a.png' }),
+            ).toThrow();
+            expect(() =>
+                ProcessMapPdfExportSchema.parse({
+                    pngDataUrl: `data:image/jpeg;base64,${'A'.repeat(32)}`,
+                }),
+            ).toThrow();
+            expect(() =>
+                ProcessMapPdfExportSchema.parse({ pngDataUrl: 'data:image/png;base64,' }),
+            ).toThrow();
         });
 
         it("looks the map up via the canonical usecase + denies cross-tenant access", () => {

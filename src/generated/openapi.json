@@ -3995,6 +3995,105 @@
         ],
         "description": "Deliberately additive — flags are expected to be added here. Treat an unknown key as ignorable and a missing key as \"use the built-in default\", never as false."
       },
+      "AutomationEvidencePack": {
+        "type": "object",
+        "properties": {
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "processMapId": {
+            "type": "string"
+          },
+          "processMapName": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AutomationRuleEvidence"
+            }
+          },
+          "executions30d": {
+            "$ref": "#/components/schemas/AutomationExecutionWindow"
+          }
+        },
+        "required": [
+          "exportedAt",
+          "processMapId",
+          "processMapName",
+          "rules",
+          "executions30d"
+        ]
+      },
+      "AutomationExecutionWindow": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "succeeded": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "succeeded",
+          "failed"
+        ],
+        "description": "A FIXED 30-day window, not a parameter. `total` may exceed `succeeded + failed`: an execution still running is counted in the total and is terminal in neither."
+      },
+      "AutomationRuleEvidence": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "triggerEvent": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "executionCount": {
+            "type": "integer"
+          },
+          "successRate": {
+            "type": "number",
+            "description": "Succeeded over TERMINAL executions, and **0 when there have been none** — which is NOT how the governance graph reports the same metric: there it is `null`. So a rule that has never run reads as 0% here and as \"no data\" there, and the two numbers are not comparable across the surfaces. Read `executionCount` beside this one to tell the cases apart."
+          },
+          "lastTriggeredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "chainedRuleId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The rule this one hands off to, if any — the chain is part of the evidence, not just the individual rule."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "triggerEvent",
+          "status",
+          "executionCount",
+          "successRate",
+          "lastTriggeredAt",
+          "chainedRuleId"
+        ]
+      },
       "AvatarRemoveResult": {
         "type": "object",
         "properties": {
@@ -11906,6 +12005,83 @@
         },
         "required": [
           "authorizeUrl"
+        ]
+      },
+      "GovernanceGraph": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceGraphNode"
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GovernanceGraphLink"
+            }
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "nodes",
+          "links",
+          "generatedAt"
+        ]
+      },
+      "GovernanceGraphLink": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target"
+        ],
+        "description": "A SUB-FLOW call: a rule on the source map invokes the target map's rule group. Only that relationship — these are not canvas edges."
+      },
+      "GovernanceGraphNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "canvasMode": {
+            "type": "string",
+            "enum": [
+              "DOCUMENT",
+              "AUTOMATION"
+            ]
+          },
+          "ruleCount": {
+            "type": "integer"
+          },
+          "successRate": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Succeeded over TERMINAL executions, or **null when there have been none**. Null means \"no data\", not zero — rendering it as 0% would report a map that has never run as a map that always fails."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "canvasMode",
+          "ruleCount",
+          "successRate"
         ]
       },
       "GrainBin": {
@@ -19911,6 +20087,357 @@
         "required": [
           "written",
           "series"
+        ]
+      },
+      "ProcessMap": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenantId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "canvasMode": {
+            "type": "string",
+            "enum": [
+              "DOCUMENT",
+              "AUTOMATION"
+            ],
+            "description": "Which editor the map opens in. In `AUTOMATION` the canvas SYNCS to automation rules, so a save there changes rule configuration as well as the drawing."
+          },
+          "version": {
+            "type": "integer",
+            "description": "Increments on every save AND on every restore. Send it back as `expectedVersion` to make the next write conditional."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tenantId",
+          "name",
+          "description",
+          "status",
+          "canvasMode",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ProcessMapCanvasModeRequest": {
+        "type": "object",
+        "properties": {
+          "canvasMode": {
+            "type": "string",
+            "enum": [
+              "DOCUMENT",
+              "AUTOMATION"
+            ],
+            "description": "Which editor the map opens in. `AUTOMATION` is the mode whose canvas syncs to automation rules; `DOCUMENT` is the drawing surface."
+          }
+        },
+        "required": [
+          "canvasMode"
+        ],
+        "description": "A METADATA-only mode switch — it saves no graph, which is why it is a PATCH beside the full-graph PUT."
+      },
+      "ProcessMapCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "canvasMode": {
+            "type": "string",
+            "enum": [
+              "DOCUMENT",
+              "AUTOMATION"
+            ],
+            "description": "Defaults to `DOCUMENT`. `AUTOMATION` is the visual rule editor."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "description": "Create a process map. Metadata only — the graph arrives through the full-graph PUT, so a new map starts empty."
+      },
+      "ProcessMapDeleted": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "ProcessMapPdfExportRequest": {
+        "type": "object",
+        "properties": {
+          "pngDataUrl": {
+            "type": "string",
+            "minLength": 38,
+            "description": "The canvas, rendered to a PNG data URL BY THE CLIENT. The server only wraps it in a branded PDF — it does not draw the graph, so what you send is what prints. The prefix is enforced, and a payload shorter than the prefix plus 16 bytes is refused as empty."
+          }
+        },
+        "required": [
+          "pngDataUrl"
+        ],
+        "description": "Wrap a client-rendered canvas PNG in a branded PDF. Persists nothing — the PDF is streamed back."
+      },
+      "ProcessMapRestoreRequest": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The version the client believes is CURRENT — not the version being restored, which is in the path. Forwarded to the same optimistic-concurrency check a save uses, so a restore cannot clobber an edit made while the history sidebar was open. REQUIRED here, unlike on a save."
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "ProcessMapSaveRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "ARCHIVED"
+            ]
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "OPTIMISTIC CONCURRENCY. The version the client believes is current; the repository refuses the write if the stored map has moved on. OPTIONAL, so omitting it saves unconditionally and will silently overwrite a concurrent edit — send it."
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nodeKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "nodeType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "subtitle": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 200
+                },
+                "posX": {
+                  "type": "number"
+                },
+                "posY": {
+                  "type": "number"
+                },
+                "parentNodeKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 128
+                },
+                "dataJson": {}
+              },
+              "required": [
+                "nodeKey",
+                "nodeType",
+                "label",
+                "posX",
+                "posY"
+              ]
+            },
+            "maxItems": 500,
+            "description": "The WHOLE graph, every save. There is no per-node update path: the repository replaces the graph atomically, so a save omitting a node DELETES it. The canvas state is the source of truth and the server persists what it is handed."
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "edgeKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "sourceKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "targetKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "edgeKind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "default": "flow"
+                },
+                "labelOverride": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 200
+                },
+                "dataJson": {},
+                "practices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "practiceKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "dataJson": {}
+                    },
+                    "required": [
+                      "practiceKey",
+                      "label"
+                    ]
+                  },
+                  "maxItems": 64,
+                  "default": []
+                }
+              },
+              "required": [
+                "edgeKey",
+                "sourceKey",
+                "targetKey"
+              ]
+            },
+            "maxItems": 1000,
+            "description": "The whole edge set, with the same replace-not-merge semantics as `nodes`."
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "description": "Replace a process map's graph. A full-graph PUT rather than a patch — see `nodes`."
+      },
+      "ProcessMapSnapshot": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProcessMapSnapshotSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "graphJson": {
+                "description": "The full canvas at that version — nodes, edges and edge-practices. Opaque here because its shape is the editor's, and the editor is what reads it back for the \"view version N\" overlay and the visual diff."
+              }
+            }
+          }
+        ]
+      },
+      "ProcessMapSnapshotSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdByName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "createdAt",
+          "createdByName"
         ]
       },
       "Promotion": {
@@ -67635,6 +68162,1850 @@
           },
           "404": {
             "description": "No such article on this farm. An id belonging to a DIFFERENT tenant answers identically, so the base cannot be enumerated one id at a time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes": {
+      "get": {
+        "operationId": "listProcessMaps",
+        "summary": "List the farm's process maps",
+        "description": "Metadata only — no graphs. **Gated on CERTIFICATION**, which makes it the one READ on this surface that a disabled module refuses: the collection gate predates the write/read split and the owner ruling kept it (#3291). A farm with the module off can therefore still open a map it holds an id for.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The maps, metadata only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessMap"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`MODULE_DISABLED` — the farm's CERTIFICATION module is off, or its plan does not include it (`details.reason` tells the two apart). Every WRITE on this surface carries this; the per-map reads deliberately do not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProcessMap",
+        "summary": "Create a process map",
+        "description": "Metadata only, so a new map starts EMPTY — the graph arrives through the full-graph PUT. `canvasMode` defaults to `DOCUMENT`.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessMapCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created map.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing `name`, or a field over its cap.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`MODULE_DISABLED` — the farm's CERTIFICATION module is off, or its plan does not include it (`details.reason` tells the two apart). Every WRITE on this surface carries this; the per-map reads deliberately do not.\n\nOr read-only on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/{id}": {
+      "get": {
+        "operationId": "getProcessMap",
+        "summary": "Read one map, with its graph",
+        "description": "NOT module-gated, deliberately (#3291): a farm keeps access to work it already did even with CERTIFICATION off.\n\nIn `AUTOMATION` mode the graph is HYDRATED from the automation rules rather than read verbatim, so the canvas reflects rule configuration that may have changed since the last save.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The map and its graph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveProcessMap",
+        "summary": "Replace the graph",
+        "description": "**The whole canvas, every save.** The repository swaps the graph atomically and there is no per-node update path, so **a node omitted from the body is deleted**. That is the design — the canvas is the source of truth and the server persists what it is handed — but it means a client that sends a subset has destroyed the rest.\n\n**Send `expectedVersion`.** It is optional, and omitting it saves unconditionally: last-write-wins, silently overwriting a concurrent edit. With it, a stale write is refused with **409 `STALE_DATA`** carrying `details.currentVersion` so a client can tell the user what it collided with.\n\nIn `AUTOMATION` mode a save SYNCS the canvas to automation rules, so this request changes rule configuration too.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessMapSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved map, at its new version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Over 500 nodes or 1000 edges, or a malformed node/edge.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`MODULE_DISABLED` — the farm's CERTIFICATION module is off, or its plan does not include it (`details.reason` tells the two apart). Every WRITE on this surface carries this; the per-map reads deliberately do not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`STALE_DATA` — `expectedVersion` does not match the stored version. `details.currentVersion` is what it actually is.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "setProcessMapCanvasMode",
+        "summary": "Switch the canvas mode",
+        "description": "Metadata only — it saves NO graph, which is why it is a PATCH beside the full-graph PUT. Use it to move a map between the drawing surface and the visual rule editor without touching its contents.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessMapCanvasModeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The map, in its new mode.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown `canvasMode`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`MODULE_DISABLED` — the farm's CERTIFICATION module is off, or its plan does not include it (`details.reason` tells the two apart). Every WRITE on this surface carries this; the per-map reads deliberately do not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProcessMap",
+        "summary": "Soft-delete a map",
+        "description": "SOFT delete — the row survives with its snapshots. It was UNGATED until #3291, so a farm with CERTIFICATION off could destroy a map it could not list; it now carries the module assertion like every other write.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMapDeleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`MODULE_DISABLED` — the farm's CERTIFICATION module is off, or its plan does not include it (`details.reason` tells the two apart). Every WRITE on this surface carries this; the per-map reads deliberately do not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/{id}/snapshots": {
+      "get": {
+        "operationId": "listProcessMapSnapshots",
+        "summary": "The version history",
+        "description": "Summaries only — no `graphJson`, which is what keeps the history sidebar cheap. Descending by version and **capped at 200 in the repository**, so a map edited more than that has older snapshots this endpoint cannot reach and no flag saying so.\n\nNot module-gated: reading your own history is not a write.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to 200 snapshot summaries, newest version first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProcessMapSnapshotSummary"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/{id}/snapshots/{version}": {
+      "get": {
+        "operationId": "getProcessMapSnapshot",
+        "summary": "One snapshot, with its full graph",
+        "description": "Carries `graphJson`, which the list deliberately omits — this is what backs the \"view version N\" overlay and the visual diff. Not module-gated.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The snapshot version number, as a path segment.",
+              "example": "3"
+            },
+            "required": true,
+            "description": "The snapshot version number, as a path segment.",
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMapSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such map on this farm, or no such version OF THAT MAP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/{id}/snapshots/{version}/restore": {
+      "post": {
+        "operationId": "restoreProcessMapSnapshot",
+        "summary": "Restore the map to a snapshot",
+        "description": "**Restoring version N does not give you version N.** It writes the snapshot's content as a NEW version — `expectedVersion + 1` — because history is preserved rather than rewound. A client that expects the version number to go backwards, or that treats the response version as the restored one, is wrong.\n\n`expectedVersion` in the body is the version the client believes is CURRENT, not the one being restored — that is in the path. It is REQUIRED here, unlike on a save, and goes through the same optimistic-concurrency check, so a restore cannot clobber an edit made while the history sidebar was open.\n\nWas UNGATED until #3291.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The snapshot version number, as a path segment.",
+              "example": "3"
+            },
+            "required": true,
+            "description": "The snapshot version number, as a path segment.",
+            "name": "version",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessMapRestoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The map, at `expectedVersion + 1`, carrying the restored content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or non-positive `expectedVersion`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`MODULE_DISABLED` — the farm's CERTIFICATION module is off, or its plan does not include it (`details.reason` tells the two apart). Every WRITE on this surface carries this; the per-map reads deliberately do not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such map, or no such version of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`STALE_DATA` — the map moved on while the history was open.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/governance-graph": {
+      "get": {
+        "operationId": "getGovernanceGraph",
+        "summary": "How the farm's maps call each other",
+        "description": "A map-level overview, NOT a canvas: nodes are process maps and links are SUB-FLOW calls — a rule on one map invoking another map's rule group. Canvas edges do not appear here at all.\n\nRead `successRate` carefully: it is null when a map has no terminal executions, and null means \"no data\" rather than zero. Rendering it as 0% reports a map that has never run as one that always fails.\n\n`generatedAt` is the computation time, not a cache stamp — the graph is built per request.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The governance graph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernanceGraph"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/{id}/export-automation": {
+      "post": {
+        "operationId": "exportProcessMapAutomationPack",
+        "summary": "Build an automation evidence pack",
+        "description": "Despite the verb and the method, this **persists nothing** — it is `assertCanRead` plus reads, assembling an evidence pack from the map's rule-linked nodes and their execution history. A POST because the pack is computed rather than addressed.\n\nTherefore NOT module-gated (#3291): under \"writes gated, reads open\" it is a read, and it is exactly the kind of compliance record the ruling wanted a farm to keep.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The evidence pack.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationEvidencePack"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/processes/{id}/export-pdf": {
+      "post": {
+        "operationId": "exportProcessMapPdf",
+        "summary": "Wrap a canvas PNG in a branded PDF",
+        "description": "**The CLIENT renders the canvas**, posts it as a PNG data URL, and the server only wraps it — so what you send is what prints. The server does not draw the graph and cannot correct it.\n\nServer-side because it reuses the audit-pack PDF factory, so the artefact looks like every other compliance export, and because bundling a PDF library into the client cost ~200 KB.\n\nPersists NOTHING — the PDF is streamed back — so it is not module-gated (#3291), and a farm with CERTIFICATION off keeps its PDF history.\n\nThe filename is derived from the map name with Cyrillic PRESERVED. An earlier `[a-z0-9]` strip deleted it entirely, so every Bulgarian map exported as `process-map.pdf` whichever map it was.",
+        "tags": [
+          "Processes"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The farm whose maps these are."
+            },
+            "required": true,
+            "description": "The farm whose maps these are.",
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The process-map id."
+            },
+            "required": true,
+            "description": "The process-map id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessMapPdfExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The PDF bytes, as an attachment.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`pngDataUrl` missing, not a `data:image/png;base64,` URL, or empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTHREE PERMISSION codes are described here, and they are the most diffuse of all of them — 106, 51 and 1 call sites respectively, under most mutating and administrative operations in this document:\n\n- `WRITE_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not modify records. Params: `role`. It refuses exactly three of the six roles — READER, MECHANISATOR and AUDITOR — and no other condition produces it: it is NOT a plan ceiling, NOT a payment problem, and NOT a moderator action, so retrying, paying or waiting all change nothing. The remedy is a different role, which only an administrator of that farm can grant, and `params.role` is there so a client can name the role the person actually holds rather than guessing.\n\n  Distinguish it from `ADMIN_REQUIRED` above, which comes from the Edge and means the ROUTE is admin-only. This one comes from a usecase and means the OPERATION needs write. A role can pass the Edge and still meet this.\n\n  Uncoded until #1767, which is why a client reading a cached copy of this spec should treat its absence as \"this server predates the code\" rather than \"this server cannot refuse a write\".\n\n- `OPERATOR_SCOPE` — the caller is a MECHANISATOR (machine operator) and this route is outside that persona's scope. The Edge refuses the same persona on farm routes with `operator_scope`; this coded form comes from the routes that carry no farm in the URL.\n\n- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller's role in THIS farm may not perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it refuses four of the six roles — EDITOR, AUDITOR, READER and MECHANISATOR.\n\n  **Distinguish it from `ADMIN_REQUIRED` above, which is a different condition and not a variant of this one.** That one comes from the Edge and means the ROUTE is admin-only: the whole area is closed to this role. This one comes from a usecase and means the route is NOT admin-only — the caller reached the handler legitimately — and this particular OPERATION needs admin. A role can pass the Edge and still meet this check, so a client that shows one sentence for both will tell an EDITOR they lack access to a screen they are looking at.\n\n  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to make room for it: that code is one of the four reachable on every route and the most likely of all of them to be live in a shipped client, and a clearer name is not worth a breaking change to it.\n\n- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller's role may not perform AUDIT actions. Params: `role`. ONE call site, refusing EDITOR, READER and MECHANISATOR. Coded in the same change as its sibling rather than on its own merits: three sibling helpers raising two coded refusals and one bare string is the state that invites a reader to assume the bare one is deliberate.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such process map on this farm.",
             "content": {
               "application/json": {
                 "schema": {

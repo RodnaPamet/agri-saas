@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getProcessMap,
@@ -11,11 +10,8 @@ import { withValidatedBody } from '@/lib/validation/route';
 import { SaveProcessMapSchema } from '@/app-layer/schemas/process-map';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { PatchProcessMapSchema } from '@/app-layer/schemas/process-map';
 
-/** PATCH — metadata-only mode switch (no graph save). */
-const PatchProcessMapSchema = z.object({
-    canvasMode: z.enum(['DOCUMENT', 'AUTOMATION']),
-});
 
 export const GET = withApiErrorHandling(
     async (

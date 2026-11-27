@@ -295,7 +295,17 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // none of the three belongs with the article CMS.
 //
 // COUNTED from the file.
-const UNDOCUMENTED_CEILING = 147;
+// 147 → 139 (#3080): process maps — the canvas, its version history and
+// the two exports. The GRC surface that survived the teardown: its models
+// moved to `automation.prisma` rather than being deleted, so these routes are
+// live.
+//
+// Documented AFTER #3291 fixed the gate they would otherwise have had to
+// describe as broken, which is the cheaper order when a defect and its
+// documentation land together.
+//
+// COUNTED from the file.
+const UNDOCUMENTED_CEILING = 139;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that
