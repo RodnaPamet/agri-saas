@@ -246,7 +246,21 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // So: COUNTED from the merged `openapi-undocumented-baseline.json`, which
 // holds 178 entries. Not subtracted from either side.
-const UNDOCUMENTED_CEILING = 178;
+// 178 → 168 (#3080): the evidence REGISTER — the seven tenant-scoped paths
+// plus the three unprefixed legacy ones that mirror them, which belong in the
+// same diff because the only honest way to describe them is beside the route
+// they should be used instead of.
+//
+// Retention (restore, purge, the per-record retention write, and the four
+// `retention/*` paths) and the byte-handling routes (uploads, imports,
+// imports/{jobId}, files/{fileId}/download) stay baselined. That is a scope
+// decision, not an oversight: each is its own family with its own hazards —
+// scanning and egress gating for the bytes, a sweep that writes NEEDS_REVIEW
+// for retention — and half-covering them from this module would describe them
+// less honestly than the baseline does.
+//
+// COUNTED from the file.
+const UNDOCUMENTED_CEILING = 168;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that

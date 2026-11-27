@@ -282,6 +282,25 @@ export const EvidenceReviewSchema = z.object({
     description: 'Lifecycle transition for an evidence record. SUBMITTED is the request-for-review state; APPROVED/REJECTED are reviewer decisions.',
 });
 
+/**
+ * The evidence bulk-delete body, declared HERE rather than in its route
+ * (#1555, #3080).
+ *
+ * Same move as the asset bulk-delete beside it: documenting the path would
+ * otherwise put a SECOND hand-written declaration of this body in
+ * `evidence.paths.ts`, which `request-body-declared-once` caps at zero.
+ */
+export const BulkDeleteEvidenceSchema = z.object({
+    evidenceIds: z.array(z.string().min(1)).min(1).max(100).openapi({
+        description: '1-100 evidence ids. An empty array is a 400; more than 100 is a 400.',
+    }),
+}).openapi('EvidenceBulkDeleteRequest', {
+    description:
+        'Soft-delete up to 100 evidence records. Ids that do not exist, belong to another '
+        + 'farm, or were already deleted are SKIPPED rather than refused, so the call is '
+        + 'idempotent.',
+});
+
 // ─── Findings ───
 
 

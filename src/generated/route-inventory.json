@@ -393,17 +393,17 @@
     {
       "path": "/api/evidence",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/evidence/{id}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/evidence/{id}/review",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/health",
@@ -1439,12 +1439,12 @@
     {
       "path": "/api/t/{tenantSlug}/evidence",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/bulk/delete",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/files/{fileId}/download",
@@ -1464,7 +1464,7 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/metrics",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/retention/expired",
@@ -1494,12 +1494,12 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/archive",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/purge",
@@ -1519,12 +1519,12 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/review",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}/unarchive",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/exchange/inquiries",
