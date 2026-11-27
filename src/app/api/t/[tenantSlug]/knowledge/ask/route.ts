@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { z } from 'zod';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
@@ -7,6 +6,7 @@ import { badRequest } from '@/lib/errors/types';
 import { askKnowledgeBase } from '@/app-layer/usecases/rag';
 import { sanitizeUntrusted } from '@/app-layer/ai/safety/sanitize-untrusted';
 import { KNOWLEDGE_ASK_LIMIT } from '@/lib/security/rate-limit-middleware';
+import { AskKnowledgeBaseSchema } from '@/lib/schemas';
 
 /**
  * POST /api/t/[tenantSlug]/knowledge/ask (W3/#91 — KB wire-up PR)
@@ -41,13 +41,6 @@ import { KNOWLEDGE_ASK_LIMIT } from '@/lib/security/rate-limit-middleware';
  *     ride in on.
  */
 
-const AskKnowledgeBaseSchema = z
-    .object({
-        // Bounded — a knowledge-base question, not a document paste. Keeps
-        // the prompt (and therefore the per-call cost) small and predictable.
-        query: z.string().trim().min(1, 'query is required').max(500, 'query must be 500 characters or fewer'),
-    })
-    .strip();
 
 export const POST = withApiErrorHandling(
     requirePermission('knowledge.view', async (req: NextRequest, _routeArgs, ctx) => {

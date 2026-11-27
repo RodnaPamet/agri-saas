@@ -285,7 +285,17 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // which was 161 − 8 against a baseline that had since lost the four byte
 // routes — the same off-by-N the `toBe` below refuses, and the second time
 // this merge has produced it.
-const UNDOCUMENTED_CEILING = 149;
+// 149 → 147 (#3080): `ask` and the satellite guide, which COMPLETES the
+// knowledge domain — 12 of 12 paths, verified by zero `/knowledge` entries
+// left in the baseline rather than by adding up the chunks.
+//
+// They went into `knowledge.paths.ts` beside «Почва» rather than a third
+// knowledge module: the two guides are published reference content with no
+// lifecycle, and `ask` answers a question rather than returning a row, so
+// none of the three belongs with the article CMS.
+//
+// COUNTED from the file.
+const UNDOCUMENTED_CEILING = 147;
 // Lowered 200 -> 197 by #3080: the three `tasks/bulk/{assign,due,status}` routes
 // are described now, beside the `bulk/delete` sibling that was documented first.
 // 197 -> 196 by #3264: `tasks/{taskId}/activity`, which was held back from that

@@ -2018,7 +2018,7 @@
     {
       "path": "/api/t/{tenantSlug}/knowledge/ask",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/categories",
@@ -2028,7 +2028,7 @@
     {
       "path": "/api/t/{tenantSlug}/knowledge/satellite-guide",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge/soil-guide",
