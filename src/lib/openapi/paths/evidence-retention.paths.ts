@@ -10,14 +10,19 @@
  *
  * Three things are contract.
  *
- * ── "Expired" means two different things, and that is a DEFECT ──
+ * ── "Expired" meant two different things, and now means one ──
  *
- * `GET /retention/expired` lists every record with an `expiredAt`, while
- * `retention/metrics.expiredCount` counts only those that are ALSO not
- * archived. The sweep sets `expiredAt` and `isArchived` together, so its own
- * action moves a record out of the count at the moment it enters the list:
- * the count tends to zero while the list grows for ever. Tracked as #3281;
- * documented per operation because a client has to survive it today.
+ * `GET /retention/expired` lists every record with an `expiredAt`, and
+ * `retention/metrics.expiredCount` used to count only those that were ALSO
+ * not archived. Since the sweep sets `expiredAt` and `isArchived` together,
+ * its own action moved a record out of the count at the moment it entered
+ * the list — so the count tended to zero while the list grew for ever, and a
+ * dashboard read "Expired: 0" beside a list of everything.
+ *
+ * FIXED in #3281 (owner ruling 2026-11-27): the count means "records whose
+ * retention has lapsed" and agrees with the list. `archivedCount` is still
+ * the complement of neither, which is deliberate — it counts archived
+ * records with no condition on expiry, so it includes manual archives.
  *
  * ── Purge releases the BYTES before the row, and the order is the point ──
  *
@@ -108,14 +113,16 @@ const RetentionMetricsSchema = z
         }),
         expiredCount: z.number().int().openapi({
             description:
-                'Expired records that are **still not archived**.\n\n'
-                + 'Read that clause carefully before rendering this as "Expired": the sweep '
-                + 'sets `expiredAt` and `isArchived` in the same write, so every record it '
-                + 'processes leaves this count at the moment it joins '
-                + '`GET /retention/expired`. In a farm whose sweep is up to date this is '
-                + 'ZERO while that list is long, which looks like a broken counter and is '
-                + 'tracked as **#3281**. It is a sweep BACKLOG gauge, whatever its name '
-                + 'suggests.',
+                'Records whose retention has LAPSED — archived or not. Agrees with '
+                + '`GET /retention/expired`, so the card and that list describe the same '
+                + 'set, and the number only grows.\n\n'
+                + 'It excluded archived records until #3281, which made it a sweep-backlog '
+                + 'gauge rather than a count of expired records: the sweep writes '
+                + '`expiredAt` and `isArchived` in one update, so every record it processed '
+                + 'left this count at the moment it joined that list, and a farm with an '
+                + 'up-to-date sweep read "Expired: 0" beside a list of everything. A client '
+                + 'written against the old behaviour will now see a number that grows '
+                + 'rather than one that sits at zero.',
         }),
     })
     .openapi('EvidenceRetentionMetrics');
@@ -221,9 +228,10 @@ export function registerEvidenceRetentionPaths(registry: OpenAPIRegistry): void 
         summary: 'Records whose retention has lapsed',
         description:
             'Every record carrying an `expiredAt`, newest first — **including archived '
-            + 'ones**, which is what makes this list and `metrics.expiredCount` disagree '
-            + '(#3281): the count excludes archived records and the sweep archives '
-            + 'everything it processes.\n\n'
+            + 'ones**, since the sweep archives everything it processes. Since #3281 '
+            + '`metrics.expiredCount` counts the same set, so the card and this list '
+            + 'agree; the count excluded archived records before that and disagreed with '
+            + 'this endpoint by construction.\n\n'
             + 'So this is the cumulative history of expiry, not a work queue. Soft-deleted '
             + 'records are excluded.\n\n'
             + 'UNBOUNDED, like its sibling: no page size, no cursor.',
@@ -242,10 +250,11 @@ export function registerEvidenceRetentionPaths(registry: OpenAPIRegistry): void 
         operationId: 'getEvidenceRetentionMetrics',
         summary: 'The three retention counts',
         description:
-            'Three counts over three DIFFERENT populations. Read '
-            + '`EvidenceRetentionMetrics` before rendering any of them — in particular '
-            + '`expiredCount`, which is a sweep-backlog gauge rather than a count of '
-            + 'expired records, and tends to zero (#3281).\n\n'
+            'Three counts over three DIFFERENT populations, so read '
+            + '`EvidenceRetentionMetrics` before rendering any of them — they are not a '
+            + 'breakdown and do not sum to anything. `expiringCount` uses a FIXED 30-day '
+            + 'window rather than the `?days=` one the expiring list takes, and '
+            + '`archivedCount` has no condition on expiry at all.\n\n'
             + 'Needs only READ, unlike the register\'s `/evidence/metrics`, which is '
             + 'ADMIN. The two are unrelated payloads despite the matching path segment.\n\n'
             + 'The route\'s own docblock advertised a "top practices" breakdown until this '

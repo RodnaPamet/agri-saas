@@ -9545,7 +9545,7 @@ exports[`API contract — per-schema snapshots schema: EvidenceRetentionMetrics 
     },
     "expiredCount": {
       "type": "integer",
-      "description": "Expired records that are **still not archived**.\\n\\nRead that clause carefully before rendering this as \\"Expired\\": the sweep sets \`expiredAt\` and \`isArchived\` in the same write, so every record it processes leaves this count at the moment it joins \`GET /retention/expired\`. In a farm whose sweep is up to date this is ZERO while that list is long, which looks like a broken counter and is tracked as **#3281**. It is a sweep BACKLOG gauge, whatever its name suggests."
+      "description": "Records whose retention has LAPSED — archived or not. Agrees with \`GET /retention/expired\`, so the card and that list describe the same set, and the number only grows.\\n\\nIt excluded archived records until #3281, which made it a sweep-backlog gauge rather than a count of expired records: the sweep writes \`expiredAt\` and \`isArchived\` in one update, so every record it processed left this count at the moment it joined that list, and a farm with an up-to-date sweep read \\"Expired: 0\\" beside a list of everything. A client written against the old behaviour will now see a number that grows rather than one that sits at zero."
     }
   },
   "required": [
