@@ -8,9 +8,11 @@
  * body, and this route did not, so the route advertised a field the payload
  * has not carried for months.
  *
- * The three counts range over three DIFFERENT populations and `expiredCount`
- * is a sweep BACKLOG rather than a count of expired records — see #3281 and
- * `evidence-retention.paths.ts` before rendering any of them.
+ * The three counts range over three DIFFERENT populations and are not a
+ * breakdown — see `evidence-retention.paths.ts` before rendering any of
+ * them. `expiredCount` was a sweep BACKLOG until #3281 (it excluded archived
+ * records, which the sweep sets in the same write as `expiredAt`); it now
+ * means "retention has lapsed" and agrees with `GET /retention/expired`.
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';

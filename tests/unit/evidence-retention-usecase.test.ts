@@ -338,6 +338,52 @@ describe('getRetentionMetrics', () => {
         expect(res).toEqual({ expiringCount: 5, archivedCount: 2, expiredCount: 1 });
     });
 
+    /**
+     * `expiredCount` means LAPSED, not lapsed-and-unswept (#3281).
+     *
+     * The case above mocks `count` three times and asserts the returned
+     * shape, so it passed whatever the WHERE clauses were — which is why the
+     * defect survived: the count carried `isArchived: false`, the sweep sets
+     * `expiredAt` and `isArchived` in one update, and the number therefore
+     * tended to zero while `listExpiredEvidence` grew. This grades the
+     * filter, which is the thing that was wrong.
+     */
+    it('the expired count does NOT exclude archived records', async () => {
+        (mockDb.evidence.count as jest.Mock)
+            .mockResolvedValueOnce(5)
+            .mockResolvedValueOnce(2)
+            .mockResolvedValueOnce(1);
+
+        await getRetentionMetrics(readerCtx);
+
+        const calls = (mockDb.evidence.count as jest.Mock).mock.calls;
+        expect(calls).toHaveLength(3);
+        const expiredWhere = calls[2][0].where;
+
+        // The fix: no `isArchived` key at all, so an archived-and-expired
+        // record is counted.
+        expect(expiredWhere).not.toHaveProperty('isArchived');
+        // Still the right population otherwise — lapsed, and not deleted.
+        expect(expiredWhere.expiredAt).toEqual({ not: null });
+        expect(expiredWhere.deletedAt).toBeNull();
+        expect(expiredWhere.tenantId).toBe(readerCtx.tenantId);
+    });
+
+    it('CONTROL: the ARCHIVED count still filters on isArchived', async () => {
+        // Without this, "no isArchived key" is satisfied by a change that
+        // stripped the clause from every count, which would break the
+        // archived card instead of fixing the expired one.
+        (mockDb.evidence.count as jest.Mock)
+            .mockResolvedValueOnce(5)
+            .mockResolvedValueOnce(2)
+            .mockResolvedValueOnce(1);
+
+        await getRetentionMetrics(readerCtx);
+
+        const archivedWhere = (mockDb.evidence.count as jest.Mock).mock.calls[1][0].where;
+        expect(archivedWhere.isArchived).toBe(true);
+    });
+
     it('no longer returns a per-practice breakdown', async () => {
         // GRC teardown phase 3 dropped `Evidence.practiceId` and the
         // Practice model, so the `topPracticesWithExpiringEvidence`

@@ -231,11 +231,29 @@ export async function getRetentionMetrics(ctx: RequestContext) {
             },
         });
 
+        // `isArchived: false` was HERE until #3281, and it made this count
+        // mean something its name does not.
+        //
+        // `runEvidenceRetentionSweep` writes `expiredAt` and `isArchived` in
+        // the SAME update, so every record the sweep processed was excluded
+        // from this count at the moment it joined `listExpiredEvidence`. In a
+        // farm whose sweep is up to date the count was therefore ZERO while
+        // that list was long — a dashboard reading "Expired: 0" beside a list
+        // of everything, which looks like a broken counter.
+        //
+        // It was measuring the sweep BACKLOG. Owner ruling 2026-11-27: the
+        // card means "records whose retention has lapsed", so the clause is
+        // gone and this now agrees with the list it sits beside. The number
+        // only grows, which is what "expired" implies.
+        //
+        // `archivedCount` above is NOT the complement of this and never was —
+        // it counts archived records with no condition on expiry, so it
+        // includes manual archives. The three counts range over three
+        // populations and that is deliberate; see `evidence-retention.paths.ts`.
         const expiredCount = await db.evidence.count({
             where: {
                 tenantId: ctx.tenantId,
                 expiredAt: { not: null },
-                isArchived: false,
                 deletedAt: null,
             },
         });
