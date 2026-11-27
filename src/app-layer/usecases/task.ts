@@ -2091,6 +2091,49 @@ export async function getTaskMetrics(ctx: RequestContext) {
 
 // ─── Activity Feed ───
 
+/**
+ * The task's activity list — #3264.
+ *
+ * ## SELECT, not include, and the list is the contract
+ *
+ * This read used `include: { user: { select: { id, name, email } } }` and the
+ * route returned the rows unmapped, so a caller got the actor's EMAIL plus the
+ * whole `AuditLog` row: `diffJson` (the changed row, and `Task.description` /
+ * `Task.resolution` are encrypted columns, so prior values since edited away),
+ * `detailsJson`, `metadataJson`, `recordIds`, `details`, and the hash chain's
+ * `entryHash` / `previousHash`. Anything passing `assertCanReadTasks` could
+ * read it, which includes READER and the deliberately-confined MECHANISATOR.
+ *
+ * Narrowed with `select` rather than mapped afterwards, deliberately: `email`
+ * is an `ENCRYPTED_FIELDS` column, so not selecting it means the client
+ * extension never decrypts it. Mapping after the read would have produced the
+ * same payload while still pulling the plaintext into memory.
+ *
+ * The web activity tab rendered exactly `user?.name`, `action` and
+ * `createdAt`, and agrent-ios confirmed on 2026-11-27 that the phone never
+ * calls this route at all — checked against `Tests/Contract/app-routes.txt`,
+ * the enforced list of every path that app builds. So nothing lost a field.
+ *
+ * ## Why `User.name` STAYS
+ *
+ * P9.3 renders a published `PersonProfile.displayName` rather than
+ * `User.name`, and the question was whether this should too. It should not,
+ * per agrent-ios 2026-11-27 — their view rather than an owner ruling, and
+ * recorded here so it is not reopened blind. This is a TENANT surface whose
+ * readers are colleagues who already see each other by that name in the
+ * member list, the assignee picker and the task rows; `PersonProfile` is an
+ * opt-in publication for the PUBLIC social surfaces, and requiring it here
+ * would render a nameless placeholder for nearly everybody, because almost
+ * nobody has published one. Nothing is disclosed to a reader who could not
+ * already see it.
+ *
+ * NOT annotated with `TaskActivityDTO`. Every DTO in `lib/dto` describes the
+ * WIRE shape — `createdAt` is an ISO string there — while a usecase returns
+ * what Prisma gives it, with `createdAt` a `Date` that `jsonResponse`
+ * serialises. No usecase in this codebase annotates with those schemas, and
+ * the one place the two must agree is the spec, which `tasks.paths.ts`
+ * references directly.
+ */
 export async function getTaskActivity(ctx: RequestContext, taskId: string) {
     assertCanReadTasks(ctx);
     return runInTenantContext(ctx, (db) =>
@@ -2098,7 +2141,15 @@ export async function getTaskActivity(ctx: RequestContext, taskId: string) {
             where: { tenantId: ctx.tenantId, entity: 'Task', entityId: taskId },
             orderBy: { createdAt: 'desc' },
             take: 50,
-            include: { user: { select: { id: true, name: true, email: true } } },
+            // The DTO's field list, and nothing beyond it. `AuditLog.userId`
+            // is nullable, so `user` is null for a SYSTEM actor and the web
+            // renders its own fallback label for that.
+            select: {
+                id: true,
+                action: true,
+                createdAt: true,
+                user: { select: { id: true, name: true } },
+            },
         })
     );
 }

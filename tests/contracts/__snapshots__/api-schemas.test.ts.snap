@@ -21075,6 +21075,46 @@ exports[`API contract — per-schema snapshots schema: Task 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TaskActivity 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "description": "The audit verb — \`UPDATE\`, \`TASK_ASSIGNED\`, \`SOFT_DELETE\` and so on. A bare string rather than an enum, because \`AuditEventPayload.action\` is one too: two thirds of this codebase's audit writes use a domain verb, and the list is not closed."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/UserRefShort"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The actor, or NULL for a system action — \`AuditLog.userId\` is nullable, and the web renders its own fallback label when it is absent. \`name\` is \`User.name\` and NOT a published \`PersonProfile.displayName\`: this is a tenant surface whose readers already see each other by that name in the member list and the assignee picker, while a profile is an opt-in publication for the public social surfaces that almost nobody has made. The email is deliberately absent."
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "action",
+    "createdAt",
+    "user"
+  ],
+  "description": "One audit entry for a task, narrowed to what the activity list renders. Never carries \`diffJson\`, \`detailsJson\`, \`metadataJson\`, \`recordIds\`, \`details\`, the hash-chain links, or the actor's email — see #3264."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TaskAsset 1`] = `
 "{
   "type": "object",
