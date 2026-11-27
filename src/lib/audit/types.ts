@@ -64,7 +64,41 @@ export interface RelationshipDetails {
 
 export interface AccessDetails {
     category: 'access';
-    operation: 'login' | 'logout' | 'session_revoked' | 'permission_changed';
+    /**
+     * `file_downloaded` added by #3285, and the reason is worth keeping.
+     *
+     * `downloadEvidenceFile` was emitting `operation: 'login'` for an
+     * evidence file download. It typechecked because this union offered four
+     * values and none of them described a download — so the author had four
+     * wrong answers and no right one, and took the first. The compiler was
+     * satisfied and the record was false.
+     *
+     * That matters on this type in particular: Epic C.4 streams audit events
+     * HMAC-signed to a SIEM, and `action` plus this field are what a consumer
+     * filters on. A rule counting authentication events was counting file
+     * downloads, while a rule looking for file access found nothing under any
+     * operation it would have thought to query.
+     *
+     * Owner ruling 2026-11-27 chose widening this union over reclassifying
+     * the event as `data_lifecycle: 'exported'` — the category was always
+     * right (a download IS an access event) and only the vocabulary was short
+     * a member. Safe to add because nothing emitted the new value before this
+     * change, so no existing consumer rule changes meaning.
+     */
+    operation:
+        | 'login'
+        | 'logout'
+        | 'session_revoked'
+        | 'permission_changed'
+        | 'file_downloaded';
+    /**
+     * The user an access change was made ABOUT — not the actor, who is
+     * already on the audit row.
+     *
+     * Leave it UNSET when the event is about a thing rather than a person.
+     * `downloadEvidenceFile` set it to the downloader until #3285, which made
+     * the entry say somebody performed an access change on themselves.
+     */
     targetUserId?: string;
     ipAddress?: string;
     detail?: string;
