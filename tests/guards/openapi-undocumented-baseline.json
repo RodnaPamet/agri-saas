@@ -219,10 +219,6 @@
     "/api/t/{tenantSlug}/sso/entra",
     "/api/t/{tenantSlug}/sso/entra/group-mappings",
     "/api/t/{tenantSlug}/sso/entra/group-mappings/{mappingId}",
-    "/api/t/{tenantSlug}/tasks/metrics",
-    "/api/t/{tenantSlug}/tasks/{taskId}/evidence",
-    "/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}",
-    "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
     "/api/t/{tenantSlug}/users/assignable",
     "/api/webhooks/resend"
   ]

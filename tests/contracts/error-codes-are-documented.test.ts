@@ -485,22 +485,20 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // `LISTING_INTEREST_ALREADY_SENT`, IS documented, because
     // `POST /exchange/inquiries` was already in the spec and only wanted the
     // 409 it could already answer.
-    // `TASK_LINK_NOT_FOUND` and `TASK_EVIDENCE_NOT_FOUND` are new as of #1712
-    // and here for the `COMPANY_NAME_TAKEN` reason directly above, measured
-    // rather than assumed: their routes exist in code and are absent from the
-    // spec —
+    // `TASK_LINK_NOT_FOUND` and `TASK_EVIDENCE_NOT_FOUND` were here from #1712
+    // until #3080's third chunk, and their entry is worth keeping as history
+    // because the premise was written precisely enough to be RESOLVED rather
+    // than argued with. It read: "their routes exist in code and are absent
+    // from the spec — DELETE /tasks/{taskId}/links/{linkId} (removeTaskLink)
+    // and DELETE /tasks/{taskId}/evidence/{evidenceId} (unlinkTaskEvidence)",
+    // and that "naming these codes means adding two operations, which is a
+    // bigger change than the one that coded the throws".
     //
-    //     DELETE /tasks/{taskId}/links/{linkId}        removeTaskLink
-    //     DELETE /tasks/{taskId}/evidence/{evidenceId}  unlinkTaskEvidence
-    //
-    // `tasks.paths.ts` documents `/tasks/{taskId}/links` (GET, POST) and no
-    // `links/{linkId}` or `evidence/{…}` path at all. So naming these codes
-    // means adding two operations, which is a bigger change than the one that
-    // coded the throws.
-    //
-    // Both paths are ALREADY on `openapi-undocumented-baseline.json` (lines
-    // 247-248), so this is not a new gap — it is the same tracked one reached
-    // from the code side instead of the route side.
+    // Both operations are documented now, so both codes left this list. The
+    // reason it could be resolved cleanly is that it named the exact condition
+    // — two specific paths absent from the spec — rather than a judgement that
+    // would still need re-litigating. Compare the two entries left above,
+    // whose premise is about an entire surface being undocumented.
     //
     // A third sibling was NOT added: `removeTaskWatcher` threw
     // `WATCHER_NOT_FOUND` and had no caller anywhere — no route, no test.
@@ -586,8 +584,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'ASSET_EVIDENCE_NOT_FOUND',
 
     'MAINTENANCE_RECORD_NOT_FOUND',
-    'TASK_EVIDENCE_NOT_FOUND',
-    'TASK_LINK_NOT_FOUND',
     // `AI_BUDGET_REQUIRES_VERIFIED_FARM` is on this list as of #1645 and for
     // the `COMPANY_NAME_TAKEN` reason above, not because the code is unclear:
     // its only emission path is `assertAiBudget` → `completeWithRouting`, and

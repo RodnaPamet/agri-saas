@@ -43,6 +43,7 @@ import {
     TaskLinkDTOSchema,
     TaskParcelDTOSchema,
 } from '@/lib/dto/task.dto';
+import { EvidenceLinkDTOSchema, EvidenceListItemDTOSchema } from '@/lib/dto/evidence.dto';
 import {
     CreateTaskSchema,
     UpdateTaskSchema,
@@ -51,6 +52,7 @@ import {
     AddTaskCommentSchema,
     AddTaskLinkSchema,
     BulkTaskAssignSchema,
+    LinkTaskEvidenceSchema,
     BulkTaskDeleteSchema,
     BulkTaskDueDateSchema,
     BulkTaskStatusSchema,
@@ -482,6 +484,179 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The task\'s links, newest first.',
             schema: z.array(TaskLinkDTOSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/tasks/metrics',
+        operationId: 'getTaskMetrics',
+        summary: 'Counts and trends across the farm\'s tasks',
+        description:
+            'Backs the tasks dashboard. Live and **undocumented until now** (#3080).'
+            + '\n\n**Every count is tenant-wide, not filtered.** It ignores whatever filters '
+            + 'the list page has applied, so a client must not present these numbers as '
+            + 'describing the rows on screen.'
+            + '\n\n`byStatus`, `bySeverity` and `byType` are OPEN MAPS built from the rows '
+            + 'that exist — a status with no tasks is **absent, not zero**. Read them with a '
+            + '`?? 0` fallback rather than assuming every enum member is a key.'
+            + '\n\n`overdue`, `dueIn7d` and `dueIn30d` count only NON-TERMINAL tasks, so a '
+            + 'resolved task with a past due date is not overdue. `trend.resolved30d` counts '
+            + 'a task once, on the day it was resolved, so a task resolved then closed later '
+            + 'is not double-counted.',
+        tags: ['Tasks'],
+        params: TenantParams,
+        extraResponses: codedErrorResponses({
+            403: '`READ_FORBIDDEN_FOR_ROLE` — the role cannot read records at all.',
+        }),
+        success: {
+            status: 200,
+            description: 'Tenant-wide task counts and 30-day trend.',
+            schema: z.object({
+                total: z.number().int(),
+                byStatus: z.record(z.string(), z.number().int()),
+                bySeverity: z.record(z.string(), z.number().int()),
+                byType: z.record(z.string(), z.number().int()),
+                overdue: z.number().int(),
+                dueIn7d: z.number().int(),
+                dueIn30d: z.number().int(),
+                trend: z.object({
+                    created30d: z.number().int(),
+                    resolved30d: z.number().int(),
+                }),
+                topLinkedEntities: z.array(
+                    z.object({
+                        entityType: z.string(),
+                        entityId: z.string(),
+                        count: z.number().int(),
+                    }),
+                ).openapi({
+                    description:
+                        'The five ASSETS most linked to open tasks, busiest first. Assets only '
+                        + '— the query filters `entityType` to ASSET, so a client should not '
+                        + 'expect locations or parcels here.',
+                }),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/evidence',
+        operationId: 'getTaskEvidence',
+        summary: 'Evidence attached to a task',
+        description:
+            'Live and **undocumented until now** (#3080).'
+            + '\n\n**`links` is ALWAYS EMPTY, and that is not a bug.** The payload is the '
+            + '`{ links, evidence }` shape the shared `<EvidenceSubTable>` renders, which '
+            + 'exists for a bridge-table case — a separate link model between the subject and '
+            + 'the evidence. Tasks do not have one: evidence points at a task directly through '
+            + '`Evidence.taskId`. The asset attached-evidence route returns `links: []` for the '
+            + 'same reason, so **no live producer populates it**. Do not branch on it.'
+            + '\n\nSoft-deleted evidence is excluded, and the list is newest-first.',
+        tags: ['Tasks'],
+        params: TaskParams,
+        extraResponses: codedErrorResponses({
+            403: '`READ_FORBIDDEN_FOR_ROLE` — the role cannot read records at all.',
+            404: '`TASK_NOT_FOUND` — no such task in this farm.',
+        }),
+        success: {
+            status: 200,
+            description: 'Attached evidence, newest first. `links` is always `[]`.',
+            schema: z.object({
+                links: z.array(EvidenceLinkDTOSchema),
+                evidence: z.array(EvidenceListItemDTOSchema),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/evidence',
+        operationId: 'linkTaskEvidence',
+        summary: 'Attach a URL as evidence on a task',
+        description:
+            'Live and **undocumented until now** (#3080). Answers **201**, not 200, with the '
+            + 'created evidence row.'
+            + '\n\n**This is for a URL. A FILE goes to the multipart `/evidence/uploads` '
+            + 'endpoint with a `taskId`** — that path scans the bytes before storing them, '
+            + 'which this one has nothing to scan.'
+            + '\n\n**`url` is narrowed to https.** It uses the repo\'s `httpsUrl()` rather '
+            + 'than a bare URL string, so `http://`, `ftp://`, `data:` and `javascript:` are '
+            + 'all 400s — the loose form accepts every one of them. A client offering a URL '
+            + 'field should validate for https before submitting rather than surfacing a '
+            + 'validation error.',
+        tags: ['Tasks'],
+        params: TaskParams,
+        body: LinkTaskEvidenceSchema,
+        extraResponses: codedErrorResponses({
+            403: '`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            404: '`TASK_NOT_FOUND` — no such task in this farm.',
+        }),
+        success: {
+            status: 201,
+            description: 'The created evidence row.',
+            schema: EvidenceListItemDTOSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}',
+        operationId: 'unlinkTaskEvidence',
+        summary: 'Detach evidence from a task',
+        description:
+            'Live and **undocumented until now** (#3080).'
+            + '\n\nIt DETACHES rather than destroying: the evidence row survives and only its '
+            + 'attachment to this task goes, which is why the verb here is unlink and not '
+            + 'delete. Deleting the evidence itself is the evidence surface\'s own operation.'
+            + '\n\nThe refusal is specific — `TASK_EVIDENCE_NOT_FOUND` rather than a bare '
+            + '404 — so a client can tell "that evidence is not on this task" from "no such '
+            + 'task".',
+        tags: ['Tasks'],
+        params: TaskParams.extend({
+            evidenceId: z.string().openapi({ param: { name: 'evidenceId', in: 'path' } }),
+        }),
+        extraResponses: codedErrorResponses({
+            403: '`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            404: '`TASK_EVIDENCE_NOT_FOUND` — that evidence is not attached to this task.',
+        }),
+        success: {
+            status: 200,
+            description: 'Detached. `{ success: true }`.',
+            schema: z.object({ success: z.boolean() }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}',
+        operationId: 'removeTaskLink',
+        summary: 'Remove a link between a task and another record',
+        description:
+            'Live and **undocumented until now** (#3080). The counterpart of `POST '
+            + '/tasks/{taskId}/links`.'
+            + '\n\n**`linkId` is the LINK\'s id, not the linked record\'s.** The link row is '
+            + 'what is removed; neither the task nor the asset, location or parcel it pointed '
+            + 'at is touched.'
+            + '\n\n**`taskId` is in the path and is NOT used to scope the delete** — the '
+            + 'usecase takes the link id alone and resolves the tenant from the session. So a '
+            + 'link id belonging to another task in the same farm is removed regardless of '
+            + 'which `taskId` the path names. Tenant isolation holds; task-level scoping does '
+            + 'not, which is worth knowing before building a client that relies on the path '
+            + 'being checked.',
+        tags: ['Tasks'],
+        params: TaskParams.extend({
+            linkId: z.string().openapi({ param: { name: 'linkId', in: 'path' } }),
+        }),
+        extraResponses: codedErrorResponses({
+            403: '`WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            404: '`TASK_LINK_NOT_FOUND` — no such link in this farm.',
+        }),
+        success: {
+            status: 200,
+            description: 'Removed. `{ success: true }`.',
+            schema: z.object({ success: z.boolean() }),
         },
     });
 
