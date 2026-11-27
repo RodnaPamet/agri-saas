@@ -318,6 +318,25 @@ const BbchStageField = z.number().int().min(0).max(99).nullable().optional().ope
         + 'is a 400 from there rather than a schema error.',
 });
 
+export const AskKnowledgeBaseSchema = z.object({
+    query: z
+        .string()
+        .trim()
+        .min(1, 'query is required')
+        .max(500, 'query must be 500 characters or fewer')
+        .openapi({
+            description:
+                'A question for the knowledge base. BOUNDED at 500 characters — a question, '
+                + 'not a document paste — which keeps the grounding prompt and therefore the '
+                + 'per-call cost small and predictable. Trimmed, so whitespace alone is a 400.',
+        }),
+}).strip().openapi('KnowledgeAskRequest', {
+    description:
+        'Ask the knowledge base a question, answered ONLY from retrieved sources. The query '
+        + 'is sanitised before it reaches the grounding prompt — a user-supplied question is '
+        + 'exactly the kind of untrusted input a prompt-injection line would ride in on.',
+});
+
 export const CreateKnowledgeArticleSchema = z.object({
     title: z.string().min(1, 'Title is required').max(500),
     summary: z.string().max(2000).nullable().optional(),

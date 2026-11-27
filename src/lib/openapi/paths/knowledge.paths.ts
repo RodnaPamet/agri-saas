@@ -1,4 +1,11 @@
 /**
+ * The knowledge base's READ-ONLY guides, plus `ask` (#3080).
+ *
+ * Three operations that share nothing with the article CMS in
+ * `knowledge-articles.paths.ts`: «Почва» and the satellite guide are
+ * published reference content with no lifecycle and nothing to author, and
+ * `ask` answers a question rather than returning a row.
+ *
  * `/api/t/{tenantSlug}/knowledge/soil-guide` — «Почва», the soil section of
  * the knowledge base (owner, 2026-11-26).
  *
@@ -10,7 +17,8 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { AskKnowledgeBaseSchema } from '@/lib/schemas';
+import { codedErrorResponses, op } from './helpers';
 import { SOIL_SECTION_IDS, SOIL_SOURCE_IDS } from '@/lib/knowledge/soil-guide';
 
 const TenantParams = z.object({
@@ -74,5 +82,126 @@ export function registerKnowledgePaths(registry: OpenAPIRegistry): void {
             description: 'Every topic, in display order.',
             schema: z.object({ sections: z.array(SoilSectionSchema) }).openapi('SoilGuide'),
         },
+    });
+
+    // ── The satellite-imagery guide ──
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/knowledge/satellite-guide',
+        operationId: 'getSatelliteGuideArticles',
+        summary: 'The satellite-imagery guide articles',
+        description:
+            'GLOBAL articles only — rows with a null `tenantId`, selected by category. A '
+            + 'farm cannot add to this guide or shadow it with its own article, which is '
+            + 'what makes it a documentation surface rather than part of the general '
+            + 'article list.\n\n'
+            + '`?lang=` narrows to one language. **An unrecognised or missing value falls '
+            + 'back to `bg`, NOT to `en`** — `DEFAULT_LOCALE` is `en` and is reserved for '
+            + 'unauthenticated pre-login pages, while this route is always authenticated '
+            + 'tenant traffic whose readers are Bulgarian by default. Sending `?lang=de` '
+            + 'therefore returns Bulgarian rather than refusing or returning nothing.',
+        tags: ['Knowledge'],
+        params: TenantParams,
+        query: z.object({
+            lang: z.string().optional().openapi({
+                description:
+                    'A supported locale. Anything else — including absent — is read as `bg`.',
+                example: 'bg',
+            }),
+        }),
+        success: {
+            status: 200,
+            description: 'The guide articles in the resolved language.',
+            schema: z.array(
+                z
+                    .object({
+                        id: z.string(),
+                        slug: z.string(),
+                        title: z.string(),
+                        summary: z.string().nullable(),
+                        language: z.string().nullable(),
+                    })
+                    .openapi('SatelliteGuideArticle'),
+            ),
+        },
+    });
+
+    // ── Ask ──
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/knowledge/ask',
+        operationId: 'askKnowledgeBase',
+        summary: 'Ask the knowledge base a question',
+        description:
+            'Answers ONLY from retrieved sources, and the thing to get right as a client '
+            + 'is which outcomes are errors.\n\n'
+            + '**"The knowledge base had nothing to say" is a 200, not a 4xx.** When '
+            + 'retrieval finds nothing the usecase returns a fixed, calibrated answer with '
+            + '`sources: []` and never calls the model — so this route cannot fall through '
+            + 'to an ungrounded completion. A real 4xx or 5xx therefore means the REQUEST '
+            + 'failed: bad input, permission, rate limit, or a genuine server error. Those '
+            + 'two cases must stay apart in a client; folding an empty retrieval into an '
+            + 'error, or an error into the answer body, both mislead.\n\n'
+            + '`sources` is a deliberate PROJECTION of the retrieved chunks: id, the '
+            + 'human-legible provenance label, type and language. The chunk TEXT and its '
+            + 'ranking `score` are withheld — they are internal ranking detail, not '
+            + 'citation material, and a client rendering a score would be presenting '
+            + 'retrieval confidence as if it were answer confidence.\n\n'
+            + 'Unlike the sibling article routes, which sit on the coarser usecase-layer '
+            + 'read gate, this one carries the AUDITED `knowledge.view` permission check '
+            + 'and a rate limit of **10 requests per minute** per IP-and-user. Each call '
+            + 'is a model call the farm pays for, so the rate bound exists alongside the '
+            + 'monthly AI budget: a monthly cap alone permits a loop spending it in a '
+            + 'minute.',
+        tags: ['Knowledge'],
+        params: TenantParams,
+        body: AskKnowledgeBaseSchema,
+        success: {
+            status: 200,
+            description:
+                'The grounded answer and its citations. Also the shape returned when '
+                + 'retrieval found nothing — a fixed answer with an EMPTY `sources`.',
+            schema: z
+                .object({
+                    answer: z.string().openapi({
+                        description:
+                            'Grounded in `sources`. When `sources` is empty this is the '
+                            + 'fixed "not in my sources" answer rather than a model '
+                            + 'completion.',
+                    }),
+                    sources: z
+                        .array(
+                            z
+                                .object({
+                                    id: z.string(),
+                                    source: z.string().openapi({
+                                        description:
+                                            'A human-legible provenance label, e.g. '
+                                            + '"Knowledge base: <article title>". Render '
+                                            + 'this as the citation.',
+                                    }),
+                                    sourceType: z.string(),
+                                    language: z.string().nullable(),
+                                })
+                                .openapi('KnowledgeAskSource'),
+                        )
+                        .openapi({
+                            description:
+                                'EMPTY means retrieval found nothing — which is a '
+                                + 'successful request with no grounded answer, not a '
+                                + 'failure.',
+                        }),
+                })
+                .openapi('KnowledgeAskResult'),
+        },
+        extraResponses: codedErrorResponses({
+            400: 'Missing, empty-after-trim, or over-500-character `query`; or a body that '
+                + 'is not parseable JSON. Uncoded — the message is the schema\'s own.',
+            403: 'The `knowledge.view` permission is required, and unlike the article '
+                + 'routes the refusal here is audited.',
+            429: 'Over 10 requests per minute for this IP and user.',
+        }),
     });
 }

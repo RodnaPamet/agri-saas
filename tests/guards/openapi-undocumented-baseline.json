@@ -157,8 +157,6 @@
     "/api/t/{tenantSlug}/integrations/sharepoint/import",
     "/api/t/{tenantSlug}/integrations/sharepoint/sites",
     "/api/t/{tenantSlug}/integrations/sharepoint/sync",
-    "/api/t/{tenantSlug}/knowledge/ask",
-    "/api/t/{tenantSlug}/knowledge/satellite-guide",
     "/api/t/{tenantSlug}/me/interests",
     "/api/t/{tenantSlug}/notification-settings",
     "/api/t/{tenantSlug}/notification-settings/run-job",
