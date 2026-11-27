@@ -8,11 +8,32 @@
  * bell icon with a count badge for unread notifications; click
  * opens a popover listing recent notifications.
  *
- * Data: REST-polled from `/api/notifications`. A fetch on mount
- * seeds the badge; a fixed-cadence poll (NOTIFICATIONS_POLL_INTERVAL_MS)
- * keeps the unread count live without the user opening the popover;
- * and every popover-open pulls a fresh list. The poll pauses while
- * the browser tab is hidden and refetches on return, so a
+ * Data: REST-polled from `/api/t/{tenantSlug}/notifications` — THE FARM IN
+ * THE URL, which is the whole of #3277. It polled the slug-less
+ * `/api/notifications` until then, and that route resolves a farm from the
+ * session's backward-compat `tenantId` claim: the caller's OLDEST membership
+ * by `createdAt`. So a person belonging to two farms saw one farm's
+ * notifications for ever and never learned the other existed — measured on
+ * production, 2 of 9 active users. Owner ruling 2026-11-27: follow the URL.
+ *
+ * `tenantSlug` is therefore REQUIRED, and `<TopChrome>` renders no bell
+ * without one. That is the honest reading of the ruling rather than a
+ * limitation: the org variant has no farm in its URL, so there is no farm
+ * whose notifications these would be, and showing the oldest farm's there is
+ * the arbitrary behaviour being removed. Reversible in one line if an
+ * org-level bell is ever wanted.
+ *
+ * The live half needed NO change and that is worth knowing before anybody
+ * "fixes" it: `/api/me/stream` subscribes to EVERY farm the person belongs
+ * to (`tenantIds.map(...)`), and `onNotification` deliberately ignores the
+ * frame and just refetches. So a notification in another farm still wakes
+ * the bell, the refetch shows nothing new, and the cost is one wasted fetch
+ * rather than a row from the wrong farm appearing in the list.
+ *
+ * A fetch on mount seeds the badge; a fixed-cadence poll
+ * (NOTIFICATIONS_POLL_INTERVAL_MS) keeps the unread count live without the
+ * user opening the popover; and every popover-open pulls a fresh list. The
+ * poll pauses while the browser tab is hidden and refetches on return, so a
  * backgrounded tab never hammers the endpoint.
  *
  * Each notification:
@@ -100,7 +121,18 @@ const ROW_UNREAD_CLASS = 'bg-bg-subtle';
 
 // ─── Component ─────────────────────────────────────────────────────
 
-export function NotificationsBell() {
+export interface NotificationsBellProps {
+    /**
+     * The farm whose notifications to show — the slug from the URL (#3277).
+     *
+     * Required rather than optional: an absent slug used to mean "resolve one
+     * from the session", which is the defect. A caller with no farm renders
+     * no bell.
+     */
+    tenantSlug: string;
+}
+
+export function NotificationsBell({ tenantSlug }: NotificationsBellProps) {
     const t = useTranslations('notificationsBell');
     /**
      * P2.1 — the bell used to format its own relative times and returned
@@ -128,7 +160,7 @@ export function NotificationsBell() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch('/api/notifications', {
+            const res = await fetch(`/api/t/${tenantSlug}/notifications`, {
                 credentials: 'same-origin',
             });
             if (!res.ok) {
@@ -145,8 +177,14 @@ export function NotificationsBell() {
         }
         // `t` is a stable next-intl binding; intentionally omitted so the
         // poll effect that depends on `fetchList` keeps a fixed interval.
+        //
+        // `tenantSlug` is NOT omitted, and must not be (#3277). This callback
+        // is the dependency of both the poll effect and the realtime
+        // handler, so an omitted slug would keep polling the PREVIOUS farm
+        // after a switch — the same wrong-farm defect the change is removing,
+        // reintroduced one layer up and harder to see.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [tenantSlug]);
 
     /**
      * The realtime signal, on the connection SHARED with every other consumer
@@ -254,8 +292,16 @@ export function NotificationsBell() {
                     : prev,
             );
             try {
-                await fetch(`/api/notifications/${n.id}`, {
-                    method: 'PATCH',
+                await fetch(`/api/t/${tenantSlug}/notifications/${n.id}`, {
+                    // PUT, not PATCH: the tenant-scoped route exports PUT and
+                    // takes `EmptyBodySchema` through `withValidatedBody`, so
+                    // it needs a parseable JSON body. The slug-less twin this
+                    // replaced was PATCH with no body — same usecase
+                    // (`markNotificationRead`), different verb and contract
+                    // (#3277).
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
                     credentials: 'same-origin',
                 });
             } catch {
@@ -264,7 +310,7 @@ export function NotificationsBell() {
                 // handled. Next fetch will reconcile if needed.
             }
         },
-        [],
+        [tenantSlug],
     );
 
     const handleMarkAllRead = useCallback(async () => {
@@ -275,13 +321,21 @@ export function NotificationsBell() {
         );
         await Promise.all(
             unread.map((n) =>
-                fetch(`/api/notifications/${n.id}`, {
-                    method: 'PATCH',
+                fetch(`/api/t/${tenantSlug}/notifications/${n.id}`, {
+                    // PUT, not PATCH: the tenant-scoped route exports PUT and
+                    // takes `EmptyBodySchema` through `withValidatedBody`, so
+                    // it needs a parseable JSON body. The slug-less twin this
+                    // replaced was PATCH with no body — same usecase
+                    // (`markNotificationRead`), different verb and contract
+                    // (#3277).
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
                     credentials: 'same-origin',
                 }).catch(() => {}),
             ),
         );
-    }, [items]);
+    }, [items, tenantSlug]);
 
     return (
         <Popover

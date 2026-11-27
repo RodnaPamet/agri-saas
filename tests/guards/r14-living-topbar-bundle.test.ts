@@ -182,8 +182,14 @@ describe('Roadmap-14 PR-13 — Living Top-Bar capstone bundle', () => {
             expect(BELL_SRC).toMatch(
                 /export\s+function\s+NotificationsBell\b/,
             );
+            // #3277 — the TENANT-SCOPED list. This pinned
+            // `/api/notifications` until then, which was pinning a defect:
+            // the slug-less route resolves the caller's OLDEST membership.
+            // Re-pointed rather than widened, and the sibling guard
+            // `r14-notifications-bell-discipline` carries the negative that
+            // keeps the old endpoint out.
             expect(BELL_SRC).toMatch(
-                /fetch\(\s*['"]\/api\/notifications['"]/,
+                /fetch\(\s*`\/api\/t\/\$\{tenantSlug\}\/notifications`/,
             );
             expect(BELL_SRC).toMatch(
                 /\{unreadCount\s*>\s*0\s*&&\s*\(/,
