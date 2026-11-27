@@ -2538,7 +2538,7 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/metrics",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}",
@@ -2563,12 +2563,12 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/evidence",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/evidence/{evidenceId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/links",
@@ -2578,7 +2578,7 @@
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/links/{linkId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/tasks/{taskId}/parcels",
