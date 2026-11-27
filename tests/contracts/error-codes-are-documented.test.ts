@@ -575,15 +575,17 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // guard refusing a baseline entry for an already-documented code is the
     // reason they did not quietly stay.
     'ACCOUNT_HAS_NO_EMAIL',
-    'EVIDENCE_DELETED',
     // 'EVIDENCE_NOT_FOUND' left this baseline in #3080's evidence chunk: the
     // register's ten paths are described now and every one of them names the
     // code, so the entry became a claim the spec contradicts. The ratchet
     // works in BOTH directions and this is the direction that is easy to
     // forget — a documented code left baselined reads as still-undocumented.
+    // 'EVIDENCE_DELETED', 'FILE_NOT_DOWNLOADABLE' and 'FILE_NOT_FOUND' left
+    // this baseline with #3080's evidence-BYTES chunk: the download route
+    // names all three, so the entries had become claims the spec
+    // contradicts. Same both-ways ratchet that removed
+    // 'EVIDENCE_NOT_FOUND' when the register was described.
     'FILE_DELETED',
-    'FILE_NOT_DOWNLOADABLE',
-    'FILE_NOT_FOUND',
     'ARTICLE_NOT_FOUND',
     'ASSET_EVIDENCE_NOT_FOUND',
 

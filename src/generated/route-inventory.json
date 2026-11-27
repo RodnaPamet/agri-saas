@@ -1449,17 +1449,17 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/files/{fileId}/download",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/imports",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/imports/{jobId}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/metrics",
@@ -1489,7 +1489,7 @@
     {
       "path": "/api/t/{tenantSlug}/evidence/uploads",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/evidence/{id}",
