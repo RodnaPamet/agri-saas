@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
-import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { getArticle, updateArticleMetadata } from '@/app-layer/usecases/knowledge';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
+import { UpdateKnowledgeArticleSchema } from '@/lib/schemas';
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }) => {
@@ -15,24 +15,7 @@ export const GET = withApiErrorHandling(
     },
 );
 
-/** BBCH is a 00-99 ordinal growth-stage scale — both-or-neither, in
- *  range, min <= max is enforced at the usecase layer (`knowledge.ts`'s
- *  `assertValidBbchRange`); this schema only bounds the wire shape. */
-const BbchStage = z.number().int().min(0).max(99).nullable().optional();
 
-const UpdateKnowledgeArticleSchema = z
-    .object({
-        title: z.string().min(1, 'Title is required').max(500).optional(),
-        summary: z.string().max(2000).nullable().optional(),
-        category: z.string().max(120).nullable().optional(),
-        ownerUserId: z.string().nullable().optional(),
-        language: z.string().max(8).nullable().optional(),
-        cropTags: z.array(z.string().max(60)).max(20).optional(),
-        regions: z.array(z.string().max(60)).max(20).optional(),
-        bbchStageMin: BbchStage,
-        bbchStageMax: BbchStage,
-    })
-    .strip();
 
 export const PATCH = withApiErrorHandling(
     withValidatedBody(
