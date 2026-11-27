@@ -54,9 +54,17 @@ export class AssetRepository {
         options: { take?: number } = {},
     ) {
         const where = AssetRepository._buildWhere(ctx, filters);
-        const args = {
+        return db.asset.findMany({
+            // `withDeleted({})` yields the one key the soft-delete extension
+            // looks for and strips, SPREAD rather than wrapped (#3272): this
+            // cannot be a `where.deletedAt` clause, because the extension
+            // would put its own back. Spreading keeps `take:` literally on
+            // this call, which is what `query-shape-guardrails` Layer D2
+            // scans for — wrapping the whole argument object in a variable
+            // hid the bound from it and counted a capped read as unbounded.
+            ...(filters?.includeDeleted ? withDeleted({}) : {}),
             where,
-            orderBy: { createdAt: 'desc' as const },
+            orderBy: { createdAt: 'desc' },
             take: options.take ?? ASSET_LIST_CAP,
             include: {
                 // B4 — resolve the structured assignee so the list Owner
@@ -64,12 +72,7 @@ export class AssetRepository {
                 // free-text keeper.
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
-        };
-        // `withDeleted` sets a key the soft-delete extension strips, so this
-        // cannot be expressed as `where.deletedAt` — the extension would put
-        // its own clause back. The cap applies either way, which is what
-        // bounds the formerly unbounded trash read (#3272).
-        return db.asset.findMany(filters?.includeDeleted ? withDeleted(args) : args);
+        });
     }
 
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: AssetListParams): Promise<PaginatedResponse<unknown>> {
@@ -85,7 +88,8 @@ export class AssetRepository {
             }
         }
 
-        const pageArgs = {
+        const items = await db.asset.findMany({
+            ...(params.filters?.includeDeleted ? withDeleted({}) : {}),
             where,
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
@@ -95,10 +99,7 @@ export class AssetRepository {
             include: {
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
-        };
-        const items = await db.asset.findMany(
-            params.filters?.includeDeleted ? withDeleted(pageArgs) : pageArgs,
-        );
+        });
 
         const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
         return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };

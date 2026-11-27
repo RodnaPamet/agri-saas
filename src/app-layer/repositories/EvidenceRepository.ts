@@ -95,19 +95,21 @@ export class EvidenceRepository {
     ) {
         return traceRepository('evidence.list', ctx, async () => {
             const where = EvidenceRepository._buildWhere(ctx, filters);
-            const args = {
+            return db.evidence.findMany({
+                // Spread, not wrapped — see `AssetRepository.list` for why:
+                // keeping `take:` literally on this call is what Layer D2 of
+                // `query-shape-guardrails` scans for, and hoisting the whole
+                // argument object into a variable hid the bound from it
+                // (#3272). The key itself is the one the soft-delete
+                // extension looks for and strips; this cannot be expressed as
+                // a `where.deletedAt` clause, because the extension would put
+                // its own back.
+                ...(filters?.includeDeleted ? withDeleted({}) : {}),
                 where,
-                orderBy: { createdAt: 'desc' as const },
+                orderBy: { createdAt: 'desc' },
                 select: evidenceListSelect,
                 ...(options.take ? { take: options.take } : {}),
-            };
-            // `withDeleted` sets a key the soft-delete extension strips, so
-            // this cannot be a `where.deletedAt` clause — the extension would
-            // put its own back. The caller's `take` applies either way, which
-            // is what bounds the formerly unbounded trash read (#3272).
-            return db.evidence.findMany(
-                filters?.includeDeleted ? withDeleted(args) : args,
-            );
+            });
         });
     }
 
@@ -126,15 +128,13 @@ export class EvidenceRepository {
                 }
             }
 
-            const pageArgs = {
+            const items = await db.evidence.findMany({
+                ...(params.filters?.includeDeleted ? withDeleted({}) : {}),
                 where,
                 orderBy: CURSOR_ORDER_BY,
                 take: limit + 1,
                 select: evidenceListSelect,
-            };
-            const items = await db.evidence.findMany(
-                params.filters?.includeDeleted ? withDeleted(pageArgs) : pageArgs,
-            );
+            });
 
             const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
             return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };
